@@ -1,0 +1,19 @@
+# Qt Creator local settings
+*.pro.user
+*.pro.user.*
+*.ui.autosave
+
+# Build outputs
+/build/
+/bin/
+Makefile
+Makefile.*
+*.o
+*.obj
+moc_*.cpp
+qrc_*.cpp
+ui_*.h
+
+# Runtime files
+*.log
+*.tmp

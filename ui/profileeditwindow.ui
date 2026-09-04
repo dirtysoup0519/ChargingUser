@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>ProfileEditWindow</class>
+ <widget class="QWidget" name="ProfileEditWindow">
+  <property name="minimumSize"><size><width>390</width><height>760</height></size></property>
+  <property name="maximumSize"><size><width>390</width><height>760</height></size></property>
+  <property name="windowTitle"><string>完善个人资料</string></property>
+  <layout class="QVBoxLayout" name="rootLayout">
+   <property name="spacing"><number>0</number></property><property name="leftMargin"><number>0</number></property><property name="topMargin"><number>0</number></property><property name="rightMargin"><number>0</number></property><property name="bottomMargin"><number>0</number></property>
+   <item><widget class="QWidget" name="headerBar"><property name="minimumSize"><size><width>0</width><height>58</height></size></property><property name="maximumSize"><size><width>16777215</width><height>58</height></size></property>
+    <layout class="QHBoxLayout" name="headerLayout"><property name="leftMargin"><number>18</number></property><property name="rightMargin"><number>18</number></property>
+     <item><widget class="QLabel" name="pageTitle"><property name="text"><string>完善个人资料</string></property></widget></item>
+     <item><spacer name="headerSpace"><property name="orientation"><enum>Qt::Horizontal</enum></property><property name="sizeHint"><size><width>40</width><height>1</height></size></property></spacer></item>
+     <item><widget class="QLabel" name="hintLabel"><property name="text"><string>首次登录</string></property></widget></item>
+    </layout>
+   </widget></item>
+   <item><widget class="QWidget" name="pageBackground">
+    <layout class="QVBoxLayout" name="bodyLayout"><property name="leftMargin"><number>18</number></property><property name="topMargin"><number>26</number></property><property name="rightMargin"><number>18</number></property><property name="bottomMargin"><number>20</number></property><property name="spacing"><number>18</number></property>
+     <item><widget class="QLabel" name="avatarLabel"><property name="minimumSize"><size><width>104</width><height>104</height></size></property><property name="maximumSize"><size><width>104</width><height>104</height></size></property><property name="text"><string>＋</string></property><property name="alignment"><set>Qt::AlignCenter</set></property><property name="styleSheet"><string notr="true">background:#EAF3FF;color:#1677FF;border-radius:52px;font-size:30px;font-weight:700;</string></property></widget></item>
+     <item alignment="Qt::AlignHCenter"><widget class="QPushButton" name="avatarButton"><property name="text"><string>更换头像</string></property><property name="styleSheet"><string notr="true">background:transparent;border:0;color:#1677FF;font-size:11px;</string></property></widget></item>
+     <item><widget class="QFrame" name="profileCard"><layout class="QVBoxLayout" name="formLayout"><property name="leftMargin"><number>16</number></property><property name="topMargin"><number>17</number></property><property name="rightMargin"><number>16</number></property><property name="bottomMargin"><number>20</number></property><property name="spacing"><number>9</number></property>
+      <item><widget class="QLabel" name="nicknameLabel"><property name="text"><string>昵称</string></property><property name="styleSheet"><string notr="true">color:#657185;font-size:11px;</string></property></widget></item>
+      <item><widget class="QLineEdit" name="nicknameEdit"><property name="minimumSize"><size><width>0</width><height>46</height></size></property><property name="placeholderText"><string>请输入昵称</string></property></widget></item>
+      <item><widget class="QLabel" name="phoneLabel"><property name="text"><string>手机号码</string></property><property name="styleSheet"><string notr="true">color:#657185;font-size:11px;</string></property></widget></item>
+      <item><widget class="QLineEdit" name="phoneEdit"><property name="minimumSize"><size><width>0</width><height>46</height></size></property><property name="text"><string>138 **** 8000</string></property><property name="readOnly"><bool>true</bool></property></widget></item>
+      <item><widget class="QLabel" name="hintLabel2"><property name="text"><string>手机号码来自登录账号，暂不支持在此修改</string></property></widget></item>
+     </layout></widget></item>
+     <item><spacer name="bodySpace"><property name="orientation"><enum>Qt::Vertical</enum></property><property name="sizeHint"><size><width>1</width><height>40</height></size></property></spacer></item>
+     <item><widget class="QPushButton" name="saveButton"><property name="minimumSize"><size><width>0</width><height>48</height></size></property><property name="text"><string>保存并进入首页</string></property></widget></item>
+    </layout>
+   </widget></item>
+  </layout>
+ </widget>
+ <resources/>
+ <connections/>
+</ui>

@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>MainWindow</class>
+ <widget class="QWidget" name="MainWindow">
+  <property name="minimumSize"><size><width>390</width><height>760</height></size></property>
+  <property name="maximumSize"><size><width>390</width><height>760</height></size></property>
+  <property name="windowTitle"><string>智充</string></property>
+  <layout class="QVBoxLayout" name="rootLayout">
+   <property name="spacing"><number>0</number></property><property name="leftMargin"><number>0</number></property><property name="topMargin"><number>0</number></property><property name="rightMargin"><number>0</number></property><property name="bottomMargin"><number>0</number></property>
+   <item><widget class="QWidget" name="topBar"><property name="minimumSize"><size><width>0</width><height>48</height></size></property><property name="maximumSize"><size><width>16777215</width><height>48</height></size></property>
+    <layout class="QHBoxLayout" name="topLayout"><property name="leftMargin"><number>8</number></property><property name="topMargin"><number>6</number></property><property name="rightMargin"><number>8</number></property><property name="bottomMargin"><number>6</number></property><property name="spacing"><number>7</number></property>
+     <item><widget class="QPushButton" name="cityButton"><property name="minimumSize"><size><width>76</width><height>0</height></size></property><property name="maximumSize"><size><width>76</width><height>16777215</height></size></property><property name="text"><string>深圳市⌄</string></property></widget></item>
+     <item><widget class="QLineEdit" name="searchBox"><property name="minimumSize"><size><width>0</width><height>35</height></size></property><property name="placeholderText"><string>搜索地点、充电站</string></property></widget></item>
+     <item><widget class="QPushButton" name="locateButton"><property name="minimumSize"><size><width>61</width><height>35</height></size></property><property name="maximumSize"><size><width>61</width><height>35</height></size></property><property name="text"><string>◎ 定位</string></property></widget></item>
+    </layout>
+   </widget></item>
+   <item><widget class="QLabel" name="mapImage"><property name="minimumSize"><size><width>390</width><height>354</height></size></property><property name="maximumSize"><size><width>390</width><height>354</height></size></property><property name="pixmap"><pixmap resource="../resources/resources.qrc">:/images/home_map.png</pixmap></property><property name="scaledContents"><bool>true</bool></property></widget></item>
+   <item><widget class="QWidget" name="stationSection"><property name="minimumSize"><size><width>0</width><height>40</height></size></property><property name="maximumSize"><size><width>16777215</width><height>40</height></size></property>
+    <layout class="QHBoxLayout" name="sectionLayout"><property name="leftMargin"><number>8</number></property><property name="rightMargin"><number>9</number></property>
+     <item><widget class="QLabel" name="sectionTitle"><property name="text"><string>附近充电站</string></property></widget></item>
+     <item><spacer name="sectionSpace"><property name="orientation"><enum>Qt::Horizontal</enum></property><property name="sizeHint"><size><width>40</width><height>1</height></size></property></spacer></item>
+     <item><widget class="QLabel" name="hintLabel"><property name="text"><string>按距离</string></property></widget></item>
+    </layout>
+   </widget></item>
+   <item><widget class="QScrollArea" name="stationScroll"><property name="widgetResizable"><bool>true</bool></property>
+    <widget class="QWidget" name="stationList"><property name="geometry"><rect><x>0</x><y>0</y><width>388</width><height>255</height></rect></property>
+     <layout class="QVBoxLayout" name="stationLayout"><property name="leftMargin"><number>4</number></property><property name="topMargin"><number>0</number></property><property name="rightMargin"><number>4</number></property><property name="bottomMargin"><number>0</number></property><property name="spacing"><number>0</number></property>
+      <item><widget class="QPushButton" name="stationButton1"><property name="minimumSize"><size><width>0</width><height>69</height></size></property><property name="text"><string>⚡  深圳市民中心充电站                         0.8 km   空闲 5/10
+     福田区福中三路市民中心地下停车场                         ¥1.20/度   ›</string></property></widget></item>
+      <item><widget class="QPushButton" name="stationButton2"><property name="minimumSize"><size><width>0</width><height>69</height></size></property><property name="text"><string>⚡  福田CBD充电站                              1.6 km   空闲 8/10
+     福田区福华三路卓越世纪中心停车场                         ¥1.20/度   ›</string></property></widget></item>
+      <item><widget class="QPushButton" name="stationButton3"><property name="minimumSize"><size><width>0</width><height>69</height></size></property><property name="text"><string>⚡  南山科技园充电站                            3.2 km   空闲 3/10
+     南山区科技南十二路科技停车场                           ¥1.20/度   ›</string></property></widget></item>
+      <item><spacer name="listSpace"><property name="orientation"><enum>Qt::Vertical</enum></property><property name="sizeHint"><size><width>1</width><height>20</height></size></property></spacer></item>
+     </layout>
+    </widget>
+   </widget></item>
+   <item><widget class="QFrame" name="bottomBar"><property name="minimumSize"><size><width>0</width><height>61</height></size></property><property name="maximumSize"><size><width>16777215</width><height>61</height></size></property>
+    <layout class="QHBoxLayout" name="bottomLayout"><property name="leftMargin"><number>22</number></property><property name="topMargin"><number>2</number></property><property name="rightMargin"><number>22</number></property><property name="bottomMargin"><number>1</number></property>
+     <item><widget class="QPushButton" name="homeNav"><property name="text"><string>⌂
+首页</string></property><property name="checkable"><bool>true</bool></property><property name="checked"><bool>true</bool></property></widget></item>
+     <item><widget class="QPushButton" name="chargeNav"><property name="text"><string>ϟ
+充电</string></property><property name="checkable"><bool>true</bool></property></widget></item>
+     <item><widget class="QPushButton" name="profileNav"><property name="text"><string>●
+我的</string></property><property name="checkable"><bool>true</bool></property></widget></item>
+    </layout>
+   </widget></item>
+  </layout>
+ </widget>
+ <resources><include location="../resources/resources.qrc"/></resources>
+ <connections/>
+</ui>

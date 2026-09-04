@@ -1,0 +1,9 @@
+<RCC>
+ <qresource prefix="/">
+  <file alias="styles/theme.qss">../styles/theme.qss</file>
+  <file alias="images/login_hero.png">images/login_hero.png</file>
+  <file alias="images/home_map.png">images/home_map.png</file>
+  <file alias="images/station_hero.png">images/station_hero.png</file>
+  <file alias="images/route_map.png">images/route_map.png</file>
+ </qresource>
+</RCC>

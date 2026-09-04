@@ -1,0 +1,83 @@
+QWidget {
+    background: #FFFFFF;
+    color: #202B3C;
+    font-family: "Noto Sans CJK SC", "Microsoft YaHei", sans-serif;
+    font-size: 12px;
+}
+QWidget#pageBackground { background: #F6F8FC; }
+QWidget#topBar, QWidget#headerBar, QFrame#bottomBar {
+    background: #FFFFFF;
+    border-color: #E9EDF2;
+}
+QWidget#topBar, QWidget#headerBar { border-bottom: 1px solid #E9EDF2; }
+QFrame#bottomBar { border-top: 1px solid #E9EDF2; }
+QLabel#brandLabel { color: #1677FF; font-size: 28px; font-weight: 800; }
+QLabel#sloganLabel, QLabel#hintLabel, QLabel.subtle { color: #8994A3; font-size: 11px; }
+QLabel#pageTitle, QLabel#sectionTitle { color: #202B3C; font-size: 17px; font-weight: 700; }
+QPushButton#backButton {
+    background: transparent; border: none; color: #334155;
+    font-size: 24px; padding: 0;
+}
+QPushButton#cityButton {
+    background: transparent; border: none; color: #202B3C;
+    font-size: 15px; font-weight: 700; text-align: left; padding: 0;
+}
+QLineEdit {
+    background: #F8FAFC; border: 1px solid #E5EAF0;
+    border-radius: 10px; padding: 0 13px; font-size: 13px;
+}
+QLineEdit:focus { background: #FFFFFF; border-color: #7EB2FF; }
+QLineEdit:read-only { color: #98A2B1; background: #F3F5F8; }
+QPushButton#primaryButton, QPushButton#loginButton, QPushButton#saveButton,
+QPushButton#chargeButton, QPushButton#startButton {
+    background: #1677FF; color: #FFFFFF; border: none;
+    border-radius: 11px; font-size: 14px; font-weight: 700;
+}
+QPushButton#primaryButton:hover, QPushButton#loginButton:hover,
+QPushButton#saveButton:hover, QPushButton#chargeButton:hover,
+QPushButton#startButton:hover { background: #096BEE; }
+QPushButton#secondaryButton, QPushButton#navigationButton {
+    background: #EAF3FF; color: #1677FF; border: none;
+    border-radius: 11px; font-size: 13px; font-weight: 700;
+}
+QPushButton#locateButton {
+    background: #1677FF; color: #FFFFFF; border: none;
+    border-radius: 9px; font-weight: 700;
+}
+QFrame.card, QFrame#profileCard, QFrame#summaryCard, QFrame#feeCard {
+    background: #FFFFFF; border: 1px solid #E7ECF2; border-radius: 13px;
+}
+QPushButton#stationButton1, QPushButton#stationButton2, QPushButton#stationButton3 {
+    background: #FFFFFF; border: none; border-bottom: 1px solid #EDF1F5;
+    text-align: left; padding: 8px 12px; color: #202B3C;
+    font-size: 11px;
+}
+QPushButton#stationButton1:hover, QPushButton#stationButton2:hover, QPushButton#stationButton3:hover {
+    background: #F9FBFF; border: 1px solid #73AAFF; border-radius: 8px;
+}
+QPushButton#homeNav, QPushButton#chargeNav, QPushButton#profileNav {
+    background: transparent; border: none; color: #8A94A3;
+    font-size: 11px; padding: 4px;
+}
+QPushButton#homeNav:checked, QPushButton#chargeNav:checked, QPushButton#profileNav:checked { color: #1677FF; font-weight: 700; }
+QPushButton#driveButton, QPushButton#walkButton {
+    background: transparent; border: none; border-radius: 7px;
+    color: #7D8898; font-size: 11px;
+}
+QPushButton#driveButton:checked, QPushButton#walkButton:checked { background: #EAF3FF; color: #1677FF; font-weight: 700; }
+QFrame#routeCard { background: #FFFFFF; border-top: 1px solid #E6EBF1; }
+QLabel#routeInfo { color: #7E8998; font-size: 11px; }
+QLabel#hintLabel2 { color: #8B96A6; font-size: 10px; }
+QFrame.metricCard { background: #F8FAFD; border: none; border-radius: 9px; }
+QLabel.metricValue { font-size: 18px; font-weight: 700; }
+QLabel.metricCaption { color: #8C97A6; font-size: 9px; }
+QFrame.chargerRow { background: #FFFFFF; border-bottom: 1px solid #EDF1F5; }
+QLabel.chargerName { font-size: 12px; font-weight: 700; }
+QLabel.chargerSpec { color: #8B96A6; font-size: 9px; }
+QLabel.availableBadge { color: #13966B; background: #E8F8F1; border-radius: 8px; padding: 3px 7px; }
+QLabel.busyBadge { color: #8993A2; background: #F0F2F5; border-radius: 8px; padding: 3px 7px; }
+QScrollArea { border: none; background: transparent; }
+QScrollBar:vertical { width: 3px; background: transparent; }
+QScrollBar::handle:vertical { background: #CFD7E2; min-height: 24px; }
+QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical { height: 0; }
+QCheckBox { color: #8994A3; font-size: 10px; spacing: 6px; }
