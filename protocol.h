@@ -103,6 +103,8 @@
 #define RECHARGE_REQ        113     // 钱包充值 {username, amount(元) 或 amountCents}
 #define PAY_REQ             115     // 订单支付 {orderNo, username?}
 #define PHONE_LOGIN_REQ     116     // 手机号免密登录（不存在自动注册）{phone}
+#define QUERY_PROFILE_REQ   117     // 查询当前用户身份与资料 {username, requestId}（v2.1，见 user-module-contract.md §11）
+#define UPDNICK_REQ         118     // 修改当前用户昵称 {username, nickname, requestId}（v2.1）
 #define ADDDATA             110     // 新增记录 {table, record}（高权限通用接口，保留）
 #define UPDDATA             111     // 修改记录 {table, key, fields}（高权限通用接口，保留）
 #define DELDATA             112     // 删除记录 {table, key}（高权限通用接口，保留）
@@ -122,6 +124,8 @@
 #define PAY_ACK             215     // 支付成功 {orderNo, balanceCents, balance}
 #define RECHARGE_ACK        216     // 充值成功 {balanceCents, balance}
 #define PHONE_LOGIN_ACK     217     // 手机号登录成功 {username, status, balanceCents, balance, autoRegistered}
+#define PROFILE_ACK         218     // 用户资料应答 {username, phone, nickname, status, balanceCents, requestId}（v2.1）
+#define UPDNICK_ACK         219     // 昵称修改结果 {ok, nickname, requestId}（v2.1）
 #define DEV_ONLINE_ACK      220     // 设备上线确认
 #define DEV_OFFLINE_NOTICE  221     // 设备下线通知（服务端广播给管理员端）{chargerCode}
 #define HEARTBEAT_ACK       230     // 心跳应答
