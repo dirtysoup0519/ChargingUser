@@ -14,6 +14,7 @@ private slots:
     void rejectsDuplicateLogin();
     void acceptsNormalUser();
     void acceptsNewAndFrozenUser();
+    void nicknameUpdateKeepsSessionState();
     void propagatesRetryableNetworkFailure();
     void blocksRetryAfterUnknownProfileUpdate();
     void ignoresLateLoginAfterLogout();
@@ -97,6 +98,33 @@ void UserModuleTests::acceptsNewAndFrozenUser()
     QVERIFY(actual.session.authenticated);
     QVERIFY(actual.isNewUser);
     QCOMPARE(actual.session.accountStatus, AccountStatus::Frozen);
+}
+
+/* 回归：219 应答只携带昵称（协议 v2.1），改昵称不得清空会话 phone
+ * 或把 accountStatus 抹成 Unknown（修复前会覆盖为部分资料） */
+void UserModuleTests::nicknameUpdateKeepsSessionState()
+{
+    MockUserNetworkApi network;
+    LoginResult expected;
+    expected.session.profile.userId = QStringLiteral("13800138000");
+    expected.session.profile.phone = QStringLiteral("13800138000");
+    expected.session.accountStatus = AccountStatus::Normal;
+    network.setLoginResult(expected);
+
+    UserProfileResult profileResult;
+    profileResult.profile.userId = QStringLiteral("13800138000");
+    network.setUserProfileResult(profileResult);
+
+    UserService service(&network);
+    QSignalSpy successes(&service, &IUserService::loginSucceeded);
+    service.loginByPhone(QStringLiteral("13800138000"));
+    QTRY_COMPARE(successes.count(), 1);
+
+    service.updateNickname(QStringLiteral("Bob"));
+    QTRY_COMPARE(service.currentSession().profile.nickname, QStringLiteral("Bob"));
+    QVERIFY(service.currentSession().authenticated);
+    QCOMPARE(service.currentSession().profile.phone, QStringLiteral("13800138000"));
+    QCOMPARE(service.currentSession().accountStatus, AccountStatus::Normal);
 }
 
 void UserModuleTests::propagatesRetryableNetworkFailure()

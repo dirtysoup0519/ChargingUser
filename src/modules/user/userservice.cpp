@@ -154,8 +154,9 @@ void UserService::handleNicknameUpdateSucceeded(const UserProfileResult &result)
         return;
     }
 
-    m_session.profile = result.profile;
-    m_session.accountStatus = result.accountStatus;
+    // 219 应答只携带昵称（协议 v2.1），不得用部分资料整体覆盖会话，
+    // 也不得把 accountStatus 抹成 Unknown（Unknown 按合同按受限状态处理）
+    m_session.profile.nickname = result.profile.nickname;
     emit sessionChanged(m_session);
     emit nicknameUpdated(result);
 }
