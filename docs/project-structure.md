@@ -32,6 +32,8 @@
 
 ## TODO：UI 负责人执行清单
 
+详细的当前交接任务、页面接缝和验收标准见 [ui-current-todo.md](ui-current-todo.md)。以下为总览，具体实现以该清单为准。
+
 - [ ] 创建 presentation/contracts、pages、widgets 和 presentation.pri。
 - [ ] 逐页迁移现有 src/*window.h/.cpp；ui/*.ui 保留原目录，类名无必要不改。
 - [ ] 登录和资料页实现语义化意图及 render(ViewState)，补齐加载/错误/输入保留。
