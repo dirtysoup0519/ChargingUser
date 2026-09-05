@@ -13,11 +13,21 @@ UI 分支 `user-design-main` 独立负责页面 Widget、Qt Designer 文件、�
 ```text
 src/presentation/
 ├── contracts/          # 页面 ViewState；双方冻结后 UI 主维护
-├── pages/              # 页面 QWidget 的 .h/.cpp
+├── pages/
+│   ├── shell/          # MainWindow 应用外壳
+│   ├── auth/           # 登录
+│   ├── home/           # 首页、站点详情、地图导航
+│   ├── charging/       # 充电确认、进行、结算
+│   └── profile/        # 我的、资料、钱包、订单
 ├── widgets/            # 可复用纯展示组件
-└── presentation.pri    # UI 源文件登记
+└── presentation.pri    # 聚合各分类 .pri
 
-ui/                     # Qt Designer 文件
+ui/
+├── shell/              # MainWindow Designer 文件
+├── auth/               # 登录 Designer 文件
+├── home/               # 首页相关 Designer 文件
+├── charging/           # 充电流程 Designer 文件
+└── profile/            # 我的与用户相关 Designer 文件
 styles/                 # QSS
 resources/              # 图片、图标、字体和 qrc
 ```

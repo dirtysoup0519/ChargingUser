@@ -1,19 +1,13 @@
-INCLUDEPATH += $$PWD/contracts $$PWD/pages $$PWD/widgets
+INCLUDEPATH += $$PWD/contracts $$PWD/widgets
 
 HEADERS += \
     $$PWD/contracts/submitstate.h \
     $$PWD/contracts/loginviewstate.h \
     $$PWD/contracts/profileeditviewstate.h \
-    $$PWD/contracts/profileviewstate.h \
-    $$PWD/pages/loginwindow.h \
-    $$PWD/pages/profileeditwindow.h \
-    $$PWD/pages/mainwindow.h \
-    $$PWD/pages/stationdetailwindow.h \
-    $$PWD/pages/navigationwindow.h
+    $$PWD/contracts/profileviewstate.h
 
-SOURCES += \
-    $$PWD/pages/loginwindow.cpp \
-    $$PWD/pages/profileeditwindow.cpp \
-    $$PWD/pages/mainwindow.cpp \
-    $$PWD/pages/stationdetailwindow.cpp \
-    $$PWD/pages/navigationwindow.cpp
+include($$PWD/pages/shell/shell.pri)
+include($$PWD/pages/auth/auth.pri)
+include($$PWD/pages/home/home.pri)
+include($$PWD/pages/charging/charging.pri)
+include($$PWD/pages/profile/profile.pri)

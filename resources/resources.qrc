@@ -19,5 +19,7 @@
   <file alias="icons/charge_active.png">icons/charge_active.png</file>
   <file alias="icons/user.png">icons/user.png</file>
   <file alias="icons/user_active.png">icons/user_active.png</file>
+  <file alias="icons/wallet_card.png">icons/wallet_card.png</file>
+  <file alias="icons/security_shield.png">icons/security_shield.png</file>
  </qresource>
 </RCC>

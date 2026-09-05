@@ -11,11 +11,12 @@ SOURCES += src/main.cpp
 include(src/presentation/presentation.pri)
 
 FORMS += \
-    ui/loginwindow.ui \
-    ui/profileeditwindow.ui \
-    ui/mainwindow.ui \
-    ui/stationdetailwindow.ui \
-    ui/navigationwindow.ui
+    ui/shell/mainwindow.ui \
+    ui/auth/loginwindow.ui \
+    ui/home/stationdetailwindow.ui \
+    ui/home/navigationwindow.ui \
+    ui/profile/profileeditwindow.ui \
+    ui/profile/walletrechargewindow.ui
 
 RESOURCES += \
     resources/resources.qrc

@@ -74,7 +74,38 @@ QFrame.card, QFrame#profileCard, QFrame#walletCard, QFrame#summaryCard,
 QFrame#feeCard, QFrame#chargingEmptyCard {
     background: #FFFFFF; border: 1px solid #E7ECF2; border-radius: 13px;
 }
-QWidget#chargingPage, QWidget#profilePage { background: #F6F8FC; }
+QWidget#chargingPage, QWidget#profilePage, QWidget#walletRechargePage { background: #F6F8FC; }
+QFrame#rechargeBalanceCard {
+    background: #18B8AD; border: none; border-radius: 14px;
+}
+QFrame#rechargeBalanceCard QLabel, QWidget#balanceTextBlock { background: transparent; color: #FFFFFF; }
+QLabel#balanceTitleLabel { font-size: 14px; font-weight: 600; }
+QLabel#balanceValueLabel { font-size: 30px; font-weight: 700; }
+QLabel#amountTitleLabel, QLabel#customAmountTitleLabel {
+    color: #202B3C; font-size: 16px; font-weight: 700;
+}
+QPushButton#amount20Button, QPushButton#amount50Button,
+QPushButton#amount100Button, QPushButton#amount200Button {
+    background: #FFFFFF; color: #4E596A; border: 1px solid #DCE3EC;
+    border-radius: 11px; font-size: 14px; font-weight: 600;
+}
+QPushButton#amount20Button:checked, QPushButton#amount50Button:checked,
+QPushButton#amount100Button:checked, QPushButton#amount200Button:checked {
+    color: #1677FF; border: 2px solid #1677FF; background: #F7FAFF;
+}
+QFrame#securityHintCard {
+    background: #F1F7FF; border: 1px solid #BCD8FF;
+    border-radius: 11px;
+}
+QLabel#securityHintLabel {
+    color: #687386; background: #F1F7FF; border: 1px solid #BCD8FF;
+    border: none; font-size: 12px;
+}
+QPushButton#confirmRechargeButton {
+    background: #1677FF; color: #FFFFFF; border: none;
+    border-radius: 11px; font-size: 15px; font-weight: 700;
+}
+QPushButton#confirmRechargeButton:hover { background: #096BEE; }
 QLabel#chargingEmptyTitle { font-size: 14px; font-weight: 700; }
 QLabel#chargingEmptyHint { color: #8994A3; font-size: 11px; }
 QLabel#profileAvatarLabel {

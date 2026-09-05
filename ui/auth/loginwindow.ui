@@ -14,7 +14,7 @@
    <item>
     <widget class="QLabel" name="heroImage">
      <property name="minimumSize"><size><width>338</width><height>245</height></size></property>
-     <property name="pixmap"><pixmap resource="../resources/resources.qrc">:/images/login_hero.png</pixmap></property>
+     <property name="pixmap"><pixmap resource="../../resources/resources.qrc">:/images/login_hero.png</pixmap></property>
      <property name="scaledContents"><bool>true</bool></property>
     </widget>
    </item>
@@ -44,6 +44,6 @@
    <item><spacer name="bottomSpace"><property name="orientation"><enum>Qt::Vertical</enum></property><property name="sizeHint"><size><width>1</width><height>40</height></size></property></spacer></item>
   </layout>
  </widget>
- <resources><include location="../resources/resources.qrc"/></resources>
+ <resources><include location="../../resources/resources.qrc"/></resources>
  <connections/>
 </ui>

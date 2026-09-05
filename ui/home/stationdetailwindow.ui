@@ -18,7 +18,7 @@
    <item><widget class="QScrollArea" name="detailScroll"><property name="widgetResizable"><bool>true</bool></property>
     <widget class="QWidget" name="pageBackground"><property name="geometry"><rect><x>0</x><y>0</y><width>388</width><height>640</height></rect></property>
      <layout class="QVBoxLayout" name="contentLayout"><property name="leftMargin"><number>12</number></property><property name="topMargin"><number>0</number></property><property name="rightMargin"><number>12</number></property><property name="bottomMargin"><number>14</number></property><property name="spacing"><number>10</number></property>
-      <item><widget class="QLabel" name="heroImage"><property name="minimumSize"><size><width>366</width><height>145</height></size></property><property name="maximumSize"><size><width>366</width><height>145</height></size></property><property name="pixmap"><pixmap resource="../resources/resources.qrc">:/images/station_hero.png</pixmap></property><property name="scaledContents"><bool>true</bool></property></widget></item>
+      <item><widget class="QLabel" name="heroImage"><property name="minimumSize"><size><width>366</width><height>145</height></size></property><property name="maximumSize"><size><width>366</width><height>145</height></size></property><property name="pixmap"><pixmap resource="../../resources/resources.qrc">:/images/station_hero.png</pixmap></property><property name="scaledContents"><bool>true</bool></property></widget></item>
       <item><widget class="QFrame" name="summaryCard"><layout class="QVBoxLayout" name="summaryLayout"><property name="leftMargin"><number>14</number></property><property name="topMargin"><number>12</number></property><property name="rightMargin"><number>14</number></property><property name="bottomMargin"><number>13</number></property><property name="spacing"><number>7</number></property>
        <item><layout class="QHBoxLayout" name="nameLayout"><item><widget class="QLabel" name="stationName"><property name="text"><string>深圳市民中心充电站</string></property><property name="styleSheet"><string notr="true">font-size:17px;font-weight:700;</string></property></widget></item><item><spacer name="nameSpace"><property name="orientation"><enum>Qt::Horizontal</enum></property><property name="sizeHint"><size><width>20</width><height>1</height></size></property></spacer></item><item><widget class="QLabel" name="openBadge"><property name="text"><string>24小时营业</string></property><property name="styleSheet"><string notr="true">color:#13966B;background:#E8F8F1;border-radius:8px;padding:3px 7px;font-size:10px;</string></property></widget></item></layout></item>
        <item><widget class="QLabel" name="addressLabel"><property name="text"><string>福田区福中三路市民中心地下停车场</string></property><property name="styleSheet"><string notr="true">color:#8B96A6;font-size:10px;</string></property></widget></item>
@@ -46,6 +46,6 @@
    </widget></item>
   </layout>
  </widget>
- <resources><include location="../resources/resources.qrc"/></resources>
+ <resources><include location="../../resources/resources.qrc"/></resources>
  <connections/>
 </ui>

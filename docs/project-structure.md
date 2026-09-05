@@ -4,7 +4,7 @@
 
 | 目录 | 内容及负责人 |
 |---|---|
-| `ui/` | 根目录 Qt Designer `.ui`：布局、静态文字、控件属性；UI 负责人 |
+| `ui/` | Qt Designer `.ui`，按 `shell/auth/home/charging/profile` 分类；布局、静态文字、控件属性；UI 负责人 |
 | `styles/`、`resources/` | QSS、图片、图标、字体、qrc；UI 负责人 |
 | `src/presentation/contracts/` | 共同确认的 ViewState 展示合同；UI 主维护 |
 | `src/presentation/pages/` | 页面 .h/.cpp、输入采集、意图信号、render 状态渲染；UI 负责人 |
@@ -15,7 +15,7 @@
 | `src/network/` | 传输、协议适配；网络负责人 |
 
 - .h 与 .cpp 按模块同目录存放，不建立全局头文件集中目录。
-- 根目录 `ui/` 保留 Designer 文件；需要 C++ 的展示行为统一放到 presentation，不把这些 C++ 放进根目录 ui。
+- `ui/` 只保留 Designer 文件，并按 `shell/auth/home/charging/profile` 建立子目录；需要 C++ 的展示行为统一放到 `src/presentation/pages/` 的对应分类，不把 C++ 放进 `ui/`。
 - presentation 负责加载、错误、空态、按钮禁用、输入保留、重试入口和 Frozen/Unknown 提示。它只发用户意图并渲染 ViewState，不调用 Service、Socket、JSON 或协议宏。
 - 业务手机号校验、重复请求控制、登录、会话、资料更新归 M1；UI 的输入辅助不能替代业务校验。
 - 新老用户与会话失效的跳转决策归 M4；presentation 根据装配层传入的导航意图执行页面显示，不自行推断业务结果。
