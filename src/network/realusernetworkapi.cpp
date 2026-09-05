@@ -20,7 +20,10 @@ ClientError makeError(const QString &code, const QString &message, bool retryabl
 ClientError makeBizError(int errType, const QJsonObject &payload)
 {
     const QString bizCode = payload.value(QStringLiteral("code")).toString();
-    const QString reason = payload.value(QStringLiteral("reason")).toString();
+    QString reason = payload.value(QStringLiteral("err")).toString();
+    if (reason.isEmpty()) {
+        reason = payload.value(QStringLiteral("reason")).toString();
+    }
 
     ClientError error;
     error.code = bizCode.isEmpty()
@@ -50,9 +53,8 @@ int reqTypeForKind(RealUserNetworkApi::PendingKind kind)
     case RealUserNetworkApi::PendingKind::Login:
         return PHONE_LOGIN_REQ;
     case RealUserNetworkApi::PendingKind::QueryProfile:
-        return QUERY_PROFILE_REQ;
     case RealUserNetworkApi::PendingKind::UpdateNickname:
-        return UPDNICK_REQ;
+        return 0;   // 最新服务端协议未提供普通用户资料专用接口
     }
     return 0;
 }
@@ -111,22 +113,25 @@ void RealUserNetworkApi::loginByPhone(const QString &phone,
 void RealUserNetworkApi::queryCurrentUser(const QString &userId,
                                           const RequestContext &context)
 {
-    QJsonObject payload;
-    payload.insert(QStringLiteral("username"), userId);
-    payload.insert(QStringLiteral("requestId"), context.requestId);
-    startRequest(PendingKind::QueryProfile, payload, context, userId);
+    Q_UNUSED(userId);
+    emit requestFailed(failedRequestError(
+        context,
+        QStringLiteral("unsupported-protocol"),
+        QStringLiteral("The server protocol does not provide a dedicated user profile query."),
+        false));
 }
 
 void RealUserNetworkApi::updateNickname(const QString &userId,
                                         const QString &nickname,
                                         const RequestContext &context)
 {
-    QJsonObject payload;
-    payload.insert(QStringLiteral("username"), userId);
-    payload.insert(QStringLiteral("nickname"), nickname);
-    payload.insert(QStringLiteral("requestId"), context.requestId);
-    payload.insert(QStringLiteral("operationId"), context.operationId);
-    startRequest(PendingKind::UpdateNickname, payload, context, userId);
+    Q_UNUSED(userId);
+    Q_UNUSED(nickname);
+    emit requestFailed(failedRequestError(
+        context,
+        QStringLiteral("unsupported-protocol"),
+        QStringLiteral("The server protocol does not provide a dedicated nickname update."),
+        false));
 }
 
 void RealUserNetworkApi::logout(const RequestContext &context)
@@ -211,10 +216,6 @@ void RealUserNetworkApi::handleFrame(int msgType, const QJsonObject &payload)
     PendingKind kind;
     if (msgType == PHONE_LOGIN_ACK) {
         kind = PendingKind::Login;
-    } else if (msgType == PROFILE_ACK) {
-        kind = PendingKind::QueryProfile;
-    } else if (msgType == UPDNICK_ACK) {
-        kind = PendingKind::UpdateNickname;
     } else {
         return;   // 未知消息码不得污染会话（合同 §8 测试基线）
     }

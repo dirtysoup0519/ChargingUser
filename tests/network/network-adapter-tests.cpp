@@ -1,9 +1,9 @@
 /* RealUserNetworkApi 适配器测试
  * 用 MockTransport 模拟 socket：直接注入协议帧、控制连接状态。
- * 覆盖合同 §11 v1.1 的适配器语义：
- *  - 请求载荷携带 requestId；117/118 走新消息码
- *  - 应答优先按回显 requestId 匹配，无回显时按类型回退
- *  - 查询超时可重试；改昵称超时 = 结果未知
+ * 覆盖当前服务端 v2.4 协议的适配器语义：
+ *  - 登录请求携带 requestId；未冻结的资料接口不得借用高权限通道
+ *  - 登录应答优先按 requestId 匹配，无回显时按类型回退
+ *  - 218 是重启确认，不得误解析为用户资料应答
  *  - 3xx 映射业务错误码；断线使在途请求失败
  *  - 退出登录尽力发送，不等待应答
  */
@@ -113,20 +113,14 @@ private slots:
     void loginAckMapsToLoginResult();
     void loginAckWithoutEchoStillMatches();
     void serverErrorMapsToClientError();
-    void queryTimeoutIsRetryable();
-    void nicknameTimeoutIsResultUnknown();
-    void lateResponseAfterTimeoutIgnored();
+    void queryProfileReportsUnsupportedProtocol();
+    void nicknameUpdateReportsUnsupportedProtocol();
     void disconnectFailsPendingRequests();
-    void disconnectDuringNicknameUpdateIsResultUnknown();
-    void ambiguousErrorWithoutEchoIsDropped();
-    void profileAckForWrongUserIsRejected();
-    void profileAckWithoutPhoneIsRejected();
-    void nicknameAckWithoutOkIsRejected();
+    void restartAckIsIgnoredByUserAdapter();
     void logoutSendsImmediatelyWithoutAck();
     void sendFailureReportsRequestFailed();
     void reconnectsAfterInitialConnectFailure();
     void malformedLoginResponseDoesNotPolluteSession();
-    void malformedNicknameResponseIsResultUnknown();
     void loginWhenNotConnectedIsRetryable();
 };
 
@@ -225,7 +219,7 @@ void NetworkAdapterTests::serverErrorMapsToClientError()
 
     QJsonObject err;
     err.insert(QStringLiteral("code"), BIZ_ERR_PARAM);
-    err.insert(QStringLiteral("reason"), QStringLiteral("bad phone"));
+    err.insert(QStringLiteral("err"), QStringLiteral("bad phone"));
     transport.simulateIncoming(MassageHandler::pack(PARAM_ERROR, err));
 
     QCOMPARE(failures.count(), 1);
@@ -237,72 +231,46 @@ void NetworkAdapterTests::serverErrorMapsToClientError()
     QCOMPARE(error.requestId, QStringLiteral("req-3"));
 }
 
-void NetworkAdapterTests::queryTimeoutIsRetryable()
+void NetworkAdapterTests::queryProfileReportsUnsupportedProtocol()
 {
     MockTransport transport;
     BackendClient backend(&transport);
     backend.start();
     RealUserNetworkApi api(&backend);
-    api.setRequestTimeoutMs(30);
-
     QSignalSpy failures(&api, &IUserNetworkApi::requestFailed);
     api.queryCurrentUser(QStringLiteral("U13800138000"),
                          makeContext(QStringLiteral("req-4")));
-    QTest::qWait(80);
 
     QCOMPARE(failures.count(), 1);
     const ClientError error =
         qvariant_cast<ClientError>(failures.takeFirst().at(0));
-    QCOMPARE(error.code, QStringLiteral("request-timeout"));
-    QVERIFY(error.retryable);
+    QCOMPARE(error.code, QStringLiteral("unsupported-protocol"));
+    QCOMPARE(error.requestId, QStringLiteral("req-4"));
+    QCOMPARE(error.operationId, QStringLiteral("req-4-op"));
+    QVERIFY(!error.retryable);
     QVERIFY(!error.resultUnknown);
+    QVERIFY(transport.m_sentFrames.isEmpty());
 }
 
-void NetworkAdapterTests::nicknameTimeoutIsResultUnknown()
+void NetworkAdapterTests::nicknameUpdateReportsUnsupportedProtocol()
 {
     MockTransport transport;
     BackendClient backend(&transport);
     backend.start();
     RealUserNetworkApi api(&backend);
-    api.setRequestTimeoutMs(30);
-
     QSignalSpy failures(&api, &IUserNetworkApi::requestFailed);
     api.updateNickname(QStringLiteral("U13800138000"), QStringLiteral("老王"),
                        makeContext(QStringLiteral("req-5")));
-    QTest::qWait(80);
 
     QCOMPARE(failures.count(), 1);
     const ClientError error =
         qvariant_cast<ClientError>(failures.takeFirst().at(0));
-    QCOMPARE(error.code, QStringLiteral("result-unknown"));
+    QCOMPARE(error.code, QStringLiteral("unsupported-protocol"));
+    QCOMPARE(error.requestId, QStringLiteral("req-5"));
     QCOMPARE(error.operationId, QStringLiteral("req-5-op"));
     QVERIFY(!error.retryable);
-    QVERIFY(error.resultUnknown);
-}
-
-void NetworkAdapterTests::lateResponseAfterTimeoutIgnored()
-{
-    MockTransport transport;
-    BackendClient backend(&transport);
-    backend.start();
-    RealUserNetworkApi api(&backend);
-    api.setRequestTimeoutMs(30);
-
-    QSignalSpy successes(&api, &IUserNetworkApi::nicknameUpdateSucceeded);
-    QSignalSpy failures(&api, &IUserNetworkApi::requestFailed);
-    api.updateNickname(QStringLiteral("U13800138000"), QStringLiteral("老王"),
-                       makeContext(QStringLiteral("req-6")));
-    QTest::qWait(80);
-    QCOMPARE(failures.count(), 1);
-
-    // 超时已按结果未知处理，此后到达的 219 必须被丢弃
-    QJsonObject ack;
-    ack.insert(QStringLiteral("ok"), true);
-    ack.insert(QStringLiteral("nickname"), QStringLiteral("老王"));
-    ack.insert(QStringLiteral("requestId"), QStringLiteral("req-6"));
-    transport.simulateIncoming(MassageHandler::pack(UPDNICK_ACK, ack));
-
-    QCOMPARE(successes.count(), 0);
+    QVERIFY(!error.resultUnknown);
+    QVERIFY(transport.m_sentFrames.isEmpty());
 }
 
 void NetworkAdapterTests::disconnectFailsPendingRequests()
@@ -328,6 +296,25 @@ void NetworkAdapterTests::disconnectFailsPendingRequests()
     QVERIFY(!error.resultUnknown);
 }
 
+void NetworkAdapterTests::restartAckIsIgnoredByUserAdapter()
+{
+    MockTransport transport;
+    BackendClient backend(&transport);
+    backend.start();
+    RealUserNetworkApi api(&backend);
+
+    QSignalSpy profileSuccesses(&api, &IUserNetworkApi::currentUserQuerySucceeded);
+    QSignalSpy failures(&api, &IUserNetworkApi::requestFailed);
+    QJsonObject ack;
+    ack.insert(QStringLiteral("chargerCode"), QStringLiteral("P001"));
+    ack.insert(QStringLiteral("accepted"), true);
+    transport.simulateIncoming(MassageHandler::pack(RESTART_ACK, ack));
+
+    QCOMPARE(profileSuccesses.count(), 0);
+    QCOMPARE(failures.count(), 0);
+}
+
+#if 0 // 旧 117/118/218/219 专用资料协议测试；服务端 v2.4 未提供这些接口
 void NetworkAdapterTests::disconnectDuringNicknameUpdateIsResultUnknown()
 {
     MockTransport transport;
@@ -460,6 +447,8 @@ void NetworkAdapterTests::nicknameAckWithoutOkIsRejected()
     QVERIFY(!error.retryable);
 }
 
+#endif
+
 void NetworkAdapterTests::logoutSendsImmediatelyWithoutAck()
 {
     MockTransport transport;
@@ -553,6 +542,7 @@ void NetworkAdapterTests::malformedLoginResponseDoesNotPolluteSession()
 
 /* 回归（合同 §11 v1.1）：改昵称的应答损坏（缺 nickname）时，
  * 服务端是否已生效不可知 → 必须按结果未知处理，不得当成功 */
+#if 0 // 旧 219 昵称应答测试
 void NetworkAdapterTests::malformedNicknameResponseIsResultUnknown()
 {
     MockTransport transport;
@@ -577,6 +567,7 @@ void NetworkAdapterTests::malformedNicknameResponseIsResultUnknown()
     QVERIFY(!error.retryable);
     QCOMPARE(error.operationId, QStringLiteral("req-11-op"));
 }
+#endif
 
 /* 回归：未连接时登录请求立即失败且必须可重试——
  * 冷启动时 BackendClient 尚在自动重连，不得让用户被卡住 */
