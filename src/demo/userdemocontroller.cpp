@@ -5,6 +5,9 @@
 #include "presentation/pages/auth/loginwindow.h"
 #include "presentation/pages/shell/mainwindow.h"
 #include "presentation/pages/profile/profileeditwindow.h"
+#include "presentation/pages/home/navigationwindow.h"
+#include "presentation/pages/home/stationdetailwindow.h"
+#include "presentation/pages/profile/walletrechargewindow.h"
 
 namespace
 {
@@ -51,6 +54,9 @@ UserDemoController::UserDemoController(MockUserNetworkApi *network,
     , m_login(login)
     , m_profileEdit(profileEdit)
     , m_mainWindow(mainWindow)
+    , m_stationDetail(new StationDetailWindow(mainWindow))
+    , m_navigation(new NavigationWindow(mainWindow))
+    , m_walletRecharge(new WalletRechargeWindow(mainWindow))
     , m_registeredPhones{QStringLiteral("13800000000"),
                          QStringLiteral("13900000000"),
                          QStringLiteral("13600000000"),
@@ -103,6 +109,33 @@ UserDemoController::UserDemoController(MockUserNetworkApi *network,
             == SubmitState::Success) {
             showOnly(m_mainWindow);
         }
+    });
+
+    connect(m_mainWindow, &MainWindow::stationDetailsRequested,
+            this, [this](const QString &) {
+        m_mainWindow->renderSecondaryPage(m_stationDetail);
+    });
+    connect(m_stationDetail, &StationDetailWindow::backRequested,
+            this, [this] {
+        m_mainWindow->renderPrimaryPage(MainWindow::PrimaryPage::Home);
+    });
+    connect(m_stationDetail, &StationDetailWindow::navigationRequested,
+            this, [this] {
+        m_mainWindow->renderSecondaryPage(m_navigation);
+    });
+    connect(m_navigation, &NavigationWindow::backRequested,
+            this, [this] {
+        m_mainWindow->renderSecondaryPage(m_stationDetail);
+    });
+    connect(m_mainWindow, &MainWindow::rechargePageRequested,
+            this, [this] {
+        m_walletRecharge->renderBalance(
+            m_binder->currentProfileViewState().balanceText);
+        m_mainWindow->renderSecondaryPage(m_walletRecharge);
+    });
+    connect(m_walletRecharge, &WalletRechargeWindow::backRequested,
+            this, [this] {
+        m_mainWindow->renderPrimaryPage(MainWindow::PrimaryPage::Profile);
     });
 }
 

@@ -10,6 +10,9 @@ class LoginWindow;
 class MainWindow;
 class MockUserNetworkApi;
 class ProfileEditWindow;
+class NavigationWindow;
+class StationDetailWindow;
+class WalletRechargeWindow;
 class QWidget;
 
 /* Demo 专用页面接线器。它只存在于 CONFIG+=user_demo 和 UI 集成测试中，
@@ -38,6 +41,9 @@ private:
     LoginWindow *m_login;
     ProfileEditWindow *m_profileEdit;
     MainWindow *m_mainWindow;
+    StationDetailWindow *m_stationDetail;
+    NavigationWindow *m_navigation;
+    WalletRechargeWindow *m_walletRecharge;
     QSet<QString> m_registeredPhones;
     QSet<QString> m_failedOnce;
 };
