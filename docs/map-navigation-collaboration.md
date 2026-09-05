@@ -1,8 +1,8 @@
-# 地图与导航双人协作约定
+# 地图与导航最终合同
 
-日期：2026-09-05；代码核对基线：`56a5614`。状态：**并行开发约定草案；完成第 9.1 节的接口冻结提交后开始并行编码**。
+日期：2026-09-05；代码核对基线：`56a5614`。状态：**客户端公共合同已由用户确认；记录接口冻结提交后生效。第 10.2 节外部接缝允许在实现阶段逐项确认，但只能通过独立 `contract:` 变更更新。**
 
-本文供 UI 负责人和逻辑负责人共同开发首页地图、站点详情与路线导航使用。已有事实、设计要求和新增接口建议分别标明；新增接口不能被当作已有代码调用。
+本文是首页地图、站点详情与路线导航的唯一权威合同，合并原协作约定与接口审核稿。合同同时约束 UI、逻辑、网络和集成负责人；接口冻结前新增声明不能被当作已接入实现调用。其他文档与本文冲突时，以本文为准并同步修订旧文档。
 
 ## 1. 依据与本轮范围
 
@@ -44,7 +44,7 @@ void backRequested();
 
 ## 3. 分工与文件所有权
 
-| 负责人 | 负责内容 | 建议位置（新路径待确认） |
+| 负责人 | 负责内容 | 合同位置 |
 |---|---|---|
 | UI | 页面布局、地图容器、标记/路线绘制、加载/错误/空态、用户输入、返回意图 | 现有 `pages/home/`、`ui/home/`；首页暂留 shell，拆分另做提交 |
 | UI | 可复用 MapViewWidget、受控 WebChannel 展示桥、地图 HTML/JS | `src/presentation/widgets/map/`、`resources/map/` |
@@ -59,9 +59,9 @@ void backRequested();
 
 地图 JS 允许 SDK 绘制地图与接收地图手势；业务查询经 Binder → M2 → 适配器。若供应商 SDK 必须在 JS 发出定位/路线请求，应把该能力实现为受控供应商桥，由逻辑层发起带 requestId 的请求，回传规范化结果；不能让页面点击直接承担查询规则。具体桥方案在真实接入前冻结。
 
-## 4. 拟议数据合同
+## 4. 公共数据合同
 
-以下名称和字段是新增建议，不是现有头文件。领域类型放 common/modules，展示类型放 presentation/contracts；业务层不包含展示头文件。
+以下名称和字段是本合同的冻结候选，已落入第 4.1 节列出的公共头文件。领域类型放 common/modules，展示类型放 presentation/contracts；业务层不包含展示头文件。审核通过后字段只能通过单独的 `contract:` 提交修改。
 
 | 类型 | 最少字段与语义 |
 |---|---|
@@ -78,15 +78,29 @@ void backRequested();
 
 坐标字段始终使用 latitude/longitude 命名，不使用含糊 x/y。供应商数组顺序由适配器转换。原始 WGS-84 或其他坐标必须附来源，由逻辑侧统一转为 GCJ-02，已转换数据不得重复转换。用户拒绝定位或 VM 不支持定位时提供手动起点，不把深圳默认中心伪装为当前位置。
 
-## 5. 页面与 Binder 接口候选
+### 4.1 唯一声明位置
 
-页面发意图，Binder 接收同名槽；以下新增接口需双方签字确认后落头文件。保留现有窗口类名，不要求先拆分所有页面。
+| 文件 | 合同职责 |
+|---|---|
+| `src/modules/map/maptypes.h` | GCJ-02 坐标、定位、地理编码、出行方式与路线 DTO |
+| `src/modules/map/imapservice.h` | 定位、地址解析、路线规划和取消接口 |
+| `src/modules/charger/chargertypes.h` | 站点分页、站点详情及电桩 DTO |
+| `src/modules/charger/ichargerservice.h` | 站点列表、详情和取消接口 |
+| `src/presentation/contracts/mapviewstates.h` | 首页、详情和路线页面的纯展示状态 |
+| `src/app/imapuibinder.h` | 页面意图、状态发布与地图页面目标边界 |
+
+Mock 不建立第二套接口。Mock 实现 `IMapService` 和 `IChargerService`，固定数据只放测试或 Demo fixture，不得进入生产 Widget、正式 Service 或公共 DTO 头文件。
+
+## 5. 页面与 Binder 接口
+
+页面发意图，Binder 接收同名槽。保留现有窗口类名，本轮不强制拆分 HomePage。
 
 ```cpp
 // 首页：当前由 MainWindow 暴露
 void locateRequested();
 void stationSearchRequested(const QString &keyword);
 void stationSearchRetryRequested();
+void stationSearchCleared();
 void searchAreaRequested(const GeoBounds &bounds);
 void stationSelected(const QString &stationId); // 标记选择、列表同步
 // stationDetailsRequested(stationId) 已存在：打开详情
@@ -98,8 +112,14 @@ void stationRefreshRequested();
 // NavigationWindow 新增
 void routeModeRequested(TravelMode mode);
 void manualOriginRequested(const QString &address);
+void originCandidateSelected(const QString &candidateId);
 void routeRetryRequested();
 // backRequested() 已存在
+
+// 受控地图展示桥事件：只更新展示状态/视野，不直接查询站点
+void mapReady();
+void mapLoadFailed();
+void mapViewportChanged(const GeoBounds &bounds);
 
 // 展示入口，均为新增
 void MainWindow::renderHome(const HomeMapViewState &state);
@@ -107,9 +127,9 @@ void StationDetailWindow::render(const StationDetailViewState &state);
 void NavigationWindow::render(const NavigationViewState &state);
 ```
 
-旧 navigationRequested 可临时映射为 Driving；新增入口启用后断开旧连接，不能同一次点击提交两次。默认方式最终需双方确认。chargeRequested 暂保留，后续携带 chargerId 的新接口由充电合同定义；未选择 Charger 时不能默认取第一项启动。
+旧 navigationRequested 在集成期临时映射为 Driving；新增入口启用后断开旧连接，不能同一次点击提交两次。默认方式固定为 Driving。chargeRequested 暂保留，后续携带 chargerId 的新接口由充电合同定义；未选择 Charger 时不能默认取第一项启动。
 
-拟议 IMapUiBinder 对外发出 `homeStateChanged(state)`、`stationDetailStateChanged(state)`、`navigationStateChanged(state)`，以及 `pageRequested(MapPageTarget target, QString stationId)`。MapPageTarget 建议 Home/StationDetail/Navigation；由 app 适配现有 M4，不把该枚举直接塞入 M1 用户导航枚举。Widget 指针只在展示装配处使用。
+`IMapUiBinder` 对外发出 `homeStateChanged(state)`、`stationDetailStateChanged(state)`、`navigationStateChanged(state)`，以及 `pageRequested(MapPageTarget target, QString stationId)`。MapPageTarget 固定为 Home/StationDetail/Navigation；由 app 适配现有 M4，不把该枚举塞入 M1 用户导航枚举。`activateHome()` 由 app/M4 在首页激活时调用，不是页面点击信号。Widget 指针只在展示装配处使用。
 
 | ViewState | 必需内容 |
 |---|---|
@@ -121,7 +141,7 @@ void NavigationWindow::render(const NavigationViewState &state);
 
 render 不发请求、不发意图；程序更新地图中心/标记不得回触发查询。地图拖动仅显示“搜索当前地图区域”，点击后才发查询。地图 ready 前缓存最后一份展示快照，ready 后重放一次，避免不断新增标记或重复连接。
 
-首页顶部搜索栏固定为“城市入口 + 搜索输入框 + 搜索按钮”。输入框右侧必须是明确的 `btnStationSearch`，点击按钮或在输入框按回车都只发出一次 `stationSearchRequested(keyword)`；空关键词是否允许查询由冻结合同决定，UI 不把定位按钮当作搜索确认。定位入口 `btnLocateMap` 放在地图区域右下角，使用悬浮圆形按钮，点击发出 `locateRequested()`；定位中显示忙碌态并阻止重复点击。地图被用户拖动后，地图底部居中显示独立的 `btnSearchArea`，它与定位及关键词搜索是三个不同意图。
+首页顶部搜索栏固定为“城市入口 + 搜索输入框 + 搜索按钮”。输入框右侧必须是明确的 `btnStationSearch`，点击按钮或在输入框按回车都只发出一次 `stationSearchRequested(keyword)`；空关键词不提交查询，清除搜索通过独立 `stationSearchCleared()` 意图恢复附近/当前视野结果。UI 不把定位按钮当作搜索确认。定位入口 `btnLocateMap` 放在地图区域右下角，使用悬浮圆形按钮，点击发出 `locateRequested()`；定位中显示忙碌态并阻止重复点击。地图被用户拖动后，地图底部居中显示独立的 `btnSearchArea`，它与定位及关键词搜索是三个不同意图。
 
 ### 5.1 关键词搜索接口与界面结果
 
@@ -159,9 +179,9 @@ Search button / Return
 
 站点数量不得写死。`HomeMapViewState.stations` 和 `markers` 是动态集合，零个、一个、三个或更多站点使用同一套渲染逻辑；页面不得依赖 `stationButton1/2/3`、固定数组长度或列表下标作为身份。全量刷新时按 stationId 更新、创建和删除行与标记；分页追加时按 stationId 去重。若当前 selectedStationId 仍存在，把对应行移动到第一行并保持浮起选中态；若已不存在，清除选择且不自动选择第一项。列表较长时允许滚动，增加站点不得压缩每行高度或遮挡底部导航。
 
-## 6. M2 与供应商异步接口候选
+## 6. M2 与供应商异步接口
 
-沿用现有 `RequestContext`、`ClientError`。以下是 QObject 槽/信号的签名草案，相关 DTO 待定义；不规定服务端消息码。
+沿用现有 `RequestContext`、`ClientError`。以下是 QObject 槽/信号的冻结签名；服务端消息码和 JSON 属于第 10.2 节待确认的网络协议接缝。
 
 ```cpp
 // IChargerService：调用
@@ -191,6 +211,8 @@ Binder 按定位、列表、详情、路线分别保存最新 requestId 和会�
 
 地图服务密钥缺失、无定位权限、无定位来源、无路线、网络失败、供应商限流和无效坐标需要可区分错误；Binder 把 ClientError 转为 UI 文案和 canRetry，页面不解析供应商错误码。读取失败不清空搜索草稿。
 
+供应商能力必须始终经 `IMapService` 发起并返回规范化 DTO。底层适配器可依据最终腾讯地图方案使用 WebService 或受控 JS provider bridge；页面点击不得直接调用供应商接口。WebChannel 只传输受控事件和经过校验的数据。
+
 ## 7. 页面流程与降级
 
 1. 首页显示时请求地图初始化与站点数据，各自独立显示状态。定位失败可选手动地点或浏览地图。
@@ -202,6 +224,29 @@ Binder 按定位、列表、详情、路线分别保存最新 requestId 和会�
 7. 切换驾车/步行产生新请求。路线空结果显示“暂无可用路线”；失败提供重试并保留起终点。
 8. 导航返回详情保留 stationId；详情返回首页保留地图视野、当前第一行的选中站点与筛选。M4 维护来源，app 调用 pageStack 展示入口。
 9. 地图瓦片/脚本/路线失败时仍展示站点文字、地址及允许的充电入口。Frozen 禁止开始新充电和新预约，但不能据此禁止浏览地图；Unknown 权限由逻辑给出，UI 只渲染。
+
+### 7.1 完整业务时序
+
+1. M4/app 激活首页并调用 `IMapUiBinder::activateHome()`。
+2. Binder 分别进入地图 Loading、定位 Loading、站点 Loading；三套状态互不覆盖。
+3. 地图桥通过 `mapReady()` 或 `mapLoadFailed()` 回报展示结果。地图 ready 前缓存最后一份快照，ready 后重放一次。
+4. 定位成功后，Binder 使用 GCJ-02 坐标生成 `StationQuery`；定位失败时保留站点文字区域并允许手动起点或浏览地图。
+5. 地图拖动结束通过 `mapViewportChanged(bounds)` 保存视野并显示“搜索当前地图区域”，只有用户确认后才调用 `searchAreaRequested(bounds)`。
+6. 用户按稳定 stationId 联动标记与列表，通过独立详情入口调用 `stationDetailsRequested(stationId)`。
+7. Binder 生成新 requestId 查询详情；只有 requestId、页面世代和会话世代均匹配的结果可以渲染。
+8. 详情坐标有效后允许路线预览。起点未知时先定位或输入手动地址；地理编码多候选时由用户按 candidateId 选择。
+9. Binder 使用当前起点、站点权威坐标、stationId 和 TravelMode 构造 RouteQuery。切换起点、站点或方式时取消旧请求并生成新 requestId。
+10. 路线成功后展示折线、距离、时长和步骤；空结果显示 Empty，失败显示 Error 和可重试能力。
+11. 导航返回详情保留 stationId；详情返回首页保留地图视野、搜索草稿和选中站点。
+12. 退出或会话失效时提升会话世代、取消在途请求并清除精确位置及路线状态。
+
+### 7.2 异步终态规则
+
+- 定位、站点列表、详情、地理编码和路线分别保存最新 requestId。
+- 地图与站点查询是只读操作，operationId 为空；不使用 ResultUnknown。
+- `cancel()` 是尽力取消，响应处理仍必须检查 requestId 和世代。
+- 每个请求只能有一个终态；失败的 ClientError 必须回填 requestId。
+- 错误不得清空搜索草稿。刷新可保留旧数据，但必须明确“正在更新/数据可能过期”。
 
 ## 8. WebEngine、资源与安全协作
 
@@ -334,15 +379,50 @@ git diff --name-only FREEZE_COMMIT...HEAD
 - [ ] 网络失败、Key 缺失、地图加载失败、无路线、超时可恢复；不伪造充电成功。
 - [ ] 登录、资料、钱包现有链路无回归；Qt 5/Qt 6 及 WebEngine 实际版本分开记录。
 
-每次交接附源码提交号、接口变更、构建命令、BitDev/Ubuntu/Qt 版本、通过项和未验证项。Windows 文件检查不是运行验收。本文件仅新增设计约定，未执行运行测试。
+每次交接附源码提交号、接口变更、构建命令、BitDev/Ubuntu/Qt 版本、通过项和未验证项。Windows 文件检查不是运行验收。公共合同冒烟测试已在 BitDev / Ubuntu 22.04 / Qt 5.15.3 通过 5/5；真实地图、站点协议与 GUI 尚未验证。
 
-## 10. 冻结与并行记录
+## 10. 最终审核与冻结记录
 
-待双方确认：SDK/定位方案、GeoPoint 及分页类型、地址多候选回调、旧导航信号兼容期限、出行默认方式、IMapUiBinder 名称、M4 扩展方式、Qt/WebEngine 验收 Kit、共享文件编辑人。
+### 10.1 本合同采用的默认决策
+
+以下决定已于 2026-09-05 获用户确认，作为客户端公共合同冻结值：
+
+| 项目 | 推荐冻结值 |
+|---|---|
+| 坐标 | 跨层统一 GCJ-02；未知值使用 `std::optional` |
+| 定位 | 优先设备定位；拒绝/不可用时使用手动地址，不提供伪当前位置 |
+| 路线供应商边界 | 统一经过 IMapService；适配器可使用 WebService 或受控 JS bridge |
+| 默认出行方式 | Driving |
+| 地址多候选 | 用户按 candidateId 选择，不自动取第一项 |
+| 站点分页 | cursor/nextCursor/hasMore，默认 pageSize 20 |
+| 站点行点击 | 选择并居中；独立详情入口打开详情 |
+| 首页结构 | 本轮保留 MainWindow，不强制拆 HomePage |
+| 旧 navigationRequested | 集成期映射 Driving；新接口接通后立即断开旧连接 |
+| Binder | 使用 IMapUiBinder；MapPageTarget 与 M1 NavigationTarget 分离 |
+| Qt 验收环境 | BitDev / Ubuntu 22.04.3 / Qt 5.15.3 / WebEngineWidgets |
+| Mock | 实现正式接口；固定数据只在 tests/demo fixture |
+| 空关键词 | 不提交查询；清除关键词使用独立 stationSearchCleared 意图 |
+
+### 10.2 实现阶段逐项确认的外部接缝
+
+以下项目不能由客户端单方面推断，允许在实现阶段逐项与网络/服务端负责人确认。未确认项不得进入真实适配器；确认结果必须通过独立 `contract:` 变更写回本文。只要不改变第 4—6 节的客户端 DTO、ViewState 和接口签名，UI 分支可以继续开发：
+
+1. 站点列表和站点详情的正式消息码、请求 JSON 和响应 JSON。
+2. 服务端稳定 stationId。当前协议文档显示 stationName 是数据库主键，不满足本合同的稳定 ID 要求；需决定新增 ID 还是冻结 stationName 为不可变 ID。
+3. chargerId 与现有 chargerCode 是否一一对应；推荐客户端 chargerId 直接承载 chargerCode。
+4. 服务端是否支持 cursor 分页；不支持时是否明确首版只返回单页，并由适配器设置 hasMore=false。
+5. 价格是否始终使用 priceCents（分/度），以及价格缺失时的展示与业务语义。
+6. 成功和失败应答是否回显 requestId；若不回显，服务端必须确认同类请求防重规则，适配器采用保守关联并依赖超时兜底。
+7. 腾讯地图正式 API/SDK 版本、Key 类型及域名/配额限制。
+8. 定位来源：虚拟机无设备定位时是否以手动地址作为首版正式路径。
+9. 路线实现采用腾讯地图 WebService 还是 JS DirectionsService；无论选择哪种，调用边界保持 IMapService 不变。
+10. 共享文件唯一编辑人与集成负责人。
+
+### 10.3 审核记录
 
 共同起始提交：`56a5614`。
 
-接口冻结提交：待填写。
+接口冻结提交：待审核后填写。
 
 UI 分支及负责人：`feature/map-navigation-ui` / 待填写。
 
@@ -350,6 +430,8 @@ UI 分支及负责人：`feature/map-navigation-ui` / 待填写。
 
 集成分支及负责人：待填写。
 
-UI 确认人/日期：待填写。逻辑确认人/日期：待填写。
+UI 确认人/日期：UI 负责人 / 2026-09-05。逻辑确认人/日期：逻辑负责人 / 2026-09-05。网络确认人/日期：按第 10.2 节逐项填写。用户确认日期：2026-09-05。
+
+接口冻结提交条件：UI 确认 ViewState 和页面意图；逻辑确认 DTO、校验、取消与世代规则；合同测试在 BitDev/Qt 5.15.3 通过。第 10.2 节不再整体阻塞客户端公共合同冻结，但每个真实网络/腾讯地图适配功能必须先确认其依赖项。记录冻结提交号后再创建并行分支。
 
 开发前核对实际分支与远程引用，不把旧文档中的共同基线当作当前 HEAD。UI 与逻辑各在约定分支工作，合并前先交换小提交；不要整文件覆盖 `.pro`、MainWindow 或 Binder。迁移、接口、UI 和真实适配分开提交。Qt Creator `.pro.user`、构建产物、本机测试夹具与 AGENTme.md 保持本地；伙伴已纳入版本管理的 tests 不擅自移除。提交、推送由用户明确发起，不强推公共分支。
