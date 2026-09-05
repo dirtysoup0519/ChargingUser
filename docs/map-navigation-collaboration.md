@@ -86,6 +86,7 @@ void backRequested();
 // 首页：当前由 MainWindow 暴露
 void locateRequested();
 void stationSearchRequested(const QString &keyword);
+void stationSearchRetryRequested();
 void searchAreaRequested(const GeoBounds &bounds);
 void stationSelected(const QString &stationId); // 标记选择、列表同步
 // stationDetailsRequested(stationId) 已存在：打开详情
@@ -112,13 +113,51 @@ void NavigationWindow::render(const NavigationViewState &state);
 
 | ViewState | 必需内容 |
 |---|---|
-| HomeMapViewState | 独立的 mapStatus/locationStatus/stationsStatus、markers、stations、selectedStationId、camera、可选当前位置、搜索草稿、消息与重试能力 |
+| HomeMapViewState | 独立的 mapStatus/locationStatus/searchStatus/stationsStatus、markers、stations、selectedStationId、cameraCommand、可选当前位置、queryInput、submittedQuery、searchMessage、canSearch、canRetrySearch |
 | StationDetailViewState | stationId、详情、status、message、canRetry、canNavigate、canCharge、disabledReason |
 | NavigationViewState | stationId、起终点文案与坐标、mode、routeStatus、可选 route、message、canRetry、canChangeMode |
 
 展示状态建议 Idle/Loading/Ready/Empty/Error，并通过能力字段控制按钮。地图加载失败与站点查询失败分别展示；路线查询是只读操作，不套用充值等变更操作的 ResultUnknown 语义。刷新时可保留旧数据但明确“正在更新/数据可能过期”；切换目的地后不得把上一目的地路线当作新结果。
 
 render 不发请求、不发意图；程序更新地图中心/标记不得回触发查询。地图拖动仅显示“搜索当前地图区域”，点击后才发查询。地图 ready 前缓存最后一份展示快照，ready 后重放一次，避免不断新增标记或重复连接。
+
+首页顶部搜索栏固定为“城市入口 + 搜索输入框 + 搜索按钮”。输入框右侧必须是明确的 `btnStationSearch`，点击按钮或在输入框按回车都只发出一次 `stationSearchRequested(keyword)`；空关键词是否允许查询由冻结合同决定，UI 不把定位按钮当作搜索确认。定位入口 `btnLocateMap` 放在地图区域右下角，使用悬浮圆形按钮，点击发出 `locateRequested()`；定位中显示忙碌态并阻止重复点击。地图被用户拖动后，地图底部居中显示独立的 `btnSearchArea`，它与定位及关键词搜索是三个不同意图。
+
+### 5.1 关键词搜索接口与界面结果
+
+关键词搜索的唯一正式链路是：
+
+```text
+Search button / Return
+  → stationSearchRequested(keyword)
+  → IMapUiBinder 生成 RequestContext.requestId
+  → IChargerService::queryStations(ctx, StationQuery{ keyword, ... })
+  → stationsReady(ctx, StationPage) / requestFailed(ClientError)
+  → IMapUiBinder 仅接受当前 requestId
+  → HomeMapViewState
+  → MainWindow::renderHome(state)
+```
+
+页面只 trim 输入并发意图，不负责模糊匹配、拼接查询参数或从现有按钮文本中过滤。Binder 在提交时把输入保存为 `queryInput` 和 `submittedQuery`；搜索期间 `searchStatus=Loading`、`canSearch=false`，搜索按钮显示“搜索中…”并阻止回车和按钮造成双提交。用户继续编辑时只更新本地输入草稿，不改变已提交请求的关键词。
+
+成功结果按以下规则映射：
+
+| 结果 | 地图行为 | 下方站点行 |
+|---|---|---|
+| 1 个站点且有坐标 | `cameraCommand=CenterStation(stationId)`，移动并缩放到该标记；`selectedStationId=stationId` | 替换为该结果并置于第一行，显示浮起选中态 |
+| 多个有坐标站点 | `cameraCommand=FitStations(stationIds)`，调整视野完整包含结果标记 | 用结果集合替换当前搜索结果，初始保持服务返回顺序；不自动选择第一项 |
+| 结果中部分无坐标 | 地图只显示并包含有坐标项，不为缺坐标项制造默认标记 | 所有合法文字结果仍显示；缺坐标行可进入详情，但地图定位入口禁用并显示原因 |
+| 0 个站点 | 地图保持用户搜索前的中心和缩放，不跳到默认城市 | 列表显示“未找到相关充电站”，提供清除关键词/重新搜索入口 |
+
+`cameraCommand` 是一次性展示命令，至少包含 `None`、`CenterStation`、`FitStations` 及目标 stationId 集合；每条命令带递增 `cameraRevision`。UI 只在 revision 变化时执行一次，普通 render 不重复移动地图。执行程序性地图移动不得显示“搜索当前区域”，只有用户拖动才显示。
+
+搜索结果到详情的交互固定为：点击站点行先按 stationId 选中对应标记并把地图居中；点击行内详情箭头发出 `stationDetailsRequested(stationId)`，由 M4 打开该站点详情。点击地图标记则把对应行移到第一行。搜索、地图和列表全程只传 stationId，不传行号或站点名称作为身份。
+
+搜索失败时 `searchStatus=Error`，`searchMessage` 使用 Binder 提供的可展示文案，`canSearch=true`，`canRetrySearch` 由错误的 retryable 映射。页面保留用户输入、搜索前地图、已有标记和已有列表，并在搜索栏下显示非阻塞错误条；有可重试错误时显示“重试”，触发 `stationSearchRetryRequested()`，由 Binder 使用上次 submittedQuery 重新请求。页面不得清空旧结果、跳转地图、自动改关键词或解析 ClientError.code。
+
+新搜索发出后，旧请求即使随后成功也不能覆盖当前结果。返回首页时保留 queryInput、submittedQuery、搜索结果、selectedStationId 与地图视野；清除搜索由独立用户操作触发，不因进入详情自动清除。
+
+站点数量不得写死。`HomeMapViewState.stations` 和 `markers` 是动态集合，零个、一个、三个或更多站点使用同一套渲染逻辑；页面不得依赖 `stationButton1/2/3`、固定数组长度或列表下标作为身份。全量刷新时按 stationId 更新、创建和删除行与标记；分页追加时按 stationId 去重。若当前 selectedStationId 仍存在，把对应行移动到第一行并保持浮起选中态；若已不存在，清除选择且不自动选择第一项。列表较长时允许滚动，增加站点不得压缩每行高度或遮挡底部导航。
 
 ## 6. M2 与供应商异步接口候选
 
@@ -155,7 +194,7 @@ Binder 按定位、列表、详情、路线分别保存最新 requestId 和会�
 ## 7. 页面流程与降级
 
 1. 首页显示时请求地图初始化与站点数据，各自独立显示状态。定位失败可选手动地点或浏览地图。
-2. 地图区域必须支持用户按下拖动和平移；拖动结束后保留新视野并显示“搜索当前地图区域”，不能在每个移动事件中连续请求站点。
+2. 用户在顶部输入关键词后，通过右侧“搜索”按钮或回车确认；两种操作提交同一个 stationSearchRequested(keyword)，一次动作只产生一次请求。地图区域必须支持用户按下拖动和平移；拖动结束后保留新视野并显示“搜索当前地图区域”，不能在每个移动事件中连续请求站点。
 3. 地图标记与下方站点行必须使用同一个稳定 `stationId`。点击地图标记后，页面发出 `stationSelected(stationId)`，把对应站点行从当前位置移动到列表第一行，并以边框、阴影或底色形成“浮起”选中态；不得仅改变地图标记而让列表保持无反馈。
 4. “提起显示”会改变当前展示顺序：最新选中的站点始终位于第一行，其余站点保持移动前的相对顺序，不复制站点行。再次选择其他标记时，取消旧行高亮并把新站点移动到第一行。页面必须按 `stationId` 移动已有数据，不能通过重新请求或名称匹配实现。程序为了同步列表而移动地图或调整列表时不得再次发出选择意图，避免循环。
 5. 点击下方站点行时执行相反联动：选中同 stationId 的地图标记，并把地图平移到该站点；点击行内进入箭头或明确的详情区域才发出 `stationDetailsRequested(stationId)`。若产品最终决定整行进入详情，须在冻结记录中统一，不能同一版本出现两种行为。
@@ -278,7 +317,14 @@ git diff --name-only FREEZE_COMMIT...HEAD
 
 - [ ] 首页真实地图与站点列表独立加载；无站点空态、地图失败仍能看文字详情。
 - [ ] 标记和列表 stationId 一致；三个不同站点不会显示同一份固定详情。
+- [ ] 分别用 0、1、3、20 个站点验证动态创建、删除和分页追加；代码不依赖固定按钮名、数量或下标。
+- [ ] 数据刷新后按 stationId 保留选中站点并置顶；选中站点消失时清除选择，不误选第一项。
 - [ ] 地图可拖动；拖动期间不连续请求，结束后可显式搜索当前视野。
+- [ ] 搜索框右侧为搜索按钮；点击与回车均可确认且单次操作只发一个关键词搜索意图。
+- [ ] 单结果搜索使地图居中并置顶选中行；多结果搜索调整视野包含所有有效标记且不擅自选择第一项。
+- [ ] 搜索成功但无结果时地图不跳转，列表显示明确空态；含无坐标站点时文字行仍可查看详情。
+- [ ] 搜索失败保留输入、地图和旧列表并显示错误/重试；迟到的旧请求结果不能覆盖新搜索结果。
+- [ ] 定位按钮位于地图右下角；定位、关键词搜索和“搜索当前区域”分别发出独立意图，互不代替。
 - [ ] 点击任一标记时，对应站点行移动到列表第一行并呈浮起选中态；其余站点保持相对顺序，切换标记后旧选中态清除且列表不产生重复项。
 - [ ] 点击站点行时对应标记选中并居中；程序同步不会形成“标记选择 → 行选择 → 标记选择”的重复信号循环。
 - [ ] 定位允许/拒绝/不可用均可操作；手动地址及无效坐标有明确处理。
