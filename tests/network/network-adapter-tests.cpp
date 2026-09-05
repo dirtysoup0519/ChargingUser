@@ -117,6 +117,11 @@ private slots:
     void nicknameTimeoutIsResultUnknown();
     void lateResponseAfterTimeoutIgnored();
     void disconnectFailsPendingRequests();
+    void disconnectDuringNicknameUpdateIsResultUnknown();
+    void ambiguousErrorWithoutEchoIsDropped();
+    void profileAckForWrongUserIsRejected();
+    void profileAckWithoutPhoneIsRejected();
+    void nicknameAckWithoutOkIsRejected();
     void logoutSendsImmediatelyWithoutAck();
     void sendFailureReportsRequestFailed();
     void reconnectsAfterInitialConnectFailure();
@@ -316,7 +321,143 @@ void NetworkAdapterTests::disconnectFailsPendingRequests()
     const ClientError error =
         qvariant_cast<ClientError>(failures.takeFirst().at(0));
     QCOMPARE(error.code, QStringLiteral("connection-lost"));
+    // 合同 §12.1 第 3 条：断线错误必须携带 requestId，否则上层无法释放在途请求
+    QCOMPARE(error.requestId, QStringLiteral("req-7"));
+    QCOMPARE(error.operationId, QStringLiteral("req-7-op"));
     QVERIFY(error.retryable);
+    QVERIFY(!error.resultUnknown);
+}
+
+void NetworkAdapterTests::disconnectDuringNicknameUpdateIsResultUnknown()
+{
+    MockTransport transport;
+    BackendClient backend(&transport);
+    backend.start();
+    RealUserNetworkApi api(&backend);
+    api.setRequestTimeoutMs(5000);
+
+    QSignalSpy failures(&api, &IUserNetworkApi::requestFailed);
+    api.updateNickname(QStringLiteral("U13800138000"), QStringLiteral("老王"),
+                       makeContext(QStringLiteral("req-13")));
+    transport.simulateDisconnected();
+
+    QCOMPARE(failures.count(), 1);
+    const ClientError error =
+        qvariant_cast<ClientError>(failures.takeFirst().at(0));
+    QCOMPARE(error.code, QStringLiteral("connection-lost"));
+    QCOMPARE(error.requestId, QStringLiteral("req-13"));
+    QCOMPARE(error.operationId, QStringLiteral("req-13-op"));
+    // 断线时 118 结果不可知（服务端可能已生效）：按结果未知处理，不得自动重试
+    QVERIFY(error.resultUnknown);
+    QVERIFY(!error.retryable);
+}
+
+void NetworkAdapterTests::ambiguousErrorWithoutEchoIsDropped()
+{
+    MockTransport transport;
+    BackendClient backend(&transport);
+    backend.start();
+    RealUserNetworkApi api(&backend);
+    api.setRequestTimeoutMs(5000);
+
+    QSignalSpy failures(&api, &IUserNetworkApi::requestFailed);
+    api.queryCurrentUser(QStringLiteral("U13800138000"),
+                         makeContext(QStringLiteral("req-14")));
+    api.updateNickname(QStringLiteral("U13800138000"), QStringLiteral("老王"),
+                       makeContext(QStringLiteral("req-15")));
+
+    // 无回显 requestId 的 3xx：两个在途请求无法可靠归属 → 丢弃，交超时兜底
+    QJsonObject err;
+    err.insert(QStringLiteral("code"), BIZ_ERR_DB);
+    transport.simulateIncoming(MassageHandler::pack(DB_ERROR, err));
+
+    QCOMPARE(failures.count(), 0);
+}
+
+void NetworkAdapterTests::profileAckForWrongUserIsRejected()
+{
+    MockTransport transport;
+    BackendClient backend(&transport);
+    backend.start();
+    RealUserNetworkApi api(&backend);
+    api.setRequestTimeoutMs(5000);
+
+    QSignalSpy successes(&api, &IUserNetworkApi::currentUserQuerySucceeded);
+    QSignalSpy failures(&api, &IUserNetworkApi::requestFailed);
+    api.queryCurrentUser(QStringLiteral("U13800138000"),
+                         makeContext(QStringLiteral("req-16")));
+
+    // username 与请求不符：疑似串号，按应答损坏处理（合同 §12.1 第 6 条）
+    QJsonObject ack;
+    ack.insert(QStringLiteral("username"), QStringLiteral("U99999999999"));
+    ack.insert(QStringLiteral("phone"), QStringLiteral("13800138000"));
+    ack.insert(QStringLiteral("requestId"), QStringLiteral("req-16"));
+    transport.simulateIncoming(MassageHandler::pack(PROFILE_ACK, ack));
+
+    QCOMPARE(successes.count(), 0);
+    QCOMPARE(failures.count(), 1);
+    const ClientError error =
+        qvariant_cast<ClientError>(failures.takeFirst().at(0));
+    QCOMPARE(error.code, QStringLiteral("bad-response"));
+    QCOMPARE(error.requestId, QStringLiteral("req-16"));
+    QVERIFY(error.retryable);
+}
+
+void NetworkAdapterTests::profileAckWithoutPhoneIsRejected()
+{
+    MockTransport transport;
+    BackendClient backend(&transport);
+    backend.start();
+    RealUserNetworkApi api(&backend);
+    api.setRequestTimeoutMs(5000);
+
+    QSignalSpy successes(&api, &IUserNetworkApi::currentUserQuerySucceeded);
+    QSignalSpy failures(&api, &IUserNetworkApi::requestFailed);
+    api.queryCurrentUser(QStringLiteral("U13800138000"),
+                         makeContext(QStringLiteral("req-17")));
+
+    // 缺 phone 的 218 不得整体覆盖会话（否则清空手机号，审查问题 5）
+    QJsonObject ack;
+    ack.insert(QStringLiteral("username"), QStringLiteral("U13800138000"));
+    ack.insert(QStringLiteral("requestId"), QStringLiteral("req-17"));
+    transport.simulateIncoming(MassageHandler::pack(PROFILE_ACK, ack));
+
+    QCOMPARE(successes.count(), 0);
+    QCOMPARE(failures.count(), 1);
+    const ClientError error =
+        qvariant_cast<ClientError>(failures.takeFirst().at(0));
+    QCOMPARE(error.code, QStringLiteral("bad-response"));
+    QCOMPARE(error.requestId, QStringLiteral("req-17"));
+    QVERIFY(error.retryable);
+}
+
+void NetworkAdapterTests::nicknameAckWithoutOkIsRejected()
+{
+    MockTransport transport;
+    BackendClient backend(&transport);
+    backend.start();
+    RealUserNetworkApi api(&backend);
+    api.setRequestTimeoutMs(5000);
+
+    QSignalSpy successes(&api, &IUserNetworkApi::nicknameUpdateSucceeded);
+    QSignalSpy failures(&api, &IUserNetworkApi::requestFailed);
+    api.updateNickname(QStringLiteral("U13800138000"), QStringLiteral("老王"),
+                       makeContext(QStringLiteral("req-18")));
+
+    // 合同 §11.1：219 必须携带 ok=true；nickname 非空但缺 ok → 应答损坏 → 结果未知
+    QJsonObject ack;
+    ack.insert(QStringLiteral("nickname"), QStringLiteral("老王"));
+    ack.insert(QStringLiteral("requestId"), QStringLiteral("req-18"));
+    transport.simulateIncoming(MassageHandler::pack(UPDNICK_ACK, ack));
+
+    QCOMPARE(successes.count(), 0);
+    QCOMPARE(failures.count(), 1);
+    const ClientError error =
+        qvariant_cast<ClientError>(failures.takeFirst().at(0));
+    QCOMPARE(error.code, QStringLiteral("bad-response"));
+    QCOMPARE(error.requestId, QStringLiteral("req-18"));
+    QVERIFY(error.resultUnknown);
+    QVERIFY(!error.retryable);
 }
 
 void NetworkAdapterTests::logoutSendsImmediatelyWithoutAck()

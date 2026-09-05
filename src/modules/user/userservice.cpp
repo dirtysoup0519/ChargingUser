@@ -120,9 +120,11 @@ void UserService::handleLoginSucceeded(const LoginResult &result)
     if (!takePendingRequest(result.requestId, RequestKind::Login, &pending)) {
         return;
     }
-    if (pending.sessionGeneration != m_sessionGeneration) {
-        return;
-    }
+
+    // 换号重登不经过 logout：必须提升会话世代并清空旧在途请求，
+    // 否则旧账号的迟到应答（同世代）会覆盖刚建立的会话（审查问题 3）
+    ++m_sessionGeneration;
+    m_pendingRequests.clear();
 
     LoginResult confirmed = result;
     confirmed.session.authenticated = true;
@@ -142,6 +144,9 @@ void UserService::handleCurrentUserQuerySucceeded(const UserProfileResult &resul
 
     m_session.profile = result.profile;
     m_session.accountStatus = result.accountStatus;
+    // 查询结果是服务端权威状态：改昵称“结果未知”的锁定在此解除，
+    // 用户可依据当前昵称决定是否重试（合同 §11 v1.2 恢复规则，审查问题 4）
+    m_profileUpdateResultUnknown = false;
     emit sessionChanged(m_session);
     emit currentUserRefreshed(result);
 }

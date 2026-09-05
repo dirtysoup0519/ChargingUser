@@ -209,7 +209,7 @@ void RealUserNetworkApi::handleFrame(int msgType, const QJsonObject &payload)
 
     // 合同 §5.1：不能以“得到 QJsonObject”作为成功条件，必须校验必填字段；
     // 缺失字段的应答不得污染会话（合同 §8 测试基线）
-    if (!successPayloadValid(kind, payload)) {
+    if (!successPayloadValid(kind, payload, pending->userId)) {
         ClientError error;
         if (kind == PendingKind::UpdateNickname) {
             // 变更操作的应答损坏 → 无法得知服务端是否已生效 → 结果未知
@@ -278,7 +278,10 @@ void RealUserNetworkApi::handleServerError(int errType, const QJsonObject &paylo
     if (!echoedRequestId.isEmpty()) {
         pending = findPendingForResponseByRequestId(echoedRequestId);
     } else {
-        pending = findMostRecentPending();   // v1.1：3xx 归属最近在途请求
+        // v1.2：无回显的 3xx 仅在全局恰好一个在途请求时才归属。
+        // 查询与改昵称可并发，且存在“请求 A 超时后用户重试 B”的场景，
+        // 归属“最近请求”会把错误算到无关请求头上（审查问题 2），宁可丢弃交超时兜底。
+        pending = findSolePending();
     }
     if (pending == nullptr) {
         return;   // 迟到错误，丢弃
@@ -337,9 +340,21 @@ void RealUserNetworkApi::failAllPending(const QString &code, const QString &mess
     const QList<QString> requestIds = m_pendingOrder;
     for (const QString &requestId : requestIds) {
         PendingRequest *pending = findPendingByRequestId(requestId);
-        if (pending != nullptr) {
-            failPending(*pending, makeError(code, message, true));
+        if (pending == nullptr) {
+            continue;
         }
+        // 失败错误必须回填 requestId/operationId，否则 UserService 无法
+        // 释放对应在途请求，用户会被“请求进行中”永久卡住（审查问题 1）。
+        // 断线时变更操作的结果不可知（服务端可能已生效），按结果未知处理，
+        // 不得标成普通可重试错误（合同 §11 v1.2）。
+        ClientError error = makeError(code, message,
+                                      pending->kind != PendingKind::UpdateNickname);
+        error.requestId = pending->requestId;
+        error.operationId = pending->operationId;
+        if (pending->kind == PendingKind::UpdateNickname) {
+            error.resultUnknown = true;
+        }
+        failPending(*pending, error);
     }
 }
 
@@ -395,15 +410,13 @@ RealUserNetworkApi::PendingRequest *RealUserNetworkApi::findPendingForResponse(
     return nullptr;
 }
 
-RealUserNetworkApi::PendingRequest *RealUserNetworkApi::findMostRecentPending()
+RealUserNetworkApi::PendingRequest *RealUserNetworkApi::findSolePending()
 {
-    for (auto iterator = m_pendingOrder.rbegin(); iterator != m_pendingOrder.rend(); ++iterator) {
-        PendingRequest *pending = findPendingByRequestId(*iterator);
-        if (pending != nullptr) {
-            return pending;
-        }
+    // 0 个：迟到错误，丢弃；≥2 个：无法可靠归属，丢弃（交由各自超时兜底）
+    if (m_pendingRequests.size() != 1) {
+        return nullptr;
     }
-    return nullptr;
+    return &m_pendingRequests.begin().value();
 }
 
 AccountStatus RealUserNetworkApi::parseStatus(const QString &status)
@@ -418,16 +431,25 @@ AccountStatus RealUserNetworkApi::parseStatus(const QString &status)
 }
 
 bool RealUserNetworkApi::successPayloadValid(PendingKind kind,
-                                             const QJsonObject &payload)
+                                             const QJsonObject &payload,
+                                             const QString &requestedUserId)
 {
-    // 217/218 必须携带 username；219 必须携带生效后的 nickname。
+    // 217 必须携带 username（会话尚未建立，phone 缺失不产生污染，按降级处理）；
+    // 218 必须携带 username 且必须回的是请求的那个用户（防串号），
+    //     且必须携带 phone（缺失会把会话手机号清空——审查问题 5）；
+    // 219 必须携带 ok=true（合同 §4.2b 字段定义）与生效后的 nickname；
     // status 等其余字段缺失时按既有语义降级（Unknown 按受限处理），不视为协议错误。
+    const QString username = payload.value(QStringLiteral("username")).toString();
     switch (kind) {
     case PendingKind::Login:
+        return !username.isEmpty();
     case PendingKind::QueryProfile:
-        return !payload.value(QStringLiteral("username")).toString().isEmpty();
+        return !username.isEmpty()
+               && username == requestedUserId
+               && !payload.value(QStringLiteral("phone")).toString().isEmpty();
     case PendingKind::UpdateNickname:
-        return !payload.value(QStringLiteral("nickname")).toString().isEmpty();
+        return payload.value(QStringLiteral("ok")).toBool(false)
+               && !payload.value(QStringLiteral("nickname")).toString().isEmpty();
     }
     return false;
 }

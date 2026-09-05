@@ -17,7 +17,9 @@ private slots:
     void nicknameUpdateKeepsSessionState();
     void propagatesRetryableNetworkFailure();
     void blocksRetryAfterUnknownProfileUpdate();
+    void profileRefreshUnblocksUnknownResult();
     void ignoresLateLoginAfterLogout();
+    void reLoginIsolatesPreviousSessionRequests();
 };
 
 void UserModuleTests::initTestCase()
@@ -189,6 +191,86 @@ void UserModuleTests::ignoresLateLoginAfterLogout()
     QTest::qWait(80);
     QCOMPARE(successes.count(), 0);
     QVERIFY(!service.currentSession().authenticated);
+}
+
+void UserModuleTests::profileRefreshUnblocksUnknownResult()
+{
+    MockUserNetworkApi network;
+    LoginResult login;
+    login.session.profile.userId = QStringLiteral("13800138000");
+    login.session.profile.phone = QStringLiteral("13800138000");
+    network.setLoginResult(login);
+    UserService service(&network);
+    QSignalSpy errors(&service, &IUserService::operationFailed);
+
+    service.loginByPhone(QStringLiteral("13800138000"));
+    QTRY_VERIFY(service.currentSession().authenticated);
+
+    // 改昵称结果未知 → 更新被锁定
+    MockUserNetworkApi::Behavior unknown;
+    unknown.outcome = MockUserNetworkApi::Outcome::ResultUnknown;
+    network.setNicknameBehavior(unknown);
+    service.updateNickname(QStringLiteral("Alice"));
+    QTRY_COMPARE(errors.count(), 1);
+    service.updateNickname(QStringLiteral("Bob"));
+    QCOMPARE(network.nicknameRequestCount(), 1);
+    QCOMPARE(errors.count(), 2);
+
+    // 合同 §12.1 第 4 条：117 查询成功 = 服务端状态已知 → 解除锁定。
+    // 本例查询证明昵称已生效为 Alice，用户可据此决定是否再改。
+    UserProfileResult confirmed;
+    confirmed.profile.userId = QStringLiteral("13800138000");
+    confirmed.profile.phone = QStringLiteral("13800138000");
+    confirmed.profile.nickname = QStringLiteral("Alice");
+    confirmed.accountStatus = AccountStatus::Normal;
+    network.setUserProfileResult(confirmed);
+    service.refreshCurrentUser();
+    QTRY_COMPARE(service.currentSession().profile.nickname, QStringLiteral("Alice"));
+
+    MockUserNetworkApi::Behavior ok;
+    network.setNicknameBehavior(ok);
+    service.updateNickname(QStringLiteral("Bob"));
+    QTRY_COMPARE(service.currentSession().profile.nickname, QStringLiteral("Bob"));
+    QCOMPARE(network.nicknameRequestCount(), 2);
+}
+
+void UserModuleTests::reLoginIsolatesPreviousSessionRequests()
+{
+    MockUserNetworkApi network;
+    LoginResult loginA;
+    loginA.session.profile.userId = QStringLiteral("13800138000");
+    loginA.session.profile.phone = QStringLiteral("13800138000");
+    network.setLoginResult(loginA);
+    UserService service(&network);
+    QSignalSpy successes(&service, &IUserService::loginSucceeded);
+
+    service.loginByPhone(QStringLiteral("13800138000"));
+    QTRY_COMPARE(successes.count(), 1);
+
+    // A 的资料查询在途（延迟应答）
+    MockUserNetworkApi::Behavior slowQuery;
+    slowQuery.delayMs = 50;
+    network.setQueryBehavior(slowQuery);
+    UserProfileResult staleProfile;
+    staleProfile.profile.userId = QStringLiteral("13800138000");
+    staleProfile.profile.phone = QStringLiteral("13800138000");
+    staleProfile.profile.nickname = QStringLiteral("旧账号资料");
+    network.setUserProfileResult(staleProfile);
+    service.refreshCurrentUser();
+
+    // 不登出直接换号登录 B（合同 §12.1 第 5 条）
+    LoginResult loginB;
+    loginB.session.profile.userId = QStringLiteral("13900139000");
+    loginB.session.profile.phone = QStringLiteral("13900139000");
+    network.setLoginResult(loginB);
+    service.loginByPhone(QStringLiteral("13900139000"));
+    QTRY_COMPARE(successes.count(), 2);
+    QCOMPARE(service.currentSession().profile.userId, QStringLiteral("13900139000"));
+
+    // A 的迟到 218 到达：不得覆盖 B 的会话
+    QTest::qWait(80);
+    QCOMPARE(service.currentSession().profile.userId, QStringLiteral("13900139000"));
+    QVERIFY(service.currentSession().profile.nickname.isEmpty());
 }
 
 QTEST_MAIN(UserModuleTests)
