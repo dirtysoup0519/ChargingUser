@@ -7,6 +7,9 @@
   <property name="windowTitle"><string>智充</string></property>
   <layout class="QVBoxLayout" name="rootLayout">
    <property name="spacing"><number>0</number></property><property name="leftMargin"><number>0</number></property><property name="topMargin"><number>0</number></property><property name="rightMargin"><number>0</number></property><property name="bottomMargin"><number>0</number></property>
+   <item><widget class="QStackedWidget" name="pageStack"><property name="currentIndex"><number>0</number></property>
+    <widget class="QWidget" name="homePage"><layout class="QVBoxLayout" name="homeLayout">
+     <property name="spacing"><number>0</number></property><property name="leftMargin"><number>0</number></property><property name="topMargin"><number>0</number></property><property name="rightMargin"><number>0</number></property><property name="bottomMargin"><number>0</number></property>
    <item><widget class="QWidget" name="topBar"><property name="minimumSize"><size><width>0</width><height>48</height></size></property><property name="maximumSize"><size><width>16777215</width><height>48</height></size></property>
     <layout class="QHBoxLayout" name="topLayout"><property name="leftMargin"><number>8</number></property><property name="topMargin"><number>6</number></property><property name="rightMargin"><number>8</number></property><property name="bottomMargin"><number>6</number></property><property name="spacing"><number>7</number></property>
      <item><widget class="QPushButton" name="cityButton"><property name="minimumSize"><size><width>76</width><height>0</height></size></property><property name="maximumSize"><size><width>76</width><height>16777215</height></size></property><property name="text"><string>深圳市⌄</string></property></widget></item>
@@ -34,6 +37,32 @@
       <item><spacer name="listSpace"><property name="orientation"><enum>Qt::Vertical</enum></property><property name="sizeHint"><size><width>1</width><height>20</height></size></property></spacer></item>
      </layout>
     </widget>
+   </widget></item>
+    </layout></widget>
+    <widget class="QWidget" name="chargingPage"><layout class="QVBoxLayout" name="chargingPageLayout">
+     <property name="leftMargin"><number>18</number></property><property name="topMargin"><number>24</number></property><property name="rightMargin"><number>18</number></property><property name="bottomMargin"><number>24</number></property><property name="spacing"><number>14</number></property>
+     <item><widget class="QLabel" name="chargingPageTitle"><property name="text"><string>充电</string></property></widget></item>
+     <item><widget class="QFrame" name="chargingEmptyCard"><layout class="QVBoxLayout" name="chargingEmptyLayout"><property name="leftMargin"><number>18</number></property><property name="topMargin"><number>26</number></property><property name="rightMargin"><number>18</number></property><property name="bottomMargin"><number>26</number></property>
+      <item><widget class="QLabel" name="chargingEmptyTitle"><property name="text"><string>当前没有进行中的充电</string></property><property name="alignment"><set>Qt::AlignCenter</set></property></widget></item>
+      <item><widget class="QLabel" name="chargingEmptyHint"><property name="text"><string>选择附近充电站，开始新的充电任务</string></property><property name="alignment"><set>Qt::AlignCenter</set></property></widget></item>
+     </layout></widget></item>
+     <item><spacer name="chargingPageSpace"><property name="orientation"><enum>Qt::Vertical</enum></property><property name="sizeHint"><size><width>1</width><height>40</height></size></property></spacer></item>
+    </layout></widget>
+    <widget class="QWidget" name="profilePage"><layout class="QVBoxLayout" name="profilePageLayout">
+     <property name="leftMargin"><number>16</number></property><property name="topMargin"><number>20</number></property><property name="rightMargin"><number>16</number></property><property name="bottomMargin"><number>20</number></property><property name="spacing"><number>12</number></property>
+     <item><widget class="QLabel" name="profilePageTitle"><property name="text"><string>我的</string></property></widget></item>
+     <item><widget class="QLabel" name="accountStatusLabel"><property name="text"><string/></property><property name="wordWrap"><bool>true</bool></property><property name="visible"><bool>false</bool></property></widget></item>
+     <item><widget class="QFrame" name="profileCard"><layout class="QHBoxLayout" name="profileCardLayout"><property name="leftMargin"><number>16</number></property><property name="topMargin"><number>16</number></property><property name="rightMargin"><number>16</number></property><property name="bottomMargin"><number>16</number></property>
+      <item><widget class="QLabel" name="profileSummaryLabel"><property name="text"><string>智充用户
+手机号待加载</string></property></widget></item><item><spacer name="profileCardSpace"><property name="orientation"><enum>Qt::Horizontal</enum></property><property name="sizeHint"><size><width>20</width><height>1</height></size></property></spacer></item><item><widget class="QPushButton" name="btnEditProfile"><property name="text"><string>编辑资料</string></property></widget></item>
+     </layout></widget></item>
+     <item><widget class="QFrame" name="walletCard"><layout class="QHBoxLayout" name="walletCardLayout"><property name="leftMargin"><number>16</number></property><property name="topMargin"><number>16</number></property><property name="rightMargin"><number>16</number></property><property name="bottomMargin"><number>16</number></property>
+      <item><widget class="QLabel" name="walletSummaryLabel"><property name="text"><string>钱包余额
+--</string></property></widget></item><item><spacer name="walletCardSpace"><property name="orientation"><enum>Qt::Horizontal</enum></property><property name="sizeHint"><size><width>20</width><height>1</height></size></property></spacer></item><item><widget class="QPushButton" name="btnRecharge"><property name="text"><string>充值</string></property></widget></item>
+     </layout></widget></item>
+     <item><widget class="QListWidget" name="profileMenuList"><item><property name="text"><string>订单记录</string></property></item><item><property name="text"><string>帮助与反馈</string></property></item><item><property name="text"><string>关于智充</string></property></item></widget></item>
+     <item><widget class="QPushButton" name="btnLogout"><property name="minimumSize"><size><width>0</width><height>44</height></size></property><property name="text"><string>退出登录</string></property></widget></item>
+    </layout></widget>
    </widget></item>
    <item><widget class="QFrame" name="bottomBar"><property name="minimumSize"><size><width>0</width><height>61</height></size></property><property name="maximumSize"><size><width>16777215</width><height>61</height></size></property>
     <layout class="QHBoxLayout" name="bottomLayout"><property name="leftMargin"><number>22</number></property><property name="topMargin"><number>2</number></property><property name="rightMargin"><number>22</number></property><property name="bottomMargin"><number>1</number></property>

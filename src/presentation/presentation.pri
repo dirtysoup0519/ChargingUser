@@ -1,6 +1,10 @@
 INCLUDEPATH += $$PWD/contracts $$PWD/pages $$PWD/widgets
 
 HEADERS += \
+    $$PWD/contracts/submitstate.h \
+    $$PWD/contracts/loginviewstate.h \
+    $$PWD/contracts/profileeditviewstate.h \
+    $$PWD/contracts/profileviewstate.h \
     $$PWD/pages/loginwindow.h \
     $$PWD/pages/profileeditwindow.h \
     $$PWD/pages/mainwindow.h \

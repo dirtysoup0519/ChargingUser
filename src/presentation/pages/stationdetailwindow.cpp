@@ -7,14 +7,10 @@ StationDetailWindow::StationDetailWindow(QWidget *parent)
 {
     ui->setupUi(this);
     setWindowFlag(Qt::FramelessWindowHint);
-    connect(ui->backButton, &QPushButton::clicked, this, [this] {
-        emit backRequested();
-        hide();
-    });
-    connect(ui->navigationButton, &QPushButton::clicked, this, [this] {
-        emit navigationRequested();
-        hide();
-    });
+    connect(ui->backButton, &QPushButton::clicked,
+            this, &StationDetailWindow::backRequested);
+    connect(ui->navigationButton, &QPushButton::clicked,
+            this, &StationDetailWindow::navigationRequested);
     connect(ui->chargeButton, &QPushButton::clicked,
             this, &StationDetailWindow::chargeRequested);
 }

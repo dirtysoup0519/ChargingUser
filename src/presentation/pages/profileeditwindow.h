@@ -2,6 +2,8 @@
 
 #include <QWidget>
 
+#include "profileeditviewstate.h"
+
 namespace Ui { class ProfileEditWindow; }
 
 class ProfileEditWindow final : public QWidget
@@ -11,9 +13,13 @@ public:
     explicit ProfileEditWindow(QWidget *parent = nullptr);
     ~ProfileEditWindow() override;
 
+    void render(const ProfileEditViewState &state);
+
 signals:
-    void profileSaved();
+    void profileSaveRequested(const QString &nickname);
 
 private:
+    void submitCurrentInput();
+
     Ui::ProfileEditWindow *ui;
 };

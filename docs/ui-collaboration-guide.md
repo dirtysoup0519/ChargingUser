@@ -77,6 +77,58 @@ void ProfileEditPage::render(const ProfileEditViewState &state);
 6. 登录后的一级页面收敛到 `MainWindow + QStackedWidget`，底部固定为首页、充电、我的；二级页面不再新增独立顶层窗口。
 7. “我的”页面预留 `profileCard`、`walletCard`、`btnRecharge`、`profileMenuList`、`btnLogout`。
 
+### 5.1 当前接缝候选（待逻辑负责人确认）
+
+以下内容与 `src/presentation/` 当前实现一致。逻辑负责人确认后按冻结接口使用；后续如需调整，应先同步双方，不能单方面修改。
+
+页面意图信号：
+
+```cpp
+// LoginWindow
+void loginRequested(const QString &phone);
+
+// ProfileEditWindow
+void profileSaveRequested(const QString &nickname);
+
+// MainWindow
+void primaryPageRequested(MainWindow::PrimaryPage page);
+void stationDetailsRequested(const QString &stationId);
+void profileEditRequested();
+void rechargePageRequested();
+void logoutRequested();
+```
+
+页面展示入口：
+
+```cpp
+void LoginWindow::render(const LoginViewState &state);
+void ProfileEditWindow::render(const ProfileEditViewState &state);
+void MainWindow::renderPrimaryPage(MainWindow::PrimaryPage page);
+void MainWindow::renderProfile(const ProfileViewState &state);
+void MainWindow::renderSecondaryPage(QWidget *page);
+```
+
+ViewState 字段：
+
+| 类型 | 字段 |
+|---|---|
+| `SubmitState` | `Idle`、`Loading`、`Success`、`ValidationError`、`NetworkError`、`ServerError`、`ResultUnknown` |
+| `LoginViewState` | `submitState`、`phoneInput`、`message`、`canSubmit` |
+| `ProfileEditViewState` | `submitState`、`phone`、`nicknameInput`、`message`、`canSubmit` |
+| `ProfileViewState` | `nickname`、`maskedPhone`、`balanceText`、`accountState`、`accountMessage` |
+| `AccountDisplayState` | `Normal`、`Frozen`、`Unknown` |
+
+冻结候选 `objectName`：
+
+| 页面 | 控件名称 |
+|---|---|
+| 登录页 | `editPhoneNumber`、`btnLogin`、`loadingIndicator`、`errorLabel` |
+| 资料编辑页 | `nicknameEdit`、`phoneEdit`、`saveButton`、`loadingIndicator`、`errorLabel` |
+| 登录后容器 | `pageStack`、`homePage`、`chargingPage`、`profilePage`、`bottomBar`、`homeNav`、`chargeNav`、`profileNav` |
+| “我的”页 | `accountStatusLabel`、`profileCard`、`profileSummaryLabel`、`btnEditProfile`、`walletCard`、`walletSummaryLabel`、`btnRecharge`、`profileMenuList`、`btnLogout` |
+
+页面只读取输入并发出上述意图。`UserUiBinder` 负责调用业务服务、把结果映射为 ViewState，并根据 M4 的导航决定调用哪个展示入口。
+
 ## 6. 独立演示与 Mock
 
 UI 可以建立仅供演示的装配入口，依次向页面传入不同 ViewState，检查加载、错误、Frozen、长昵称和小窗口布局。演示代码不得写进正式 Widget，不得伪造业务成功信号，也不得成为正式 `main.cpp` 的默认路径。

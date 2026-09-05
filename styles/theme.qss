@@ -13,7 +13,9 @@ QWidget#topBar, QWidget#headerBar { border-bottom: 1px solid #E9EDF2; }
 QFrame#bottomBar { border-top: 1px solid #E9EDF2; }
 QLabel#brandLabel { color: #1677FF; font-size: 28px; font-weight: 800; }
 QLabel#sloganLabel, QLabel#hintLabel, QLabel.subtle { color: #8994A3; font-size: 11px; }
-QLabel#pageTitle, QLabel#sectionTitle { color: #202B3C; font-size: 17px; font-weight: 700; }
+QLabel#pageTitle, QLabel#sectionTitle, QLabel#chargingPageTitle, QLabel#profilePageTitle {
+    color: #202B3C; font-size: 17px; font-weight: 700;
+}
 QPushButton#backButton {
     background: transparent; border: none; color: #334155;
     font-size: 24px; padding: 0;
@@ -28,14 +30,25 @@ QLineEdit {
 }
 QLineEdit:focus { background: #FFFFFF; border-color: #7EB2FF; }
 QLineEdit:read-only { color: #98A2B1; background: #F3F5F8; }
-QPushButton#primaryButton, QPushButton#loginButton, QPushButton#saveButton,
+QPushButton#primaryButton, QPushButton#btnLogin, QPushButton#saveButton,
 QPushButton#chargeButton, QPushButton#startButton {
     background: #1677FF; color: #FFFFFF; border: none;
     border-radius: 11px; font-size: 14px; font-weight: 700;
 }
-QPushButton#primaryButton:hover, QPushButton#loginButton:hover,
+QPushButton#primaryButton:hover, QPushButton#btnLogin:hover,
 QPushButton#saveButton:hover, QPushButton#chargeButton:hover,
 QPushButton#startButton:hover { background: #096BEE; }
+QPushButton#btnLogin:disabled, QPushButton#saveButton:disabled {
+    background: #A9C9F8; color: #F7FAFF;
+}
+QLabel#loadingIndicator { color: #1677FF; font-size: 11px; }
+QLabel#errorLabel[feedbackKind="neutral"] { color: #687386; }
+QLabel#errorLabel[feedbackKind="success"] { color: #13966B; }
+QLabel#errorLabel[feedbackKind="error"] { color: #D14343; }
+QLabel#errorLabel[feedbackKind="unknown"] {
+    color: #9A6700; background: #FFF7D6;
+    border: 1px solid #F1D179; border-radius: 8px; padding: 7px;
+}
 QPushButton#secondaryButton, QPushButton#navigationButton {
     background: #EAF3FF; color: #1677FF; border: none;
     border-radius: 11px; font-size: 13px; font-weight: 700;
@@ -44,9 +57,34 @@ QPushButton#locateButton {
     background: #1677FF; color: #FFFFFF; border: none;
     border-radius: 9px; font-weight: 700;
 }
-QFrame.card, QFrame#profileCard, QFrame#summaryCard, QFrame#feeCard {
+QFrame.card, QFrame#profileCard, QFrame#walletCard, QFrame#summaryCard,
+QFrame#feeCard, QFrame#chargingEmptyCard {
     background: #FFFFFF; border: 1px solid #E7ECF2; border-radius: 13px;
 }
+QWidget#chargingPage, QWidget#profilePage { background: #F6F8FC; }
+QLabel#chargingEmptyTitle { font-size: 14px; font-weight: 700; }
+QLabel#chargingEmptyHint { color: #8994A3; font-size: 11px; }
+QLabel#profileSummaryLabel, QLabel#walletSummaryLabel {
+    color: #202B3C; font-size: 13px;
+}
+QPushButton#btnEditProfile, QPushButton#btnRecharge {
+    background: #EAF3FF; color: #1677FF; border: none;
+    border-radius: 8px; padding: 7px 11px; font-weight: 700;
+}
+QPushButton#btnRecharge:disabled { background: #EEF1F5; color: #9AA3B0; }
+QPushButton#btnLogout {
+    background: #FFFFFF; color: #D14343; border: 1px solid #F0C7C7;
+    border-radius: 10px; font-weight: 700;
+}
+QLabel#accountStatusLabel {
+    color: #9A6700; background: #FFF7D6;
+    border: 1px solid #F1D179; border-radius: 8px; padding: 8px;
+}
+QListWidget#profileMenuList {
+    background: #FFFFFF; border: 1px solid #E7ECF2; border-radius: 12px;
+    outline: none; padding: 4px;
+}
+QListWidget#profileMenuList::item { min-height: 38px; padding-left: 10px; }
 QPushButton#stationButton1, QPushButton#stationButton2, QPushButton#stationButton3 {
     background: #FFFFFF; border: none; border-bottom: 1px solid #EDF1F5;
     text-align: left; padding: 8px 12px; color: #202B3C;

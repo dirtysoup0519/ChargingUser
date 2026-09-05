@@ -2,6 +2,8 @@
 
 #include <QWidget>
 
+#include "loginviewstate.h"
+
 namespace Ui { class LoginWindow; }
 
 class LoginWindow final : public QWidget
@@ -11,9 +13,13 @@ public:
     explicit LoginWindow(QWidget *parent = nullptr);
     ~LoginWindow() override;
 
+    void render(const LoginViewState &state);
+
 signals:
-    void loginSucceeded();
+    void loginRequested(const QString &phone);
 
 private:
+    void submitCurrentInput();
+
     Ui::LoginWindow *ui;
 };

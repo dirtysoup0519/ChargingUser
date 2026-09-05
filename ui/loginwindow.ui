@@ -23,13 +23,15 @@
    <item><widget class="QLabel" name="hintLabel"><property name="text"><string>输入手机号，开始寻找附近充电站</string></property></widget></item>
    <item><spacer name="gap2"><property name="orientation"><enum>Qt::Vertical</enum></property><property name="sizeHint"><size><width>1</width><height>22</height></size></property></spacer></item>
    <item>
-    <widget class="QLineEdit" name="phoneEdit">
+    <widget class="QLineEdit" name="editPhoneNumber">
      <property name="minimumSize"><size><width>0</width><height>48</height></size></property>
      <property name="placeholderText"><string>请输入手机号码</string></property><property name="maxLength"><number>11</number></property>
     </widget>
    </item>
    <item><spacer name="gap3"><property name="orientation"><enum>Qt::Vertical</enum></property><property name="sizeHint"><size><width>1</width><height>14</height></size></property></spacer></item>
-   <item><widget class="QPushButton" name="loginButton"><property name="minimumSize"><size><width>0</width><height>48</height></size></property><property name="text"><string>登录 / 进入演示</string></property></widget></item>
+   <item><widget class="QPushButton" name="btnLogin"><property name="minimumSize"><size><width>0</width><height>48</height></size></property><property name="text"><string>登录</string></property></widget></item>
+   <item><widget class="QLabel" name="loadingIndicator"><property name="text"><string>正在登录，请稍候…</string></property><property name="alignment"><set>Qt::AlignCenter</set></property><property name="visible"><bool>false</bool></property></widget></item>
+   <item><widget class="QLabel" name="errorLabel"><property name="text"><string/></property><property name="wordWrap"><bool>true</bool></property><property name="alignment"><set>Qt::AlignCenter</set></property><property name="visible"><bool>false</bool></property></widget></item>
    <item><spacer name="gap4"><property name="orientation"><enum>Qt::Vertical</enum></property><property name="sizeHint"><size><width>1</width><height>13</height></size></property></spacer></item>
    <item>
     <layout class="QHBoxLayout" name="agreementLayout">

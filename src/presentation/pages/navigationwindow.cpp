@@ -7,10 +7,8 @@ NavigationWindow::NavigationWindow(QWidget *parent)
 {
     ui->setupUi(this);
     setWindowFlag(Qt::FramelessWindowHint);
-    connect(ui->backButton, &QPushButton::clicked, this, [this] {
-        emit backRequested();
-        hide();
-    });
+    connect(ui->backButton, &QPushButton::clicked,
+            this, &NavigationWindow::backRequested);
 }
 
 NavigationWindow::~NavigationWindow() { delete ui; }

@@ -22,11 +22,13 @@
       <item><widget class="QLabel" name="nicknameLabel"><property name="text"><string>昵称</string></property><property name="styleSheet"><string notr="true">color:#657185;font-size:11px;</string></property></widget></item>
       <item><widget class="QLineEdit" name="nicknameEdit"><property name="minimumSize"><size><width>0</width><height>46</height></size></property><property name="placeholderText"><string>请输入昵称</string></property></widget></item>
       <item><widget class="QLabel" name="phoneLabel"><property name="text"><string>手机号码</string></property><property name="styleSheet"><string notr="true">color:#657185;font-size:11px;</string></property></widget></item>
-      <item><widget class="QLineEdit" name="phoneEdit"><property name="minimumSize"><size><width>0</width><height>46</height></size></property><property name="text"><string>138 **** 8000</string></property><property name="readOnly"><bool>true</bool></property></widget></item>
+      <item><widget class="QLineEdit" name="phoneEdit"><property name="minimumSize"><size><width>0</width><height>46</height></size></property><property name="readOnly"><bool>true</bool></property></widget></item>
       <item><widget class="QLabel" name="hintLabel2"><property name="text"><string>手机号码来自登录账号，暂不支持在此修改</string></property></widget></item>
      </layout></widget></item>
      <item><spacer name="bodySpace"><property name="orientation"><enum>Qt::Vertical</enum></property><property name="sizeHint"><size><width>1</width><height>40</height></size></property></spacer></item>
-     <item><widget class="QPushButton" name="saveButton"><property name="minimumSize"><size><width>0</width><height>48</height></size></property><property name="text"><string>保存并进入首页</string></property></widget></item>
+     <item><widget class="QLabel" name="loadingIndicator"><property name="text"><string>正在保存，请稍候…</string></property><property name="alignment"><set>Qt::AlignCenter</set></property><property name="visible"><bool>false</bool></property></widget></item>
+     <item><widget class="QLabel" name="errorLabel"><property name="text"><string/></property><property name="wordWrap"><bool>true</bool></property><property name="alignment"><set>Qt::AlignCenter</set></property><property name="visible"><bool>false</bool></property></widget></item>
+     <item><widget class="QPushButton" name="saveButton"><property name="minimumSize"><size><width>0</width><height>48</height></size></property><property name="text"><string>保存资料</string></property></widget></item>
     </layout>
    </widget></item>
   </layout>
