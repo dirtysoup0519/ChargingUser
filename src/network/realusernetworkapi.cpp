@@ -62,6 +62,18 @@ QString requestIdOf(const QJsonObject &payload)
     return payload.value(QStringLiteral("requestId")).toString();
 }
 
+/* 所有失败路径都必须回填 requestId/operationId（合同 §12.1 第 3 条）：
+ * UserService 先登记在途请求再调网络层，错误不带 ID 上层就无法释放，
+ * 用户会被“请求进行中”永久卡住 */
+ClientError failedRequestError(const RequestContext &context, const QString &code,
+                               const QString &message, bool retryable)
+{
+    ClientError error = makeError(code, message, retryable);
+    error.requestId = context.requestId;
+    error.operationId = context.operationId;
+    return error;
+}
+
 } // namespace
 
 RealUserNetworkApi::RealUserNetworkApi(BackendClient *backend, QObject *parent)
@@ -130,10 +142,12 @@ void RealUserNetworkApi::logout(const RequestContext &context)
     if (m_backend->sendFrame(LOGOUT_REQ, payload)) {
         emit logoutSucceeded(result);
     } else {
-        // 会话已由调用方本地清理，此错误仅作提示，retryable=false 表示无重试意义
-        emit requestFailed(makeError(QStringLiteral("not-connected"),
-                                     QStringLiteral("Not connected to server."),
-                                     false));
+        // 会话已由调用方本地清理，此错误仅作提示，retryable=false 表示无重试意义；
+        // 但必须带 requestId，否则上层 Logout 在途请求无法释放，会阻塞后续登录
+        emit requestFailed(failedRequestError(context,
+                                              QStringLiteral("not-connected"),
+                                              QStringLiteral("Not connected to server."),
+                                              false));
     }
 }
 
@@ -143,26 +157,29 @@ bool RealUserNetworkApi::startRequest(PendingKind kind, const QJsonObject &paylo
 {
     if (m_backend->connectionState() != ConnectionState::Connected) {
         // 与 connection-lost 同语义：BackendClient 会自动重连，用户应当能重试
-        emit requestFailed(makeError(QStringLiteral("not-connected"),
-                                     QStringLiteral("Not connected to server."),
-                                     true));
+        emit requestFailed(failedRequestError(context,
+                                              QStringLiteral("not-connected"),
+                                              QStringLiteral("Not connected to server."),
+                                              true));
         return false;
     }
 
     // 服务只允许同类单请求（合同 §3），此处兜底防重
     for (const PendingRequest &pending : m_pendingRequests) {
         if (pending.kind == kind) {
-            emit requestFailed(makeError(QStringLiteral("request-in-flight"),
-                                         QStringLiteral("A similar request is already in progress."),
-                                         false));
+            emit requestFailed(failedRequestError(context,
+                                                  QStringLiteral("request-in-flight"),
+                                                  QStringLiteral("A similar request is already in progress."),
+                                                  false));
             return false;
         }
     }
 
     if (!m_backend->sendFrame(reqTypeForKind(kind), payload)) {
-        emit requestFailed(makeError(QStringLiteral("send-failed"),
-                                     QStringLiteral("Failed to send request."),
-                                     true));
+        emit requestFailed(failedRequestError(context,
+                                              QStringLiteral("send-failed"),
+                                              QStringLiteral("Failed to send request."),
+                                              true));
         return false;
     }
 

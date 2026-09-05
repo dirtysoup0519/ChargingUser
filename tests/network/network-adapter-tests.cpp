@@ -498,6 +498,9 @@ void NetworkAdapterTests::sendFailureReportsRequestFailed()
     const ClientError error =
         qvariant_cast<ClientError>(failures.takeFirst().at(0));
     QCOMPARE(error.code, QStringLiteral("send-failed"));
+    // 合同 §12.1 第 3 条：所有失败路径必须回填 requestId
+    QCOMPARE(error.requestId, QStringLiteral("req-9"));
+    QCOMPARE(error.operationId, QStringLiteral("req-9-op"));
 }
 
 /* 回归：首次连接被拒（无 disconnected 信号）后必须进入重连调度，
@@ -593,6 +596,9 @@ void NetworkAdapterTests::loginWhenNotConnectedIsRetryable()
         qvariant_cast<ClientError>(failures.first().at(0));
     QCOMPARE(error.code, QStringLiteral("not-connected"));
     QVERIFY(error.retryable);
+    // 合同 §12.1 第 3 条：所有失败路径必须回填 requestId
+    QCOMPARE(error.requestId, QStringLiteral("req-12"));
+    QCOMPARE(error.operationId, QStringLiteral("req-12-op"));
 }
 
 QTEST_MAIN(NetworkAdapterTests)
