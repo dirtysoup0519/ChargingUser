@@ -44,7 +44,10 @@ LoginWindow::~LoginWindow() { delete ui; }
 
 void LoginWindow::render(const LoginViewState &state)
 {
-    if (!state.phoneInput.isNull() && !ui->editPhoneNumber->hasFocus()
+    const bool explicitlyCleared = !state.phoneInput.isNull()
+                                   && state.phoneInput.isEmpty();
+    if (!state.phoneInput.isNull()
+        && (explicitlyCleared || !ui->editPhoneNumber->hasFocus())
         && ui->editPhoneNumber->text() != state.phoneInput) {
         const QSignalBlocker blocker(ui->editPhoneNumber);
         ui->editPhoneNumber->setText(state.phoneInput);
