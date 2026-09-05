@@ -16,6 +16,7 @@ public:
     void render(const ProfileEditViewState &state);
 
 signals:
+    void backRequested();
     void profileSaveRequested(const QString &nickname);
 
 private:

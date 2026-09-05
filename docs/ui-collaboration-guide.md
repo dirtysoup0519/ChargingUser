@@ -88,6 +88,7 @@ void ProfileEditPage::render(const ProfileEditViewState &state);
 void loginRequested(const QString &phone);
 
 // ProfileEditWindow
+void backRequested();
 void profileSaveRequested(const QString &nickname);
 
 // MainWindow
@@ -123,9 +124,9 @@ ViewState 字段：
 | 页面 | 控件名称 |
 |---|---|
 | 登录页 | `editPhoneNumber`、`btnLogin`、`loadingIndicator`、`errorLabel` |
-| 资料编辑页 | `nicknameEdit`、`phoneEdit`、`saveButton`、`loadingIndicator`、`errorLabel` |
+| 资料编辑页 | `backButton`、`avatarLabel`、`avatarButton`、`nicknameEdit`、`phoneEdit`、`saveButton`、`loadingIndicator`、`errorLabel` |
 | 登录后容器 | `pageStack`、`homePage`、`chargingPage`、`profilePage`、`bottomBar`、`homeNav`、`chargeNav`、`profileNav` |
-| “我的”页 | `accountStatusLabel`、`profileCard`、`profileSummaryLabel`、`btnEditProfile`、`walletCard`、`walletSummaryLabel`、`btnRecharge`、`profileMenuList`、`btnLogout` |
+| “我的”页 | `accountStatusLabel`、`profileCard`、`profileAvatarLabel`、`profileSummaryLabel`、`profilePhoneLabel`、`btnEditProfile`、`walletCard`、`walletTitleLabel`、`walletSummaryLabel`、`btnRecharge`、`profileMenuList`、`btnLogout` |
 
 页面只读取输入并发出上述意图。`UserUiBinder` 负责调用业务服务、把结果映射为 ViewState，并根据 M4 的导航决定调用哪个展示入口。
 

@@ -18,7 +18,20 @@ QLabel#pageTitle, QLabel#sectionTitle, QLabel#chargingPageTitle, QLabel#profileP
 }
 QPushButton#backButton {
     background: transparent; border: none; color: #334155;
-    font-size: 24px; padding: 0;
+    font-size: 32px; font-weight: 400; padding: 0;
+}
+QPushButton#backButton:hover { background: #F1F5F9; border-radius: 22px; }
+QLabel#avatarLabel {
+    background: #DDEBFF; color: #5D7FAF; border: 4px solid #EDF4FF;
+    border-radius: 56px; font-size: 18px; font-weight: 700;
+}
+QPushButton#avatarButton {
+    background: transparent; border: none; color: #1677FF;
+    font-size: 13px; font-weight: 600; padding: 3px 12px;
+}
+QPushButton#avatarButton:disabled { color: #1677FF; }
+QLabel#nicknameLabel, QLabel#phoneLabel {
+    color: #202B3C; font-size: 13px; font-weight: 700;
 }
 QPushButton#cityButton {
     background: transparent; border: none; color: #202B3C;
@@ -64,12 +77,24 @@ QFrame#feeCard, QFrame#chargingEmptyCard {
 QWidget#chargingPage, QWidget#profilePage { background: #F6F8FC; }
 QLabel#chargingEmptyTitle { font-size: 14px; font-weight: 700; }
 QLabel#chargingEmptyHint { color: #8994A3; font-size: 11px; }
-QLabel#profileSummaryLabel, QLabel#walletSummaryLabel {
-    color: #202B3C; font-size: 13px;
+QLabel#profileAvatarLabel {
+    background: #DDEBFF; color: #5D7FAF; border: 4px solid #EDF4FF;
+    border-radius: 43px; font-size: 14px; font-weight: 700;
 }
-QPushButton#btnEditProfile, QPushButton#btnRecharge {
-    background: #EAF3FF; color: #1677FF; border: none;
-    border-radius: 8px; padding: 7px 11px; font-weight: 700;
+QLabel#profileSummaryLabel { color: #202B3C; font-size: 17px; font-weight: 700; }
+QLabel#profilePhoneLabel { color: #687386; font-size: 13px; }
+QLabel#walletTitleLabel { color: #E8FFFC; font-size: 12px; }
+QLabel#walletSummaryLabel { color: #FFFFFF; font-size: 25px; font-weight: 600; }
+QToolButton#btnEditProfile {
+    background: transparent; color: #687386; border: none;
+    padding: 7px 2px; font-size: 12px;
+}
+QToolButton#btnEditProfile:hover { color: #1677FF; }
+QFrame#walletCard { background: #18B8AD; border: none; border-radius: 14px; }
+QFrame#walletCard QLabel, QWidget#walletTextBlock { background: transparent; }
+QPushButton#btnRecharge {
+    background: #FFFFFF; color: #12AFA5; border: none;
+    border-radius: 22px; padding: 7px 12px; font-size: 13px; font-weight: 700;
 }
 QPushButton#btnRecharge:disabled { background: #EEF1F5; color: #9AA3B0; }
 QPushButton#btnLogout {
@@ -82,9 +107,13 @@ QLabel#accountStatusLabel {
 }
 QListWidget#profileMenuList {
     background: #FFFFFF; border: 1px solid #E7ECF2; border-radius: 12px;
-    outline: none; padding: 4px;
+    outline: none; padding: 4px 12px;
 }
-QListWidget#profileMenuList::item { min-height: 38px; padding-left: 10px; }
+QListWidget#profileMenuList::item {
+    min-height: 56px; padding: 2px 8px; color: #202B3C;
+    border-bottom: 1px solid #EDF1F5; font-size: 14px;
+}
+QListWidget#profileMenuList::item:hover { background: #F7FAFF; color: #1677FF; }
 QPushButton#stationButton1, QPushButton#stationButton2, QPushButton#stationButton3 {
     background: #FFFFFF; border: none; border-bottom: 1px solid #EDF1F5;
     text-align: left; padding: 8px 12px; color: #202B3C;
@@ -93,11 +122,11 @@ QPushButton#stationButton1, QPushButton#stationButton2, QPushButton#stationButto
 QPushButton#stationButton1:hover, QPushButton#stationButton2:hover, QPushButton#stationButton3:hover {
     background: #F9FBFF; border: 1px solid #73AAFF; border-radius: 8px;
 }
-QPushButton#homeNav, QPushButton#chargeNav, QPushButton#profileNav {
+QToolButton#homeNav, QToolButton#chargeNav, QToolButton#profileNav {
     background: transparent; border: none; color: #8A94A3;
-    font-size: 11px; padding: 4px;
+    font-size: 11px; padding: 3px 16px;
 }
-QPushButton#homeNav:checked, QPushButton#chargeNav:checked, QPushButton#profileNav:checked { color: #1677FF; font-weight: 700; }
+QToolButton#homeNav:checked, QToolButton#chargeNav:checked, QToolButton#profileNav:checked { color: #1677FF; font-weight: 700; }
 QPushButton#driveButton, QPushButton#walkButton {
     background: transparent; border: none; border-radius: 7px;
     color: #7D8898; font-size: 11px;

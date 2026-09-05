@@ -5,5 +5,19 @@
   <file alias="images/home_map.png">images/home_map.png</file>
   <file alias="images/station_hero.png">images/station_hero.png</file>
   <file alias="images/route_map.png">images/route_map.png</file>
+  <file alias="icons/default_avatar.png">icons/default_avatar.png</file>
+  <file alias="icons/back.png">icons/back.png</file>
+  <file alias="icons/camera.png">icons/camera.png</file>
+  <file alias="icons/chevron_right.png">icons/chevron_right.png</file>
+  <file alias="icons/order.png">icons/order.png</file>
+  <file alias="icons/pin.png">icons/pin.png</file>
+  <file alias="icons/help.png">icons/help.png</file>
+  <file alias="icons/info.png">icons/info.png</file>
+  <file alias="icons/home.png">icons/home.png</file>
+  <file alias="icons/home_active.png">icons/home_active.png</file>
+  <file alias="icons/charge.png">icons/charge.png</file>
+  <file alias="icons/charge_active.png">icons/charge_active.png</file>
+  <file alias="icons/user.png">icons/user.png</file>
+  <file alias="icons/user_active.png">icons/user_active.png</file>
  </qresource>
 </RCC>

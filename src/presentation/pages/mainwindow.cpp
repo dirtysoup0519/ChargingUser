@@ -4,6 +4,7 @@
 #include <QPair>
 #include <QPushButton>
 #include <QStackedWidget>
+#include <QToolButton>
 
 MainWindow::MainWindow(QWidget *parent) : QWidget(parent), ui(new Ui::MainWindow)
 {
@@ -21,16 +22,16 @@ MainWindow::MainWindow(QWidget *parent) : QWidget(parent), ui(new Ui::MainWindow
         });
     }
 
-    connect(ui->homeNav, &QPushButton::clicked, this, [this] {
+    connect(ui->homeNav, &QToolButton::clicked, this, [this] {
         emit primaryPageRequested(PrimaryPage::Home);
     });
-    connect(ui->chargeNav, &QPushButton::clicked, this, [this] {
+    connect(ui->chargeNav, &QToolButton::clicked, this, [this] {
         emit primaryPageRequested(PrimaryPage::Charging);
     });
-    connect(ui->profileNav, &QPushButton::clicked, this, [this] {
+    connect(ui->profileNav, &QToolButton::clicked, this, [this] {
         emit primaryPageRequested(PrimaryPage::Profile);
     });
-    connect(ui->btnEditProfile, &QPushButton::clicked,
+    connect(ui->btnEditProfile, &QToolButton::clicked,
             this, &MainWindow::profileEditRequested);
     connect(ui->btnRecharge, &QPushButton::clicked,
             this, &MainWindow::rechargePageRequested);
@@ -59,9 +60,10 @@ void MainWindow::renderProfile(const ProfileViewState &state)
 {
     const QString nickname = state.nickname.isEmpty() ? tr("未设置昵称") : state.nickname;
     const QString phone = state.maskedPhone.isEmpty() ? tr("手机号待加载") : state.maskedPhone;
-    ui->profileSummaryLabel->setText(nickname + QLatin1Char('\n') + phone);
-    ui->walletSummaryLabel->setText(tr("钱包余额\n%1").arg(
-        state.balanceText.isEmpty() ? QStringLiteral("--") : state.balanceText));
+    ui->profileSummaryLabel->setText(nickname);
+    ui->profilePhoneLabel->setText(phone);
+    ui->walletSummaryLabel->setText(
+        state.balanceText.isEmpty() ? QStringLiteral("--") : state.balanceText);
 
     const bool restricted = state.accountState != AccountDisplayState::Normal;
     QString accountMessage = state.accountMessage;

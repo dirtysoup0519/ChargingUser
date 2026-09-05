@@ -34,6 +34,8 @@ ProfileEditWindow::ProfileEditWindow(QWidget *parent)
 {
     ui->setupUi(this);
     setWindowFlag(Qt::FramelessWindowHint);
+    connect(ui->backButton, &QPushButton::clicked,
+            this, &ProfileEditWindow::backRequested);
     connect(ui->saveButton, &QPushButton::clicked,
             this, &ProfileEditWindow::submitCurrentInput);
     connect(ui->nicknameEdit, &QLineEdit::returnPressed,
@@ -57,7 +59,7 @@ void ProfileEditWindow::render(const ProfileEditViewState &state)
 
     const bool loading = state.submitState == SubmitState::Loading;
     ui->saveButton->setEnabled(state.canSubmit && !loading);
-    ui->saveButton->setText(loading ? tr("保存中…") : tr("保存资料"));
+    ui->saveButton->setText(loading ? tr("保存中…") : tr("保存"));
     ui->loadingIndicator->setVisible(loading);
 
     QString message = state.message;
