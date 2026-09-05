@@ -3,6 +3,7 @@
 #include "flow/userflowtypes.h"
 
 #include <QObject>
+#include <QHash>
 #include <QSet>
 
 class IUserUiBinder;
@@ -14,6 +15,15 @@ class NavigationWindow;
 class StationDetailWindow;
 class WalletRechargeWindow;
 class QWidget;
+struct DemoUserData
+{
+    QString nickname;
+    AccountStatus status = AccountStatus::Normal;
+    bool failFirstLogin = false;
+    QString firstLoginFailureCode;
+    QString firstLoginFailureMessage;
+    bool firstLoginFailureRetryable = false;
+};
 
 /* Demo 专用页面接线器。它只存在于 CONFIG+=user_demo 和 UI 集成测试中，
  * 正式入口不会使用模拟账号或模拟网络结果。
@@ -44,6 +54,7 @@ private:
     StationDetailWindow *m_stationDetail;
     NavigationWindow *m_navigation;
     WalletRechargeWindow *m_walletRecharge;
-    QSet<QString> m_registeredPhones;
+    QString m_newUserNicknamePattern;
+    QHash<QString, DemoUserData> m_demoUsers;
     QSet<QString> m_failedOnce;
 };

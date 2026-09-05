@@ -7,7 +7,12 @@
 ## 运行环境
 
 - 目标运行环境是 VMware 虚拟机 `BitDev`：Ubuntu 22.04 64 位、2 vCPU、8192 MB 内存、NAT 网络，客户机用户为 `bit`。
-- 已核实目标环境使用 Qt 5.15.3/qmake。项目资料中的 Qt Creator 6.2+ 是 IDE 要求，不代表运行库为 Qt 6；使用 Qt 6 API 前必须先确认环境变化。
+- 项目统一使用 Qt 6 开发和验收。BitDev 已安装 Qt 6.2.4，qmake 入口为 `/usr/bin/qmake6`；不得再使用默认 `/usr/bin/qmake`（Qt 5.15.3）构建本项目，也不得以 Qt 5 的构建或测试结果作为验收依据。
+- 2026-09-05 宿主机检查结果：`ChargingUser.pro` 当前仅声明 `QT += widgets network`、C++17，未声明 `webenginewidgets`；仓库源码和工程文件中暂未发现 WebEngine 地图实现。
+- 宿主机 Anaconda 自带的 `qmake.exe` 是 Qt 5，仅可辅助查看文件，不能用于本项目构建。Qt 6 构建、测试和 UI 验收必须在 BitDev 中使用 `/usr/bin/qmake6` 完成。
+- 2026-09-05 BitDev 实测结果：Ubuntu 22.04.3 LTS；Qt 6.2.4；`/usr/bin/qmake6`、`qt6-base-dev`、`qt6-declarative-dev` 和 `qt6-tools-dev` 已安装；共享项目目录 `/mnt/hgfs/WorkSpace/QtProjects/APP/ChargingUser` 可访问。
+- 宿主机普通权限运行 `vmrun` 时，可能无法枚举由高权限 VMware 进程启动的虚拟机，并误报 `Total running VMs: 0` 或 `The virtual machine is not powered on`。检查虚拟机、读取客户机 IP 和后续 `vmrun -T ws ...` 操作必须使用宿主机高权限执行；先用高权限 `vmrun -T ws list` 核对，再用高权限 `vmrun -T ws getGuestIPAddress <vmx> -wait` 动态获取 IP。不得因普通权限下的误报擅自启动第二个实例、结束 VMware 进程或删除 `.lck` 文件。
+- 腾讯地图接入前置条件：协议冻结后，在上述 BitDev 环境中确认 Qt WebEngine 页面实际加载、地图 API Key 注入和坐标/路线功能；地图 Key 只能通过本地未提交配置或环境变量注入，不得写入仓库、日志、测试快照或协议样例。
 - Windows 宿主机只作为源码编辑和资料管理环境。
 
 ### 虚拟机登录凭据
@@ -37,9 +42,9 @@
 
 - 日常构建、测试、日志查看和程序生命周期管理必须在 Ubuntu 客户机 SSH 中完成；需要窗口、布局、地图渲染或弹窗验收时必须使用 VMware GUI。
 - 当前工程入口为 `ChargingUser.pro`，应用入口为 `src/main.cpp`，目标名为 `ChargingUserUI`，当前声明 `QT += widgets network`、C++17 和 qmake 构建；上级目录的旧 `ChargingUserUI` 原型不是本仓库构建目标。
-- qmake 工程必须明确 Qt 模块和 C++ 标准；正式构建产物放入 `bin/`，中间文件放入 `build/`。`bin/`、`build/`、Qt Creator 用户配置和其他机器生成文件不得提交。
+- qmake 工程必须明确 Qt 模块和 C++ 标准；正式构建产物放入 `bin/`，中间文件放入 `build/`。Windows 与 Ubuntu 共享源码时只能在 BitDev 中使用 Qt 6 Kit 构建，避免不同 Qt ABI 的对象文件互相污染。`bin/`、`build/`、Qt Creator 用户配置和其他机器生成文件不得提交。
 - 构建前确认 `.gitignore` 已覆盖构建产物、本机 Kit 配置、日志、临时文件和敏感配置；源码、`.ui`、`.qss`、`.qrc`、必要项目文件和测试代码必须保留。
-- UI 和业务实现的每次可交付变更都必须在 Ubuntu/Qt 5.15.3 目标环境完成相称的构建和测试验证；不能以 Windows 上的静态检查或其他 Qt 版本的成功编译替代目标环境验证。
+- UI 和业务实现的每次可交付变更都必须在 Ubuntu 22.04 / Qt 6.2.4 目标环境使用 `qmake6` 完成相称的构建和测试验证；不能以 Windows、Qt 5 或其他 Qt 版本的结果替代。
 
 ## 注释与代码可读性原则
 
@@ -53,7 +58,7 @@
 ## 资源图片格式
 
 - 项目所有资源图片禁止使用 SVG 格式。SVG 在当前 Qt/运行环境中可能出现显示、缩放或资源加载问题，不得新增、继续引用或作为正式 UI 验收资源。
-- 图片资源统一使用已在 Ubuntu/Qt 5.15.3 虚拟机中验证过的 PNG、JPG/JPEG 等栅格格式；需要透明背景或图标时优先使用 PNG。
+- 图片资源统一使用已在 Ubuntu/Qt 6.2.4 虚拟机中验证过的 PNG、JPG/JPEG 等栅格格式；需要透明背景或图标时优先使用 PNG。
 - `.qrc` 中不得登记 SVG 图片；`.ui`、QSS、C++ 和文档不得引用 `.svg` 作为运行时资源。已有 SVG 文件不擅自删除，迁移时应生成等效栅格资源、更新引用并在虚拟机中验证显示，再决定是否清理旧文件。
 - 图片替换必须检查资源别名、尺寸、DPI、透明度、加载失败状态和不同页面的显示效果；不能只在 Windows 预览正常就视为通过。
 
@@ -102,7 +107,7 @@ UI 必须完成：
 
 - UI 层仅依赖稳定的页面意图与 ViewState 合同；业务层不依赖 `QWidget`、`Ui::*`、控件指针或页面编号。
 - `src/app/UserUiBinder` 成为页面与 `IUserService` 的唯一正式连接点，M4 负责页面分流。
-- 在 Ubuntu 22.04 / Qt 5.15.3 目标环境完成构建、资源加载、各 UI 状态和交互验证。
+- 在 Ubuntu 22.04 / Qt 6.2.4 目标环境使用 `qmake6` 完成构建、资源加载、各 UI 状态和交互验证。
 - 详细接口与迁移任务见 `docs/ui-collaboration-guide.md` 和 `docs/user-module-contract.md` 第 6 节。
 
 ## 用户模块开发基线

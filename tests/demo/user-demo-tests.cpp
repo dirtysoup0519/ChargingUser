@@ -8,9 +8,41 @@
 #include "presentation/pages/profile/profileeditwindow.h"
 
 #include <QLabel>
+#include <QFile>
+#include <QJsonArray>
+#include <QJsonDocument>
+#include <QJsonObject>
 #include <QLineEdit>
 #include <QPushButton>
 #include <QToolButton>
+
+namespace
+{
+
+QJsonObject demoData()
+{
+    QFile file(QStringLiteral(":/demo/user-demo-data.tmp"));
+    if (!file.open(QIODevice::ReadOnly))
+        return {};
+    return QJsonDocument::fromJson(file.readAll()).object();
+}
+
+QJsonObject userForScenario(const QString &scenario)
+{
+    for (const QJsonValue &value : demoData().value(QStringLiteral("users")).toArray()) {
+        const QJsonObject user = value.toObject();
+        if (user.value(QStringLiteral("scenario")).toString() == scenario)
+            return user;
+    }
+    return {};
+}
+
+QString testValue(const QString &name)
+{
+    return demoData().value(QStringLiteral("testData")).toObject().value(name).toString();
+}
+
+} // namespace
 
 class UserDemoTests final : public QObject
 {
@@ -21,6 +53,7 @@ private slots:
     void cleanup();
     void invalidPhoneKeepsInputAndShowsError();
     void oldUserReachesHomeAndProfileSummary();
+    void oldUserReloginKeepsConfiguredNickname();
     void newUserCompletesNicknameAndReachesHome();
     void networkFailureKeepsInputAndSecondSubmitSucceeds();
     void frozenUserShowsRestrictionButCanRecharge();
@@ -90,19 +123,21 @@ void UserDemoTests::waitForMainWindow()
 
 void UserDemoTests::invalidPhoneKeepsInputAndShowsError()
 {
-    submitPhone(QStringLiteral("123"));
+    const QString invalidPhone = testValue(QStringLiteral("invalidPhone"));
+    submitPhone(invalidPhone);
 
     QLineEdit *phoneEdit = m_login->findChild<QLineEdit *>(
         QStringLiteral("editPhoneNumber"));
     QLabel *error = m_login->findChild<QLabel *>(QStringLiteral("errorLabel"));
-    QCOMPARE(phoneEdit->text(), QStringLiteral("123"));
+    QCOMPARE(phoneEdit->text(), invalidPhone);
     QVERIFY(error->isVisible());
     QVERIFY(!error->text().isEmpty());
 }
 
 void UserDemoTests::oldUserReachesHomeAndProfileSummary()
 {
-    submitPhone(QStringLiteral("13800000000"));
+    const QJsonObject user = userForScenario(QStringLiteral("normal"));
+    submitPhone(user.value(QStringLiteral("phone")).toString());
     QPushButton *loginButton = m_login->findChild<QPushButton *>(
         QStringLiteral("btnLogin"));
     QVERIFY(!loginButton->isEnabled());
@@ -116,13 +151,42 @@ void UserDemoTests::oldUserReachesHomeAndProfileSummary()
         QStringLiteral("profileSummaryLabel"));
     QLabel *phone = m_mainWindow->findChild<QLabel *>(
         QStringLiteral("profilePhoneLabel"));
-    QCOMPARE(summary->text(), QStringLiteral("演示用户"));
-    QCOMPARE(phone->text(), QStringLiteral("138****0000"));
+    QCOMPARE(summary->text(), user.value(QStringLiteral("nickname")).toString());
+    const QString userPhone = user.value(QStringLiteral("phone")).toString();
+    QCOMPARE(phone->text(), userPhone.left(3) + QStringLiteral("****") + userPhone.right(4));
+}
+
+void UserDemoTests::oldUserReloginKeepsConfiguredNickname()
+{
+    const QJsonObject user = userForScenario(QStringLiteral("normal"));
+    const QString phone = user.value(QStringLiteral("phone")).toString();
+    const QString nickname = user.value(QStringLiteral("nickname")).toString();
+
+    submitPhone(phone);
+    waitForMainWindow();
+    QToolButton *profileNav = m_mainWindow->findChild<QToolButton *>(
+        QStringLiteral("profileNav"));
+    QPushButton *logout = m_mainWindow->findChild<QPushButton *>(
+        QStringLiteral("btnLogout"));
+    QVERIFY(profileNav);
+    QTest::mouseClick(profileNav, Qt::LeftButton);
+    QVERIFY(logout);
+    QTest::mouseClick(logout, Qt::LeftButton);
+    QTRY_VERIFY_WITH_TIMEOUT(m_login->isVisible(), 2000);
+
+    submitPhone(phone);
+    waitForMainWindow();
+    QTest::mouseClick(profileNav, Qt::LeftButton);
+    QLabel *summary = m_mainWindow->findChild<QLabel *>(
+        QStringLiteral("profileSummaryLabel"));
+    QVERIFY(summary);
+    QCOMPARE(summary->text(), nickname);
 }
 
 void UserDemoTests::newUserCompletesNicknameAndReachesHome()
 {
-    submitPhone(QStringLiteral("13500005678"));
+    const QString newUserPhone = testValue(QStringLiteral("newUserPhone"));
+    submitPhone(newUserPhone);
     QTRY_VERIFY_WITH_TIMEOUT(m_profileEdit->isVisible(), 3000);
 
     QLineEdit *phone = m_profileEdit->findChild<QLineEdit *>(
@@ -134,10 +198,10 @@ void UserDemoTests::newUserCompletesNicknameAndReachesHome()
     QVERIFY(phone);
     QVERIFY(nickname);
     QVERIFY(save);
-    QCOMPARE(phone->text(), QStringLiteral("13500005678"));
-    QCOMPARE(nickname->text(), QStringLiteral("用户5678"));
+    QCOMPARE(phone->text(), newUserPhone);
+    QCOMPARE(nickname->text(), testValue(QStringLiteral("newUserGeneratedNickname")));
 
-    nickname->setText(QStringLiteral("新用户昵称"));
+    nickname->setText(testValue(QStringLiteral("newUserSavedNickname")));
     QTest::mouseClick(save, Qt::LeftButton);
     QVERIFY(!save->isEnabled());
     waitForMainWindow();
@@ -145,7 +209,9 @@ void UserDemoTests::newUserCompletesNicknameAndReachesHome()
 
 void UserDemoTests::networkFailureKeepsInputAndSecondSubmitSucceeds()
 {
-    submitPhone(QStringLiteral("13700000000"));
+    const QString retryPhone = userForScenario(QStringLiteral("retry"))
+                                   .value(QStringLiteral("phone")).toString();
+    submitPhone(retryPhone);
 
     QLabel *error = m_login->findChild<QLabel *>(QStringLiteral("errorLabel"));
     QPushButton *loginButton = m_login->findChild<QPushButton *>(
@@ -153,7 +219,7 @@ void UserDemoTests::networkFailureKeepsInputAndSecondSubmitSucceeds()
     QLineEdit *phoneEdit = m_login->findChild<QLineEdit *>(
         QStringLiteral("editPhoneNumber"));
     QTRY_VERIFY_WITH_TIMEOUT(error->isVisible(), 2000);
-    QCOMPARE(phoneEdit->text(), QStringLiteral("13700000000"));
+    QCOMPARE(phoneEdit->text(), retryPhone);
     QVERIFY(loginButton->isEnabled());
 
     QTest::mouseClick(loginButton, Qt::LeftButton);
@@ -162,7 +228,8 @@ void UserDemoTests::networkFailureKeepsInputAndSecondSubmitSucceeds()
 
 void UserDemoTests::frozenUserShowsRestrictionButCanRecharge()
 {
-    submitPhone(QStringLiteral("13900000000"));
+    submitPhone(userForScenario(QStringLiteral("frozen"))
+                    .value(QStringLiteral("phone")).toString());
     waitForMainWindow();
 
     QToolButton *profileNav = m_mainWindow->findChild<QToolButton *>(
@@ -182,7 +249,8 @@ void UserDemoTests::frozenUserShowsRestrictionButCanRecharge()
 
 void UserDemoTests::logoutReturnsToClearedLoginPage()
 {
-    submitPhone(QStringLiteral("13800000000"));
+    submitPhone(userForScenario(QStringLiteral("normal"))
+                    .value(QStringLiteral("phone")).toString());
     waitForMainWindow();
 
     QToolButton *profileNav = m_mainWindow->findChild<QToolButton *>(

@@ -6,3 +6,6 @@ SOURCES += \
 
 HEADERS += \
     $$PWD/userdemocontroller.h
+
+DISTFILES += \
+    $$PWD/user-demo-data.tmp

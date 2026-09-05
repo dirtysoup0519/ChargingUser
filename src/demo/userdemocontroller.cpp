@@ -9,26 +9,61 @@
 #include "presentation/pages/home/stationdetailwindow.h"
 #include "presentation/pages/profile/walletrechargewindow.h"
 
+#include <QFile>
+#include <QJsonDocument>
+#include <QJsonObject>
+#include <QJsonArray>
+
 namespace
 {
 
 constexpr int DemoDelayMs = 450;
 
-LoginResult makeLoginResult(const QString &phone, bool isNewUser,
-                            AccountStatus accountStatus)
+QHash<QString, DemoUserData> loadDemoUsers(QString *newUserNicknamePattern)
 {
+    QFile file(QStringLiteral(":/demo/user-demo-data.tmp"));
+    if (!file.open(QIODevice::ReadOnly))
+        return {};
+    const QJsonObject root = QJsonDocument::fromJson(file.readAll()).object();
+    if (newUserNicknamePattern)
+        *newUserNicknamePattern = root.value(QStringLiteral("defaultNewUserNickname"))
+                                       .toString(QStringLiteral("用户{last4}"));
+    QHash<QString, DemoUserData> users;
+    for (const QJsonValue &value : root.value(QStringLiteral("users")).toArray()) {
+        const QJsonObject object = value.toObject();
+        DemoUserData user;
+        user.nickname = object.value(QStringLiteral("nickname")).toString();
+        const QJsonObject firstFailure =
+            object.value(QStringLiteral("firstLoginFailure")).toObject();
+        user.failFirstLogin = !firstFailure.isEmpty();
+        user.firstLoginFailureCode = firstFailure.value(QStringLiteral("code")).toString();
+        user.firstLoginFailureMessage = firstFailure.value(QStringLiteral("message")).toString();
+        user.firstLoginFailureRetryable =
+            firstFailure.value(QStringLiteral("retryable")).toBool();
+        const QString status = object.value(QStringLiteral("status")).toString();
+        if (status == QStringLiteral("frozen")) user.status = AccountStatus::Frozen;
+        else if (status == QStringLiteral("unknown")) user.status = AccountStatus::Unknown;
+        users.insert(object.value(QStringLiteral("phone")).toString(), user);
+    }
+    return users;
+}
+
+LoginResult makeLoginResult(const QString &phone, const DemoUserData *user,
+                            const QString &newUserNicknamePattern)
+{
+    const bool isNewUser = user == nullptr;
+    QString generatedNickname = newUserNicknamePattern;
+    generatedNickname.replace(QStringLiteral("{last4}"), phone.right(4));
     LoginResult result;
     result.isNewUser = isNewUser;
     result.profileCompleted = !isNewUser;
     result.session.authenticated = true;
-    result.session.accountStatus = accountStatus;
+    result.session.accountStatus = user ? user->status : AccountStatus::Normal;
     result.session.profile.userId = QStringLiteral("U") + phone;
     result.session.profile.phone = phone;
-    if (!isNewUser) {
-        result.session.profile.nickname = accountStatus == AccountStatus::Frozen
-                                              ? QStringLiteral("受限用户")
-                                              : QStringLiteral("演示用户");
-    }
+    result.session.profile.nickname = user
+        ? user->nickname
+        : generatedNickname;
     return result;
 }
 
@@ -57,10 +92,7 @@ UserDemoController::UserDemoController(MockUserNetworkApi *network,
     , m_stationDetail(new StationDetailWindow(mainWindow))
     , m_navigation(new NavigationWindow(mainWindow))
     , m_walletRecharge(new WalletRechargeWindow(mainWindow))
-    , m_registeredPhones{QStringLiteral("13800000000"),
-                         QStringLiteral("13900000000"),
-                         QStringLiteral("13600000000"),
-                         QStringLiteral("13700000000")}
+    , m_demoUsers(loadDemoUsers(&m_newUserNicknamePattern))
 {
     Q_ASSERT(m_network);
     Q_ASSERT(m_binder);
@@ -151,48 +183,41 @@ void UserDemoController::configureLogin(const QString &phone)
 {
     MockUserNetworkApi::Behavior loginBehavior;
     loginBehavior.delayMs = DemoDelayMs;
-    if (phone == QStringLiteral("13700000000")
+    const DemoUserData *user = m_demoUsers.contains(phone) ? &m_demoUsers[phone] : nullptr;
+    if (user && user->failFirstLogin
         && !m_failedOnce.contains(phone)) {
         m_failedOnce.insert(phone);
         loginBehavior.outcome = MockUserNetworkApi::Outcome::Failure;
-        loginBehavior.error.code = QStringLiteral("request-timeout");
-        loginBehavior.error.displayMessage =
-            QStringLiteral("演示网络超时，请再次点击登录重试。");
-        loginBehavior.error.retryable = true;
+        loginBehavior.error.code = user->firstLoginFailureCode;
+        loginBehavior.error.displayMessage = user->firstLoginFailureMessage;
+        loginBehavior.error.retryable = user->firstLoginFailureRetryable;
     }
     m_network->setLoginBehavior(loginBehavior);
 
-    const bool isNewUser = !m_registeredPhones.contains(phone);
-    AccountStatus status = AccountStatus::Normal;
-    if (phone == QStringLiteral("13900000000")) {
-        status = AccountStatus::Frozen;
-    } else if (phone == QStringLiteral("13600000000")) {
-        status = AccountStatus::Unknown;
-    }
-
-    const LoginResult result = makeLoginResult(phone, isNewUser, status);
+    const LoginResult result = makeLoginResult(phone, user, m_newUserNicknamePattern);
     m_network->setLoginResult(result);
     m_network->setUserProfileResult(makeProfileResult(result));
-    if (phone.size() == 11) {
-        m_registeredPhones.insert(phone);
-    }
 }
 
 void UserDemoController::configureNicknameSave(const QString &nickname)
 {
     MockUserNetworkApi::Behavior behavior;
     behavior.delayMs = DemoDelayMs;
-    if (nickname == QStringLiteral("网络错误")) {
-        behavior.outcome = MockUserNetworkApi::Outcome::Failure;
-        behavior.error.code = QStringLiteral("connection-lost");
-        behavior.error.displayMessage = QStringLiteral("演示网络连接中断。");
-        behavior.error.retryable = true;
-    } else if (nickname == QStringLiteral("服务错误")) {
-        behavior.outcome = MockUserNetworkApi::Outcome::Failure;
-        behavior.error.code = QStringLiteral("server-demo-error");
-        behavior.error.displayMessage = QStringLiteral("演示服务端拒绝保存昵称。");
-    } else if (nickname == QStringLiteral("结果未知")) {
-        behavior.outcome = MockUserNetworkApi::Outcome::ResultUnknown;
+    QFile file(QStringLiteral(":/demo/user-demo-data.tmp"));
+    if (file.open(QIODevice::ReadOnly)) {
+        const QJsonObject failures = QJsonDocument::fromJson(file.readAll()).object()
+                                          .value(QStringLiteral("nicknameFailures")).toObject();
+        const QJsonObject failure = failures.value(nickname).toObject();
+        if (!failure.isEmpty()) {
+            if (failure.value(QStringLiteral("resultUnknown")).toBool()) {
+                behavior.outcome = MockUserNetworkApi::Outcome::ResultUnknown;
+            } else {
+                behavior.outcome = MockUserNetworkApi::Outcome::Failure;
+                behavior.error.code = failure.value(QStringLiteral("code")).toString();
+                behavior.error.displayMessage = failure.value(QStringLiteral("message")).toString();
+                behavior.error.retryable = failure.value(QStringLiteral("retryable")).toBool();
+            }
+        }
     }
     m_network->setNicknameBehavior(behavior);
 }

@@ -17,6 +17,7 @@ ui_*.h
 # Runtime files
 *.log
 *.tmp
+!src/demo/user-demo-data.tmp
 
 # Local VMware credentials; never commit
 .vm-credentials

@@ -1,20 +1,24 @@
 # 用户流程小 Demo
 
-该 Demo 使用 `MockUserNetworkApi + UserApplicationAssembly + IUserUiBinder`，不依赖服务端，且不会替换正式 `src/main.cpp`。
+该 Demo 使用 `MockUserNetworkApi + UserApplicationAssembly + IUserUiBinder`，
+不依赖服务端，并通过 `CONFIG+=user_demo` 切换到独立 Demo 入口。
 
 ## 构建
 
-在 BitDev / Ubuntu 22.04 / Qt 5.15.3 中执行：
+在 BitDev / Ubuntu 22.04 / Qt 6.2.4 中执行：
 
 ```bash
 mkdir -p build/user-demo
 cd build/user-demo
-qmake ../.. CONFIG+=user_demo
+qmake6 ../.. CONFIG+=user_demo
 make -j2
 ../../bin/ChargingUserUI
 ```
 
 ## 演示账号
+
+演示用户、测试输入和模拟失败规则统一维护在
+`src/demo/user-demo-data.tmp`，不要在 C++ 测试或 Demo 控制器中新增硬编码用户数据。
 
 - `13800000000`：普通老用户，登录后进入首页。
 - `13900000000`：Frozen 老用户，登录后进入受限首页。
@@ -38,7 +42,7 @@ make -j2
 已完成：
 
 - 用户服务、流程协调器、无 QWidget Binder、Mock Demo 装配已接入现有页面。
-- Debug Demo 已在 BitDev（Ubuntu 22.04、Qt 5.15.3）成功编译。
+- Debug Demo 必须在 BitDev（Ubuntu 22.04、Qt 6.2.4）使用 `qmake6` 编译和验证。
 - 用户模块 30/30、流程层 20/20、网络层 15/15、应用/Binder 11/11
   曾在本次合并过程中通过。
 - Demo 页面交互测试覆盖登录校验、老/新用户分流、网络失败重试、Frozen
