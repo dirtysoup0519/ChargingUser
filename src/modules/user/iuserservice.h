@@ -26,6 +26,10 @@ public:
 
     virtual UserSession currentSession() const = 0;
 
+    /* 查询操作状态（第一步规格 §二.2）：每次真实异步操作有唯一 Running，
+     * 结束后回到 Idle 或 ResultUnknown；未开始过的操作返回 Idle */
+    virtual UserOperationStatus operationStatus(UserOperation operation) const = 0;
+
 signals:
     void loginSucceeded(const LoginResult &result);
     void currentUserRefreshed(const UserProfileResult &result);
@@ -33,4 +37,5 @@ signals:
     void logoutSucceeded(const OperationResult &result);
     void operationFailed(const ClientError &error);
     void sessionChanged(const UserSession &session);
+    void operationStatusChanged(const UserOperationStatus &status);
 };

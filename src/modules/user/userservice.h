@@ -20,6 +20,7 @@ public:
     void logout() override;
 
     UserSession currentSession() const override;
+    UserOperationStatus operationStatus(UserOperation operation) const override;
 
 private slots:
     void handleLoginSucceeded(const LoginResult &result);
@@ -46,6 +47,11 @@ private:
 
     RequestContext createContext(bool isMutation) const;
     bool isPhoneValid(const QString &phone) const;
+    bool isNicknameValid(const QString &trimmedNickname) const;
+    UserOperation toUserOperation(RequestKind kind) const;
+    void publishOperationState(RequestKind kind,
+                               UserOperationState state,
+                               const RequestContext &context = RequestContext());
     bool hasPendingRequest(RequestKind kind) const;
     bool takePendingRequest(const QString &requestId,
                             RequestKind expectedKind,
@@ -58,4 +64,5 @@ private:
     QHash<QString, PendingRequest> m_pendingRequests;
     quint64 m_sessionGeneration = 0;
     bool m_profileUpdateResultUnknown = false;
+    QHash<int, UserOperationStatus> m_operationStates;
 };

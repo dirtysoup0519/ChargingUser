@@ -43,6 +43,7 @@ void UserService::loginByPhone(const QString &phone)
     const RequestContext context = createContext(true);
     m_pendingRequests.insert(context.requestId,
                              {RequestKind::Login, m_sessionGeneration, context});
+    publishOperationState(RequestKind::Login, UserOperationState::Running, context);
     m_networkApi->loginByPhone(phone, context);
 }
 
@@ -62,6 +63,8 @@ void UserService::refreshCurrentUser()
     const RequestContext context = createContext(false);
     m_pendingRequests.insert(context.requestId,
                              {RequestKind::QueryCurrentUser, m_sessionGeneration, context});
+    publishOperationState(RequestKind::QueryCurrentUser,
+                          UserOperationState::Running, context);
     m_networkApi->queryCurrentUser(m_session.profile.userId, context);
 }
 
@@ -72,9 +75,19 @@ void UserService::updateNickname(const QString &nickname)
                   QStringLiteral("No active user session."));
         return;
     }
-    if (nickname.trimmed().isEmpty()) {
-        failLocal(QStringLiteral("invalid-nickname"),
-                  QStringLiteral("Nickname cannot be empty."));
+    // 昵称校验（第一步规格 §二.3）：先裁剪首尾空白，再细分校验错误码
+    const QString trimmed = nickname.trimmed();
+    if (!isNicknameValid(trimmed)) {
+        if (trimmed.isEmpty()) {
+            failLocal(QStringLiteral("invalid-nickname-empty"),
+                      QStringLiteral("Nickname cannot be empty."));
+        } else if (trimmed.size() > 20) {
+            failLocal(QStringLiteral("invalid-nickname-too-long"),
+                      QStringLiteral("Nickname must not exceed 20 characters."));
+        } else {
+            failLocal(QStringLiteral("invalid-nickname-control-character"),
+                      QStringLiteral("Nickname must not contain control characters."));
+        }
         return;
     }
     if (hasPendingRequest(RequestKind::UpdateNickname)) {
@@ -91,7 +104,9 @@ void UserService::updateNickname(const QString &nickname)
     const RequestContext context = createContext(true);
     m_pendingRequests.insert(context.requestId,
                              {RequestKind::UpdateNickname, m_sessionGeneration, context});
-    m_networkApi->updateNickname(m_session.profile.userId, nickname.trimmed(), context);
+    publishOperationState(RequestKind::UpdateNickname,
+                          UserOperationState::Running, context);
+    m_networkApi->updateNickname(m_session.profile.userId, trimmed, context);
 }
 
 void UserService::logout()
@@ -106,12 +121,24 @@ void UserService::logout()
     const RequestContext context = createContext(true);
     m_pendingRequests.insert(context.requestId,
                              {RequestKind::Logout, m_sessionGeneration, context});
+    publishOperationState(RequestKind::Logout, UserOperationState::Running, context);
     m_networkApi->logout(context);
 }
 
 UserSession UserService::currentSession() const
 {
     return m_session;
+}
+
+UserOperationStatus UserService::operationStatus(UserOperation operation) const
+{
+    const auto iterator = m_operationStates.constFind(static_cast<int>(operation));
+    if (iterator != m_operationStates.constEnd()) {
+        return iterator.value();
+    }
+    UserOperationStatus status;
+    status.operation = operation;
+    return status;
 }
 
 void UserService::handleLoginSucceeded(const LoginResult &result)
@@ -125,11 +152,17 @@ void UserService::handleLoginSucceeded(const LoginResult &result)
     // 否则旧账号的迟到应答（同世代）会覆盖刚建立的会话（审查问题 3）
     ++m_sessionGeneration;
     m_pendingRequests.clear();
+    // 新会话不能继承旧账号的操作状态或请求上下文。publishOperationState
+    // 会抑制默认 Idle 的无效广播，因此首次普通登录仍只有 Login 两次迁移。
+    publishOperationState(RequestKind::QueryCurrentUser, UserOperationState::Idle);
+    publishOperationState(RequestKind::UpdateNickname, UserOperationState::Idle);
+    publishOperationState(RequestKind::Logout, UserOperationState::Idle);
 
     LoginResult confirmed = result;
     confirmed.session.authenticated = true;
     m_session = confirmed.session;
     m_profileUpdateResultUnknown = false;
+    publishOperationState(RequestKind::Login, UserOperationState::Idle, pending.context);
     emit sessionChanged(m_session);
     emit loginSucceeded(confirmed);
 }
@@ -142,11 +175,39 @@ void UserService::handleCurrentUserQuerySucceeded(const UserProfileResult &resul
         return;
     }
 
+    // 防串号（第一步规格 §二.4）：应答用户与当前会话不符时不合并会话、
+    // 不解除结果未知，操作回到 Idle；网络层已按 218 回显 username 校验过一次，
+    // 这是服务层的第二道防御
+    if (result.profile.userId != m_session.profile.userId) {
+        ClientError error;
+        error.code = QStringLiteral("profile-user-mismatch");
+        error.displayMessage =
+            QStringLiteral("Profile response does not match the current user.");
+        error.requestId = result.requestId;
+        error.operationId = result.operationId;
+        // 与其他路径统一：先发布终态，再发错误信号
+        publishOperationState(RequestKind::QueryCurrentUser,
+                              UserOperationState::Idle,
+                              RequestContext{result.requestId, result.operationId});
+        emit operationFailed(error);
+        return;
+    }
+
     m_session.profile = result.profile;
     m_session.accountStatus = result.accountStatus;
     // 查询结果是服务端权威状态：改昵称“结果未知”的锁定在此解除，
     // 用户可依据当前昵称决定是否重试（合同 §11 v1.2 恢复规则，审查问题 4）
+    const bool recoveringUnknownUpdate = m_profileUpdateResultUnknown;
     m_profileUpdateResultUnknown = false;
+    publishOperationState(RequestKind::QueryCurrentUser,
+                          UserOperationState::Idle,
+                          RequestContext{result.requestId, result.operationId});
+    // 只有结果未知的昵称修改可由权威资料刷新解除。正常的并发昵称请求
+    // 仍须等待自身终态，不能被资料刷新提前标记为 Idle。
+    if (recoveringUnknownUpdate) {
+        publishOperationState(RequestKind::UpdateNickname,
+                              UserOperationState::Idle);
+    }
     emit sessionChanged(m_session);
     emit currentUserRefreshed(result);
 }
@@ -162,6 +223,8 @@ void UserService::handleNicknameUpdateSucceeded(const UserProfileResult &result)
     // 219 应答只携带昵称（协议 v2.1），不得用部分资料整体覆盖会话，
     // 也不得把 accountStatus 抹成 Unknown（Unknown 按合同按受限状态处理）
     m_session.profile.nickname = result.profile.nickname;
+    publishOperationState(RequestKind::UpdateNickname, UserOperationState::Idle,
+                          pending.context);
     emit sessionChanged(m_session);
     emit nicknameUpdated(result);
 }
@@ -174,6 +237,8 @@ void UserService::handleLogoutSucceeded(const OperationResult &result)
         return;
     }
 
+    publishOperationState(RequestKind::Logout, UserOperationState::Idle,
+                          pending.context);
     emit logoutSucceeded(result);
 }
 
@@ -191,6 +256,11 @@ void UserService::handleRequestFailed(const ClientError &error)
     }
     if (pending.kind == RequestKind::UpdateNickname && error.resultUnknown) {
         m_profileUpdateResultUnknown = true;
+        publishOperationState(pending.kind, UserOperationState::ResultUnknown,
+                              RequestContext{error.requestId, error.operationId});
+    } else {
+        publishOperationState(pending.kind, UserOperationState::Idle,
+                              RequestContext{error.requestId, error.operationId});
     }
 
     emit operationFailed(error);
@@ -217,6 +287,61 @@ bool UserService::isPhoneValid(const QString &phone) const
         }
     }
     return true;
+}
+
+bool UserService::isNicknameValid(const QString &trimmedNickname) const
+{
+    // 规格要求：裁剪后非空、长度 ≤ 20 个 QChar、不含控制字符（含换行/制表符）
+    if (trimmedNickname.isEmpty() || trimmedNickname.size() > 20) {
+        return false;
+    }
+    for (const QChar character : trimmedNickname) {
+        // QChar::category() 兼容 Qt5/Qt6：Other_Control 覆盖换行、制表符等全部控制字符
+        if (character.category() == QChar::Other_Control) {
+            return false;
+        }
+    }
+    return true;
+}
+
+UserOperation UserService::toUserOperation(RequestKind kind) const
+{
+    switch (kind) {
+    case RequestKind::Login:
+        return UserOperation::Login;
+    case RequestKind::QueryCurrentUser:
+        return UserOperation::RefreshProfile;
+    case RequestKind::UpdateNickname:
+        return UserOperation::UpdateNickname;
+    case RequestKind::Logout:
+        return UserOperation::Logout;
+    }
+    return UserOperation::Login;
+}
+
+void UserService::publishOperationState(RequestKind kind, UserOperationState state,
+                                        const RequestContext &context)
+{
+    const UserOperation operation = toUserOperation(kind);
+    UserOperationStatus status;
+    status.operation = operation;
+    status.state = state;
+    status.requestId = context.requestId;
+    status.operationId = context.operationId;
+
+    // 仅在状态或关联上下文真正变化时广播（评审意见 P2）：
+    // operationStatusChanged 表达真实迁移，避免订阅者无效渲染
+    // 未记录过的操作在公开语义上就是 Idle + 空上下文，不能把第一次
+    // “复位”误报为状态变化。
+    const UserOperationStatus current = operationStatus(operation);
+    if (current.state == status.state
+        && current.requestId == status.requestId
+        && current.operationId == status.operationId) {
+        return;
+    }
+
+    m_operationStates.insert(static_cast<int>(operation), status);
+    emit operationStatusChanged(status);
 }
 
 bool UserService::hasPendingRequest(RequestKind kind) const
@@ -257,5 +382,10 @@ void UserService::clearSession()
     m_pendingRequests.clear();
     m_session = UserSession{};
     m_profileUpdateResultUnknown = false;
+    // 会话清理后所有操作回到 Idle（第一步规格 §二.5）
+    publishOperationState(RequestKind::Login, UserOperationState::Idle);
+    publishOperationState(RequestKind::QueryCurrentUser, UserOperationState::Idle);
+    publishOperationState(RequestKind::UpdateNickname, UserOperationState::Idle);
+    publishOperationState(RequestKind::Logout, UserOperationState::Idle);
     emit sessionChanged(m_session);
 }
