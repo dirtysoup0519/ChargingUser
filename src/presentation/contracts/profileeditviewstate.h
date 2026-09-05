@@ -10,4 +10,5 @@ struct ProfileEditViewState {
     QString nicknameInput;
     QString message;
     bool canSubmit = true;
+    bool canRetry = false;
 };

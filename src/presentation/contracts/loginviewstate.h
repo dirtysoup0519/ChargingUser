@@ -9,4 +9,5 @@ struct LoginViewState {
     QString phoneInput;
     QString message;
     bool canSubmit = true;
+    bool canRetry = false;
 };

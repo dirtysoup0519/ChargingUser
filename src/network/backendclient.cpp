@@ -1,0 +1,133 @@
+#include "backendclient.h"
+
+#include "massagehandler.h"
+
+#include <QTimer>
+
+BackendClient::BackendClient(INetworkTransport *transport, QObject *parent)
+    : QObject(parent)
+    , m_transport(transport)
+    , m_handler(new MassageHandler(this))
+    , m_heartbeatTimer(new QTimer(this))
+    , m_reconnectTimer(new QTimer(this))
+{
+    Q_ASSERT(m_transport);
+    // 非拥有指针：transport 生命周期由装配层保证长于本对象
+
+    m_heartbeatTimer->setInterval(HEARTBEAT_INTERVAL_MS);
+    m_reconnectTimer->setSingleShot(true);
+    m_reconnectTimer->setInterval(RECONNECT_INTERVAL_MS);
+
+    connect(m_transport, &INetworkTransport::connected,
+            this, &BackendClient::handleConnected);
+    connect(m_transport, &INetworkTransport::disconnected,
+            this, &BackendClient::handleDisconnected);
+    connect(m_transport, &INetworkTransport::dataReceived,
+            m_handler, &MassageHandler::feed);
+    connect(m_transport, &INetworkTransport::transportError, this, [this] {
+        // 首次连接被拒等场景没有 disconnected 信号，只有错误：
+        // 必须在这里调度重连，否则会永远卡在 Connecting（已连接后的错误由
+        // disconnected 信号处理，此处不重复触发）
+        if (m_started && m_state == ConnectionState::Connecting) {
+            setState(ConnectionState::Reconnecting);
+            m_reconnectTimer->start();
+        }
+    });
+
+    connect(m_handler, &MassageHandler::frameReady,
+            this, &BackendClient::handleFrame);
+
+    connect(m_heartbeatTimer, &QTimer::timeout, this, [this] {
+        sendFrame(HEARTBEAT);
+    });
+    connect(m_reconnectTimer, &QTimer::timeout,
+            this, &BackendClient::attemptReconnect);
+}
+
+BackendClient::~BackendClient() = default;
+
+void BackendClient::start()
+{
+    if (m_started) {
+        return;   // 重复 start 会把已连接状态错误地改为 Connecting
+    }
+    m_started = true;
+    setState(ConnectionState::Connecting);
+    m_transport->connectToServer();
+}
+
+void BackendClient::setReconnectIntervalMs(int intervalMs)
+{
+    m_reconnectTimer->setInterval(intervalMs);
+}
+
+void BackendClient::shutdown()
+{
+    m_started = false;
+    m_heartbeatTimer->stop();
+    m_reconnectTimer->stop();
+    m_transport->disconnectFromServer();
+    setState(ConnectionState::Disconnected);
+}
+
+ConnectionState BackendClient::connectionState() const
+{
+    return m_state;
+}
+
+bool BackendClient::sendFrame(int msgType, const QJsonObject &payload)
+{
+    if (m_state != ConnectionState::Connected) {
+        return false;
+    }
+    return m_transport->send(MassageHandler::pack(msgType, payload));
+}
+
+void BackendClient::setState(ConnectionState state)
+{
+    if (m_state == state) {
+        return;
+    }
+    m_state = state;
+    emit connectionStateChanged(m_state);
+}
+
+void BackendClient::handleConnected()
+{
+    // 旧连接的残留半包不得进入新连接
+    m_handler->reset();
+    setState(ConnectionState::Connected);
+    m_heartbeatTimer->start();
+}
+
+void BackendClient::handleDisconnected()
+{
+    m_heartbeatTimer->stop();
+    m_handler->reset();
+
+    if (!m_started) {
+        setState(ConnectionState::Disconnected);
+        return;
+    }
+
+    setState(ConnectionState::Reconnecting);
+    m_reconnectTimer->start();
+}
+
+void BackendClient::handleFrame(int msgType, const QByteArray &payload)
+{
+    // 只在已连接状态下交付业务帧，重连过渡期丢弃迟到数据
+    if (m_state != ConnectionState::Connected) {
+        return;
+    }
+    emit frameReceived(msgType, MassageHandler::fromPayload(payload));
+}
+
+void BackendClient::attemptReconnect()
+{
+    if (!m_started || m_state == ConnectionState::Connected) {
+        return;
+    }
+    setState(ConnectionState::Connecting);
+    m_transport->connectToServer();
+}

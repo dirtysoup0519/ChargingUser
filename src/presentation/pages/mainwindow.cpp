@@ -73,7 +73,8 @@ void MainWindow::renderProfile(const ProfileViewState &state)
         accountMessage = tr("账号状态尚未确认，请等待刷新后再操作。");
     ui->accountStatusLabel->setText(accountMessage);
     ui->accountStatusLabel->setVisible(restricted);
-    ui->btnRecharge->setEnabled(!restricted);
+    // Frozen 用户按 M1 合同仍可充值和支付；只有状态未确认时暂时禁用充值。
+    ui->btnRecharge->setEnabled(state.accountState != AccountDisplayState::Unknown);
 }
 
 void MainWindow::renderSecondaryPage(QWidget *page)

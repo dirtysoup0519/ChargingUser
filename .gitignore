@@ -17,3 +17,6 @@ ui_*.h
 # Runtime files
 *.log
 *.tmp
+
+# Local VMware credentials; never commit
+.vm-credentials
