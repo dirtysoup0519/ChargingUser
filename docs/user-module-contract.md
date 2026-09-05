@@ -1,5 +1,7 @@
 # M1 用户身份与资料模块接口及并行开发约定
 
+> 目录与职责补充：以 `docs/project-structure.md` 为最新约定。根目录 `ui/` 保留 Designer 文件；页面 C++ 响应放入 `src/presentation/`，两部分均由 UI 负责人维护。目标结构与当前已实现代码应分别理解。
+
 ## 1. 文档状态
 
 - 状态：阶段 1 已确认，可作为逻辑开发和 UI 设计的共同输入。
@@ -107,7 +109,7 @@ struct ClientError {
 
 ## 5. M1 业务与网络接口
 
-页面依赖 `IUserService`，`UserService` 依赖 `IUserNetworkApi`。UI 不接触协议编号、JSON 或 `BackendClient`。M1 网络接口至少包含：
+页面通过装配层连接 `IUserService`，不直接持有或调用 Service；`UserService` 依赖 `IUserNetworkApi`。UI 不接触协议编号、JSON 或 `BackendClient`。M1 网络接口至少包含：
 
 ```cpp
 void loginByPhone(const QString &phone, const RequestContext &context);
@@ -462,7 +464,7 @@ M1 不重复实现 socket、心跳或重连，不让 `BackendClient` 直接控�
 - 综合设计和本文的 M1—M4 边界已经由逻辑、UI 和网络负责人确认。
 - 服务端收到第 5.3 节接口需求并确认消息合同负责人。
 - UI 负责人确认第 6 节页面事件、状态和 objectName。
-- 下一步只开始“步骤 1：修正规划与构建骨架”，不提前把未冻结消息码写入代码。
+- 本节为阶段 1 的历史验收清单，不代表当前开发进度；逻辑分支已加入合同、Mock/Service 和真实适配器，目标虚拟机验证状态需另行确认，UI 迁移仍按 TODO 执行。
 
 ## 11. 合同变更记录 v1.1 —— 最小协议扩展（2026-09-04）
 

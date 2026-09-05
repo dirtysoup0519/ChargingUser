@@ -1,5 +1,7 @@
 # ChargingUser UI 并行开发指南
 
+> 目录与职责补充：以 `docs/project-structure.md` 为最新约定。根目录 `ui/` 保留 Designer 文件；页面 C++ 响应放入 `src/presentation/`，两部分均由 UI 负责人维护。目标结构与当前已实现代码应分别理解。
+
 ## 1. 目标与工作范围
 
 UI 分支 `user-design-main` 独立负责页面 Widget、Qt Designer 文件、样式、资源以及加载、空态、错误、禁用、重试等视觉响应。业务分支 `user-module-main` 不操作具体控件，也不要求 UI 代码了解协议、网络连接或服务端消息码。
