@@ -6,20 +6,9 @@ CONFIG -= app_bundle
 TEMPLATE = app
 TARGET = ChargingUserUI
 
-SOURCES += \
-    src/main.cpp \
-    src/loginwindow.cpp \
-    src/profileeditwindow.cpp \
-    src/stationdetailwindow.cpp \
-    src/navigationwindow.cpp \
-    src/mainwindow.cpp
+SOURCES += src/main.cpp
 
-HEADERS += \
-    src/loginwindow.h \
-    src/profileeditwindow.h \
-    src/stationdetailwindow.h \
-    src/navigationwindow.h \
-    src/mainwindow.h
+include(src/presentation/presentation.pri)
 
 FORMS += \
     ui/loginwindow.ui \
