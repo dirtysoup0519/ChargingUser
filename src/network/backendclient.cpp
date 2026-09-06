@@ -24,11 +24,16 @@ BackendClient::BackendClient(INetworkTransport *transport, QObject *parent)
             this, &BackendClient::handleDisconnected);
     connect(m_transport, &INetworkTransport::dataReceived,
             m_handler, &MassageHandler::feed);
-    connect(m_transport, &INetworkTransport::transportError, this, [this] {
+    connect(m_transport, &INetworkTransport::transportError, this,
+            [this](const QString &message) {
+        if (!m_started) {
+            return; // shutdown 后到达的异步错误不能重新驱动连接状态机
+        }
+        emit networkError(message);
         // 首次连接被拒等场景没有 disconnected 信号，只有错误：
         // 必须在这里调度重连，否则会永远卡在 Connecting（已连接后的错误由
         // disconnected 信号处理，此处不重复触发）
-        if (m_started && m_state == ConnectionState::Connecting) {
+        if (m_state == ConnectionState::Connecting) {
             setState(ConnectionState::Reconnecting);
             m_reconnectTimer->start();
         }
@@ -52,6 +57,11 @@ void BackendClient::start()
         return;   // 重复 start 会把已连接状态错误地改为 Connecting
     }
     m_started = true;
+    m_handler->reset();
+    if (m_transport->isConnected()) {
+        handleConnected();
+        return;
+    }
     setState(ConnectionState::Connecting);
     m_transport->connectToServer();
 }
@@ -66,6 +76,7 @@ void BackendClient::shutdown()
     m_started = false;
     m_heartbeatTimer->stop();
     m_reconnectTimer->stop();
+    m_handler->reset();
     m_transport->disconnectFromServer();
     setState(ConnectionState::Disconnected);
 }
@@ -80,7 +91,13 @@ bool BackendClient::sendFrame(int msgType, const QJsonObject &payload)
     if (m_state != ConnectionState::Connected) {
         return false;
     }
-    return m_transport->send(MassageHandler::pack(msgType, payload));
+
+    // 协议规定 107 心跳是零长度载荷；QJsonObject() 经 pack() 会变成 "{}"，
+    // 因此必须使用专用构造函数，不能把空 JSON 对象当作空载荷。
+    const QByteArray frame = (msgType == HEARTBEAT && payload.isEmpty())
+                           ? MassageHandler::makeHeartbeat()
+                           : MassageHandler::pack(msgType, payload);
+    return m_transport->send(frame);
 }
 
 void BackendClient::setState(ConnectionState state)
@@ -94,6 +111,11 @@ void BackendClient::setState(ConnectionState state)
 
 void BackendClient::handleConnected()
 {
+    if (!m_started) {
+        // connectToHost 的迟到成功事件可能发生在 shutdown 之后。
+        m_transport->disconnectFromServer();
+        return;
+    }
     // 旧连接的残留半包不得进入新连接
     m_handler->reset();
     setState(ConnectionState::Connected);
