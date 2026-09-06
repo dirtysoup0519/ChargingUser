@@ -129,3 +129,34 @@ Network state: reconnecting
 `network-basic-communication-plan.md` 第五阶段要求的环境检查、真实监听、无副作用
 心跳闭环、主动停服、连接拒绝、异常断开和结果记录均已完成。基础网络通信分支的
 第一至第五阶段可以进入提交复查；第六阶段 UI 状态展示仍不属于本分支。
+
+## 8. 复验轮记录（2026-09-06，基线 98156e7）
+
+分片边界修复（`98156e7` fix(protocol): bound chunk reassembly resources）合入后，
+按《BitDev 实机联调操作清单》在 Qt 6.2.4 / /usr/bin/qmake6 环境完整复跑一轮，
+替换此前基于 `bf0829e` 的结论。
+
+### 8.1 环境
+
+- 虚拟机、共享路径、服务器 ELF 与哈希（`8d51ece3...70132a`）均与首次联调一致；
+- 服务器仍于 `/tmp/server-run` 隔离运行，工作目录未接触共享目录与原数据库；
+- 客户端 IP 为动态获取（不复用历史记录值）。
+
+### 8.2 结果
+
+- **心跳闭环**：`network-smoke` 连续两次发送 `HEARTBEAT_REQ (107)`、收到
+  `HEARTBEAT_ACK (230, payloadBytes=2)`，退出码均为 `0`；
+- **自动化测试**：protocol-framing 16/16（含 4 项分片边界新回归）、
+  network-transport 13/13、network-adapter 15/15，合计 44/44，零 FAIL，
+  与沙箱 Qt 5.15.15 结果一致；
+- **真实入口参数校验**：`--server-port 0` 报错退出码 `2`；
+- **断线重连观察**：连接后终止服务器进程，客户端依次呈现
+  `connected → reconnecting → connecting → Connection refused → reconnecting`
+  两轮 5 秒重连；重新拉起服务器并点击 "start DatabaseServer" 后，
+  客户端自动恢复至 `connected`，自愈闭环完整，未见旧连接报文污染或重连风暴。
+
+### 8.3 结论与未验证项
+
+首次联调第 7 节的阶段判断在 `98156e7` 基线上继续成立。新增未验证项：无。
+分片边界修复使解析器可安全面对不可信分片流；发送队列背压、UI 连接状态展示、
+`setReconnectIntervalMs()` 参数校验仍为已知限制（见调试指南 §9.1）。
