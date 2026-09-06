@@ -400,3 +400,22 @@ QTest 可以只运行一个测试函数。在对应测试工程的独立构建�
 requestId 回传约定。`BackendClient::setReconnectIntervalMs()` 也未像心跳间隔 setter
 一样拒绝非正数；当前生产入口使用协议默认的正数值，测试和未来配置代码仍必须避免
 传入 0 或负数，后续可补充参数校验和对应单元测试。
+
+### 9.1 边界修复记录（2026-09-06）
+
+上述分片资源边界问题已按建议方案修复，protocol-framing-tests 由 12 项增至 16 项：
+
+1. `protocol.h` 新增 `MAX_ASSEMBLED_MSG_SIZE`（冻结为与单帧一致的 8MB）；
+2. `dispatchChunk()` 校验单块：START ≤ `MSG_TYPE_LEN + BIGDATA_THRESHOLD`，
+   MID/END ≤ `BIGDATA_THRESHOLD`，超限拒绝并上报 `ILLEGAL_REQUEST`；
+3. 追加前检查累计长度，越限时 `resetAssembly()` 并只上报一次协议错误，
+   随后进入丢弃态——同一条毒消息的剩余分片（含 END）静默吞掉，新 START 复位；
+4. 新增 4 项回归：单块超限拒绝、累计超限恰好一次上报、超限后正常分片恢复、
+   `pack()` 超限返回空；
+5. `pack()` 载荷超过 `MAX_ASSEMBLED_MSG_SIZE` 返回空 `QByteArray`，
+   合同已写入头文件注释。
+
+修复后沙箱复验：protocol-framing 16/16、network-transport 13/13、
+network-adapter 15/15 全过（-Wall -Wextra 零警告），smoke 工具退出码合同
+不变，`CONFIG+=real_network` 入口可编译。发送队列背压、UI 连接状态展示、
+`setReconnectIntervalMs()` 参数校验仍为已知限制，留待后续。
