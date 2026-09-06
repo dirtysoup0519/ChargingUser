@@ -26,6 +26,10 @@
 #define FRAME_HEAD_LEN      (MSG_TYPE_LEN + MSG_SIZE_LEN)   // 帧头 12B
 #define MAX_MSG_SIZE        (8 * 1024 * 1024)   // 单帧载荷上限 8MB
 #define BIGDATA_THRESHOLD   (16 * 1024)         // 超过 16KB 自动分片
+/* 分片重组后"完整业务消息"的冻结上限（调试指南 §9 修复项 1）。
+ * 与单帧上限取值一致：既然单帧最大 8MB，重组消息没有理由允许更大；
+ * 解析端据此拒绝累计超限的分片流，防止异常对端撑爆重组缓冲。 */
+#define MAX_ASSEMBLED_MSG_SIZE  MAX_MSG_SIZE
 
 /* 心跳与超时（断线重连机制） */
 #define HEARTBEAT_INTERVAL_MS   30000   // 客户端每 30s 发一次心跳

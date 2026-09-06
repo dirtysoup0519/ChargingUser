@@ -1,4 +1,5 @@
 QT += core testlib network
+QT -= gui
 CONFIG += c++17 console testcase
 CONFIG -= app_bundle
 

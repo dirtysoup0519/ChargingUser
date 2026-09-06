@@ -40,6 +40,12 @@ include($$PROJECT_ROOT/src/flow/flow.pri)
 include($$PROJECT_ROOT/src/app/app.pri)
 
 contains(CONFIG, user_demo) {
+    contains(CONFIG, real_network) {
+        error("user_demo and real_network cannot be enabled together")
+    }
     SOURCES -= src/main.cpp
     include($$PROJECT_ROOT/src/demo/demo.pri)
+} else:contains(CONFIG, real_network) {
+    SOURCES -= src/main.cpp
+    SOURCES += src/realnetworkmain.cpp
 }

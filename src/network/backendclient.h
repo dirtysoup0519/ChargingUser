@@ -29,6 +29,8 @@ public:
 
     // 供测试与部署调节；默认 RECONNECT_INTERVAL_MS
     void setReconnectIntervalMs(int intervalMs);
+    // 供测试与部署调节；默认 HEARTBEAT_INTERVAL_MS
+    void setHeartbeatIntervalMs(int intervalMs);
 
     ConnectionState connectionState() const;
 
@@ -38,6 +40,8 @@ public:
 signals:
     void frameReceived(int msgType, const QJsonObject &payload);
     void connectionStateChanged(ConnectionState state);
+    // 诊断信息供应用层展示或记录；不得依赖服务端自由文本判断业务分支。
+    void networkError(const QString &message);
 
 private:
     void setState(ConnectionState state);
