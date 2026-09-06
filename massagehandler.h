@@ -38,7 +38,10 @@ public:
 
     /* ---------- 打包（客户端构造请求 / 服务端构造应答均可用） ---------- */
 
-    // 业务消息 -> 完整协议帧（可含分片）；msg 为空则发空载荷帧
+    // 业务消息 -> 完整协议帧（可含分片）；msg 为空则发空载荷帧。
+    // 返回合同（调试指南 §9 修复项 5）：载荷超过 MAX_ASSEMBLED_MSG_SIZE 时
+    // 返回空 QByteArray 表示拒绝打包——这样的消息对端解析器必然拒绝，
+    // 提前拦截可避免发送无效流量；调用方发送前应检查空返回。
     static QByteArray pack(int msgType, const QJsonObject &msg = QJsonObject());
 
     // 查询结果（JSON 数组）打包，内部转成 {"data":[...]} 再走通用打包
@@ -89,10 +92,15 @@ private:
     QByteArray assemblingBuf;       // 大数据分片重组缓冲
     int        assemblingType = 0;  // 被重组帧的原始业务类型码
     bool       assembling     = false;
+    /* 丢弃态（调试指南 §9 修复项 3）：累计超限拒绝后置位，同一条毒消息的
+     * 剩余 MID/END 被静默吞掉，保证"超限只上报一次协议错误"；新 START 复位。 */
+    bool       droppingAssembly = false;
 
     void tryParseFrames();          // 从 recvBuf 循环取帧
     void deliverFrame(int msgType, const QByteArray &payload);
     void dispatchChunk(int msgType, const QByteArray &payload); // 分片重组
+    void resetAssembly();
+    void rejectChunk(const char *reason);
 };
 
 #endif // MASSAGEHANDLER_H
