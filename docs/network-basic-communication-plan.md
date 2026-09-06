@@ -231,6 +231,10 @@ smoke test 的退出码必须可用于自动化判断：成功收到合法心跳
 
 ### 第五阶段：服务器实机联调与记录
 
+2026-09-06 的实际联调结果见
+`docs/network-basic-communication-integration-results.md`。该记录只确认真实服务器
+心跳闭环和连接故障行为，不代表完整登录及资料链路已经可用。
+
 所有实机验证在 BitDev Ubuntu 22.04 / Qt 6.2.4 环境完成：
 
 - 检查服务器 ELF 的 Qt、SQLite 和平台插件依赖；
