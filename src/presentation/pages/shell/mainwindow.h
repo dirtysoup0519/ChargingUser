@@ -2,9 +2,14 @@
 
 #include <QWidget>
 
+#include "presentation/contracts/mapviewstates.h"
 #include "profileviewstate.h"
 
+#include <QHash>
+#include <optional>
+
 namespace Ui { class MainWindow; }
+class QPushButton;
 
 class MainWindow final : public QWidget
 {
@@ -24,15 +29,30 @@ public:
     void registerSecondaryPage(QWidget *page);
     void renderPrimaryPage(PrimaryPage page);
     void renderProfile(const ProfileViewState &state);
+    void renderHome(const HomeMapViewState &state);
     void renderSecondaryPage(QWidget *page);
 
 signals:
     void primaryPageRequested(MainWindow::PrimaryPage page);
     void stationDetailsRequested(const QString &stationId);
+    void locateRequested();
+    void stationSearchRequested(const QString &keyword);
+    void stationSearchRetryRequested();
+    void stationSearchCleared();
+    void searchAreaRequested(const GeoBounds &bounds);
+    void stationSelected(const QString &stationId);
     void profileEditRequested();
     void rechargePageRequested();
     void logoutRequested();
 
 private:
+    void rebuildStationRows(const QVector<StationListItemView> &stations);
+    QPushButton *createStationButton(const StationListItemView &station);
+    void addDetailsButton(QPushButton *stationButton, const QString &stationId);
+    void selectStation(const QString &stationId, bool emitIntent);
+
     Ui::MainWindow *ui;
+    QHash<QString, QPushButton *> m_stationButtons;
+    std::optional<GeoBounds> m_viewportBounds;
+    quint64 m_cameraRevision = 0;
 };

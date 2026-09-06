@@ -66,9 +66,25 @@ QPushButton#secondaryButton, QPushButton#navigationButton {
     background: #EAF3FF; color: #1677FF; border: none;
     border-radius: 11px; font-size: 13px; font-weight: 700;
 }
-QPushButton#locateButton {
+QPushButton#btnStationSearch {
     background: #1677FF; color: #FFFFFF; border: none;
     border-radius: 9px; font-weight: 700;
+}
+QPushButton#btnLocateMap {
+    background: #FFFFFF; color: #1677FF; border: 1px solid #D5E4FA;
+    border-radius: 21px; font-size: 22px; font-weight: 700;
+}
+QPushButton#btnSearchArea {
+    background: #FFFFFF; color: #1677FF; border: 1px solid #D5E4FA;
+    border-radius: 19px; font-size: 12px; font-weight: 700;
+}
+QLabel#searchErrorLabel {
+    color: #D14343; background: #FFF4F4; border-bottom: 1px solid #F2CACA;
+    padding: 6px 12px;
+}
+QPushButton#searchRetryButton {
+    background: #FFF4F4; color: #1677FF; border: none;
+    border-bottom: 1px solid #F2CACA; font-weight: 700;
 }
 QFrame.card, QFrame#profileCard, QFrame#walletCard, QFrame#summaryCard,
 QFrame#feeCard, QFrame#chargingEmptyCard {
@@ -147,11 +163,31 @@ QListWidget#profileMenuList::item {
 QListWidget#profileMenuList::item:hover { background: #F7FAFF; color: #1677FF; }
 QPushButton#stationButton1, QPushButton#stationButton2, QPushButton#stationButton3 {
     background: #FFFFFF; border: none; border-bottom: 1px solid #EDF1F5;
-    text-align: left; padding: 8px 12px; color: #202B3C;
+    text-align: left; padding: 8px 92px 8px 12px; color: #202B3C;
     font-size: 11px;
 }
 QPushButton#stationButton1:hover, QPushButton#stationButton2:hover, QPushButton#stationButton3:hover {
     background: #F9FBFF; border: 1px solid #73AAFF; border-radius: 8px;
+}
+QPushButton#stationButton1[selected="true"], QPushButton#stationButton2[selected="true"],
+QPushButton#stationButton3[selected="true"] {
+    background: #F7FAFF; border: 2px solid #2878FF; border-radius: 11px;
+    padding: 7px 91px 7px 11px; font-weight: 600;
+}
+QPushButton#stationRow {
+    background: #FFFFFF; border: none; border-bottom: 1px solid #EDF1F5;
+    text-align: left; padding: 8px 92px 8px 12px; color: #202B3C; font-size: 11px;
+}
+QPushButton#stationRow[selected="true"] {
+    background: #F7FAFF; border: 2px solid #2878FF; border-radius: 11px;
+    padding: 7px 91px 7px 11px; font-weight: 600;
+}
+QPushButton#stationDetailsButton {
+    background: #EAF3FF; color: #1677FF; border: 1px solid #A9CBFF;
+    border-radius: 15px; padding: 0; font-size: 11px; font-weight: 700;
+}
+QPushButton#stationDetailsButton:hover {
+    background: #1677FF; color: #FFFFFF; border-color: #1677FF;
 }
 QToolButton#homeNav, QToolButton#chargeNav, QToolButton#profileNav {
     background: transparent; border: none; color: #8A94A3;
