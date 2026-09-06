@@ -93,6 +93,8 @@ private:
     void tryParseFrames();          // 从 recvBuf 循环取帧
     void deliverFrame(int msgType, const QByteArray &payload);
     void dispatchChunk(int msgType, const QByteArray &payload); // 分片重组
+    void resetAssembly();
+    void rejectChunk(const char *reason);
 };
 
 #endif // MASSAGEHANDLER_H

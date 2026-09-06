@@ -3,11 +3,21 @@
 #include <QTcpSocket>
 
 QtNetworkTransport::QtNetworkTransport(const QString &host, quint16 port, QObject *parent)
+    : QtNetworkTransport(host, port, new QTcpSocket, parent)
+{
+}
+
+QtNetworkTransport::QtNetworkTransport(const QString &host, quint16 port,
+                                       QTcpSocket *socket, QObject *parent)
     : INetworkTransport(parent)
     , m_host(host)
     , m_port(port)
-    , m_socket(new QTcpSocket(this))
+    , m_socket(socket)
 {
+    Q_ASSERT(m_socket);
+    Q_ASSERT(m_socket->thread() == thread());
+    m_socket->setParent(this);
+
     connect(m_socket, &QTcpSocket::connected, this, [this] {
         flushWriteQueue();
         emit connected();

@@ -184,6 +184,11 @@ QByteArray MassageHandler::makeHeartbeat()
 void MassageHandler::reset()
 {
     recvBuf.clear();
+    resetAssembly();
+}
+
+void MassageHandler::resetAssembly()
+{
     assemblingBuf.clear();
     assemblingType = 0;
     assembling = false;
@@ -213,7 +218,9 @@ void MassageHandler::tryParseFrames()
         /* 非法长度：丢弃缓冲，防止错误码流导致内存膨胀 */
         if (msgSize < 0 || msgSize > MAX_MSG_SIZE)
         {
-            recvBuf.clear();
+            // 无法从非法长度可靠定位下一帧边界；同时丢弃半包与分片状态，
+            // 防止旧 START 在后续 END 到达时被错误交付。
+            reset();
             emit frameReady(ILLEGAL_REQUEST, QByteArray("{\"err\":\"bad frame size\"}"));
             return;
         }
@@ -234,8 +241,12 @@ void MassageHandler::dispatchChunk(int msgType, const QByteArray &payload)
     /* 分片重组：START 记录原始类型码并开缓冲，MID 追加，END 收尾交付 */
     if (msgType == BIGDATA_START)
     {
-        if (payload.size() < MSG_TYPE_LEN)
+        // 新 START 总是替换旧的未完成分片，避免两条消息发生拼接。
+        resetAssembly();
+        if (payload.size() < MSG_TYPE_LEN) {
+            rejectChunk("bad chunk start");
             return;
+        }
         quint32 realBE;
         memcpy(&realBE, payload.constData(), MSG_TYPE_LEN);
         assemblingType = static_cast<int>(qFromBigEndian<quint32>(realBE));
@@ -245,21 +256,24 @@ void MassageHandler::dispatchChunk(int msgType, const QByteArray &payload)
     }
     if (msgType == BIGDATA_MID)
     {
-        if (assembling)
-            assemblingBuf.append(payload);
+        if (!assembling) {
+            rejectChunk("unexpected chunk middle");
+            return;
+        }
+        assemblingBuf.append(payload);
         return;
     }
     if (msgType == BIGDATA_END)
     {
-        if (assembling)
-        {
-            assemblingBuf.append(payload);
-            const QByteArray full = assemblingBuf;
-            const int realType  = assemblingType;
-            assembling = false;
-            assemblingBuf.clear();
-            deliverFrame(realType, full);
+        if (!assembling) {
+            rejectChunk("unexpected chunk end");
+            return;
         }
+        assemblingBuf.append(payload);
+        const QByteArray full = assemblingBuf;
+        const int realType = assemblingType;
+        resetAssembly();
+        deliverFrame(realType, full);
         return;
     }
 
@@ -270,4 +284,13 @@ void MassageHandler::dispatchChunk(int msgType, const QByteArray &payload)
 void MassageHandler::deliverFrame(int msgType, const QByteArray &payload)
 {
     emit frameReady(msgType, payload);
+}
+
+void MassageHandler::rejectChunk(const char *reason)
+{
+    resetAssembly();
+    QJsonObject error;
+    error.insert(QStringLiteral("err"), QString::fromLatin1(reason));
+    emit frameReady(ILLEGAL_REQUEST,
+                    QJsonDocument(error).toJson(QJsonDocument::Compact));
 }

@@ -29,6 +29,8 @@ public:
 
     // 供测试与部署调节；默认 RECONNECT_INTERVAL_MS
     void setReconnectIntervalMs(int intervalMs);
+    // 供测试与部署调节；默认 HEARTBEAT_INTERVAL_MS
+    void setHeartbeatIntervalMs(int intervalMs);
 
     ConnectionState connectionState() const;
 

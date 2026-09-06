@@ -71,8 +71,19 @@ void BackendClient::setReconnectIntervalMs(int intervalMs)
     m_reconnectTimer->setInterval(intervalMs);
 }
 
+void BackendClient::setHeartbeatIntervalMs(int intervalMs)
+{
+    if (intervalMs > 0) {
+        m_heartbeatTimer->setInterval(intervalMs);
+    }
+}
+
 void BackendClient::shutdown()
 {
+    if (!m_started && m_state == ConnectionState::Disconnected
+        && !m_transport->isConnected()) {
+        return;
+    }
     m_started = false;
     m_heartbeatTimer->stop();
     m_reconnectTimer->stop();

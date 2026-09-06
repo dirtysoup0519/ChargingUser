@@ -17,6 +17,11 @@ class QtNetworkTransport final : public INetworkTransport
 
 public:
     QtNetworkTransport(const QString &host, quint16 port, QObject *parent = nullptr);
+    /* 注入已创建的 socket，所有权转移给 transport。
+     * 主要用于以可控 writeData() 验证部分写入；socket 必须与 transport 同线程。
+     */
+    QtNetworkTransport(const QString &host, quint16 port, QTcpSocket *socket,
+                       QObject *parent);
     ~QtNetworkTransport() override;
 
     void connectToServer() override;

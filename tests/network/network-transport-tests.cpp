@@ -69,6 +69,37 @@ public:
     QByteArray sentData;
 };
 
+class ControlledWriteSocket final : public QTcpSocket
+{
+    Q_OBJECT
+
+public:
+    void setBlocked(bool blocked) { m_blocked = blocked; }
+    void resumeWrites()
+    {
+        m_blocked = false;
+        emit bytesWritten(0);
+    }
+
+    QByteArray acceptedData;
+    int writeCalls = 0;
+
+protected:
+    qint64 writeData(const char *data, qint64 size) override
+    {
+        ++writeCalls;
+        if (m_blocked) {
+            return 0;
+        }
+        const qint64 accepted = qMin<qint64>(3, size);
+        acceptedData.append(data, static_cast<qsizetype>(accepted));
+        return accepted;
+    }
+
+private:
+    bool m_blocked = false;
+};
+
 } // namespace
 
 class NetworkTransportTests final : public QObject
@@ -78,7 +109,14 @@ class NetworkTransportTests final : public QObject
 private slots:
     void transportConstructorDoesNotConnect();
     void backendStartConnectsAndParsesSplitAndStickyFrames();
+    void backendHeartbeatStopsAfterDisconnect();
+    void backendResetsPartialFrameBeforeReconnect();
     void transportPreservesQueuedFrameOrder();
+    void transportContinuesAfterZeroAndPartialWrites();
+    void disconnectDropsBlockedWriteQueue();
+    void transportRejectsSendBeforeConnection();
+    void transportReportsConnectionError();
+    void startAndShutdownAreIdempotent();
     void shutdownStopsReconnectAndRejectsLateConnect();
 };
 
@@ -133,6 +171,44 @@ void NetworkTransportTests::backendStartConnectsAndParsesSplitAndStickyFrames()
     QCOMPARE(frames.at(1).at(1).toJsonObject().value(QStringLiteral("sequence")).toInt(), 2);
 }
 
+void NetworkTransportTests::backendHeartbeatStopsAfterDisconnect()
+{
+    CountingTransport transport;
+    BackendClient backend(&transport);
+    backend.setHeartbeatIntervalMs(10);
+    backend.start();
+
+    QTRY_VERIFY(transport.sentData.size() >= FRAME_HEAD_LEN);
+    QVERIFY(transport.sentData.startsWith(MassageHandler::makeHeartbeat()));
+
+    transport.simulateDisconnected();
+    const qsizetype bytesAtDisconnect = transport.sentData.size();
+    QTest::qWait(40);
+    QCOMPARE(transport.sentData.size(), bytesAtDisconnect);
+}
+
+void NetworkTransportTests::backendResetsPartialFrameBeforeReconnect()
+{
+    CountingTransport transport;
+    BackendClient backend(&transport);
+    backend.setReconnectIntervalMs(10);
+    QSignalSpy frames(&backend, &BackendClient::frameReceived);
+    backend.start();
+
+    const QByteArray stale = MassageHandler::pack(DATA, QJsonObject{{QStringLiteral("old"), true}});
+    emit transport.dataReceived(stale.left(7));
+    transport.simulateDisconnected();
+    QTRY_COMPARE(backend.connectionState(), ConnectionState::Connected);
+
+    QJsonObject current;
+    current.insert(QStringLiteral("current"), true);
+    emit transport.dataReceived(MassageHandler::pack(DATA, current));
+
+    QCOMPARE(frames.count(), 1);
+    QCOMPARE(frames.at(0).at(0).toInt(), DATA);
+    QCOMPARE(frames.at(0).at(1).toJsonObject(), current);
+}
+
 void NetworkTransportTests::transportPreservesQueuedFrameOrder()
 {
     QTcpServer server;
@@ -161,6 +237,84 @@ void NetworkTransportTests::transportPreservesQueuedFrameOrder()
 
     // 107 心跳必须是 12 字节帧头加零长度载荷，不能发送 JSON 文本 "{}"。
     QCOMPARE(MassageHandler::makeHeartbeat().size(), FRAME_HEAD_LEN);
+}
+
+void NetworkTransportTests::transportContinuesAfterZeroAndPartialWrites()
+{
+    QTcpServer server;
+    QVERIFY(server.listen(QHostAddress::LocalHost));
+    auto *socket = new ControlledWriteSocket;
+    socket->setBlocked(true);
+    QtNetworkTransport transport(QStringLiteral("127.0.0.1"), server.serverPort(),
+                                 socket, nullptr);
+    transport.connectToServer();
+    QVERIFY(server.waitForNewConnection(1000));
+    QTRY_VERIFY(transport.isConnected());
+
+    const QByteArray data("abcdefghij");
+    QVERIFY(transport.send(data));
+    QCOMPARE(socket->acceptedData.size(), 0);
+
+    socket->resumeWrites();
+    QTRY_COMPARE(socket->acceptedData, data);
+    QVERIFY(socket->writeCalls >= 5); // 1 次返回 0，之后至少 4 次部分接受
+}
+
+void NetworkTransportTests::disconnectDropsBlockedWriteQueue()
+{
+    QTcpServer server;
+    QVERIFY(server.listen(QHostAddress::LocalHost));
+    auto *socket = new ControlledWriteSocket;
+    socket->setBlocked(true);
+    QtNetworkTransport transport(QStringLiteral("127.0.0.1"), server.serverPort(),
+                                 socket, nullptr);
+    transport.connectToServer();
+    QVERIFY(server.waitForNewConnection(1000));
+    QTRY_VERIFY(transport.isConnected());
+
+    QVERIFY(transport.send(QByteArrayLiteral("must-not-be-replayed")));
+    transport.disconnectFromServer();
+    socket->resumeWrites();
+    QTest::qWait(20);
+
+    QCOMPARE(socket->acceptedData.size(), 0);
+    QVERIFY(!transport.isConnected());
+}
+
+void NetworkTransportTests::transportRejectsSendBeforeConnection()
+{
+    QtNetworkTransport transport(QStringLiteral("127.0.0.1"), 1);
+    QVERIFY(!transport.send(MassageHandler::makeHeartbeat()));
+}
+
+void NetworkTransportTests::transportReportsConnectionError()
+{
+    QTcpServer server;
+    QVERIFY(server.listen(QHostAddress::LocalHost));
+    const quint16 unusedPort = server.serverPort();
+    server.close();
+
+    QtNetworkTransport transport(QStringLiteral("127.0.0.1"), unusedPort);
+    QSignalSpy errors(&transport, &INetworkTransport::transportError);
+    transport.connectToServer();
+
+    QTRY_VERIFY(!errors.isEmpty());
+    QVERIFY(!transport.isConnected());
+}
+
+void NetworkTransportTests::startAndShutdownAreIdempotent()
+{
+    CountingTransport transport;
+    BackendClient backend(&transport);
+
+    backend.start();
+    backend.start();
+    QCOMPARE(transport.connectCount, 1);
+
+    backend.shutdown();
+    backend.shutdown();
+    QCOMPARE(transport.disconnectCount, 1);
+    QCOMPARE(backend.connectionState(), ConnectionState::Disconnected);
 }
 
 void NetworkTransportTests::shutdownStopsReconnectAndRejectsLateConnect()
