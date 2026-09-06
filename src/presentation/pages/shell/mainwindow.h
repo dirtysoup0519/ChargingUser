@@ -16,6 +16,12 @@ public:
     explicit MainWindow(QWidget *parent = nullptr);
     ~MainWindow() override;
 
+    /**
+     * Adds a secondary page to the managed page stack without navigating to it.
+     * The stack then owns the page and is the only component controlling its
+     * visibility, so a newly created child page cannot cover the primary page.
+     */
+    void registerSecondaryPage(QWidget *page);
     void renderPrimaryPage(PrimaryPage page);
     void renderProfile(const ProfileViewState &state);
     void renderSecondaryPage(QWidget *page);

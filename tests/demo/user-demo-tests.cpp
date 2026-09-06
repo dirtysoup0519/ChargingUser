@@ -1,6 +1,7 @@
 #include <QtTest>
 
 #include "app/application.h"
+#include "app/iuseruibinder.h"
 #include "demo/userdemocontroller.h"
 #include "modules/user/mockusernetworkapi.h"
 #include "presentation/pages/auth/loginwindow.h"
@@ -14,6 +15,7 @@
 #include <QJsonObject>
 #include <QLineEdit>
 #include <QPushButton>
+#include <QStackedWidget>
 #include <QToolButton>
 
 namespace
@@ -53,8 +55,12 @@ private slots:
     void cleanup();
     void invalidPhoneKeepsInputAndShowsError();
     void oldUserReachesHomeAndProfileSummary();
+    void primaryNavigationMatchesRequestedPages();
+    void stationAndRechargeNavigationMatchesPages();
     void oldUserReloginKeepsConfiguredNickname();
     void newUserCompletesNicknameAndReachesHome();
+    void newUserReloginUsesExistingUserAndSavedNickname();
+    void editedNicknameSurvivesRelogin();
     void networkFailureKeepsInputAndSecondSubmitSucceeds();
     void frozenUserShowsRestrictionButCanRecharge();
     void logoutReturnsToClearedLoginPage();
@@ -62,6 +68,7 @@ private slots:
 private:
     void submitPhone(const QString &phone);
     void waitForMainWindow();
+    QString currentMainPageName() const;
 
     MockUserNetworkApi *m_network = nullptr;
     UserApplicationAssembly *m_assembly = nullptr;
@@ -119,6 +126,31 @@ void UserDemoTests::waitForMainWindow()
     QTRY_VERIFY_WITH_TIMEOUT(m_mainWindow->isVisible(), 3000);
     QVERIFY(!m_login->isVisible());
     QVERIFY(!m_profileEdit->isVisible());
+    QCOMPARE(currentMainPageName(), QStringLiteral("homePage"));
+
+    QStackedWidget *pageStack = m_mainWindow->findChild<QStackedWidget *>(
+        QStringLiteral("pageStack"));
+    QVERIFY(pageStack);
+    const QStringList secondaryPageNames = {
+        QStringLiteral("StationDetailWindow"),
+        QStringLiteral("NavigationWindow"),
+        QStringLiteral("WalletRechargeWindow")
+    };
+    for (const QString &pageName : secondaryPageNames) {
+        QWidget *page = m_mainWindow->findChild<QWidget *>(pageName);
+        QVERIFY2(page, qPrintable(pageName));
+        QCOMPARE(page->parentWidget(), pageStack);
+        QVERIFY2(!page->isVisible(), qPrintable(pageName));
+    }
+}
+
+QString UserDemoTests::currentMainPageName() const
+{
+    const QStackedWidget *pageStack = m_mainWindow->findChild<QStackedWidget *>(
+        QStringLiteral("pageStack"));
+    if (!pageStack || !pageStack->currentWidget())
+        return {};
+    return pageStack->currentWidget()->objectName();
 }
 
 void UserDemoTests::invalidPhoneKeepsInputAndShowsError()
@@ -154,6 +186,88 @@ void UserDemoTests::oldUserReachesHomeAndProfileSummary()
     QCOMPARE(summary->text(), user.value(QStringLiteral("nickname")).toString());
     const QString userPhone = user.value(QStringLiteral("phone")).toString();
     QCOMPARE(phone->text(), userPhone.left(3) + QStringLiteral("****") + userPhone.right(4));
+}
+
+void UserDemoTests::primaryNavigationMatchesRequestedPages()
+{
+    submitPhone(userForScenario(QStringLiteral("normal"))
+                    .value(QStringLiteral("phone")).toString());
+    waitForMainWindow();
+
+    QToolButton *chargeNav = m_mainWindow->findChild<QToolButton *>(
+        QStringLiteral("chargeNav"));
+    QToolButton *profileNav = m_mainWindow->findChild<QToolButton *>(
+        QStringLiteral("profileNav"));
+    QToolButton *homeNav = m_mainWindow->findChild<QToolButton *>(
+        QStringLiteral("homeNav"));
+    QVERIFY(chargeNav);
+    QVERIFY(profileNav);
+    QVERIFY(homeNav);
+
+    QTest::mouseClick(chargeNav, Qt::LeftButton);
+    QCOMPARE(currentMainPageName(), QStringLiteral("chargingPage"));
+    QTest::mouseClick(profileNav, Qt::LeftButton);
+    QCOMPARE(currentMainPageName(), QStringLiteral("profilePage"));
+    QTest::mouseClick(homeNav, Qt::LeftButton);
+    QCOMPARE(currentMainPageName(), QStringLiteral("homePage"));
+}
+
+void UserDemoTests::stationAndRechargeNavigationMatchesPages()
+{
+    submitPhone(userForScenario(QStringLiteral("normal"))
+                    .value(QStringLiteral("phone")).toString());
+    waitForMainWindow();
+
+    QPushButton *station = m_mainWindow->findChild<QPushButton *>(
+        QStringLiteral("stationButton1"));
+    QVERIFY(station);
+    QTest::mouseClick(station, Qt::LeftButton);
+    QCOMPARE(currentMainPageName(), QStringLiteral("StationDetailWindow"));
+
+    QPushButton *navigate = m_mainWindow->findChild<QPushButton *>(
+        QStringLiteral("navigationButton"));
+    QVERIFY(navigate);
+    QTest::mouseClick(navigate, Qt::LeftButton);
+    QCOMPARE(currentMainPageName(), QStringLiteral("NavigationWindow"));
+
+    QWidget *navigationPage = m_mainWindow->findChild<QWidget *>(
+        QStringLiteral("NavigationWindow"));
+    QVERIFY(navigationPage);
+    QPushButton *navigationBack = navigationPage->findChild<QPushButton *>(
+        QStringLiteral("backButton"));
+    QVERIFY(navigationBack);
+    QTest::mouseClick(navigationBack, Qt::LeftButton);
+    QCOMPARE(currentMainPageName(), QStringLiteral("StationDetailWindow"));
+
+    QWidget *stationPage = m_mainWindow->findChild<QWidget *>(
+        QStringLiteral("StationDetailWindow"));
+    QVERIFY(stationPage);
+    QPushButton *stationBack = stationPage->findChild<QPushButton *>(
+        QStringLiteral("backButton"));
+    QVERIFY(stationBack);
+    QTest::mouseClick(stationBack, Qt::LeftButton);
+    QCOMPARE(currentMainPageName(), QStringLiteral("homePage"));
+
+    QToolButton *profileNav = m_mainWindow->findChild<QToolButton *>(
+        QStringLiteral("profileNav"));
+    QVERIFY(profileNav);
+    QTest::mouseClick(profileNav, Qt::LeftButton);
+    QCOMPARE(currentMainPageName(), QStringLiteral("profilePage"));
+
+    QPushButton *recharge = m_mainWindow->findChild<QPushButton *>(
+        QStringLiteral("btnRecharge"));
+    QVERIFY(recharge);
+    QTest::mouseClick(recharge, Qt::LeftButton);
+    QCOMPARE(currentMainPageName(), QStringLiteral("WalletRechargeWindow"));
+
+    QWidget *rechargePage = m_mainWindow->findChild<QWidget *>(
+        QStringLiteral("WalletRechargeWindow"));
+    QVERIFY(rechargePage);
+    QPushButton *rechargeBack = rechargePage->findChild<QPushButton *>(
+        QStringLiteral("backButton"));
+    QVERIFY(rechargeBack);
+    QTest::mouseClick(rechargeBack, Qt::LeftButton);
+    QCOMPARE(currentMainPageName(), QStringLiteral("profilePage"));
 }
 
 void UserDemoTests::oldUserReloginKeepsConfiguredNickname()
@@ -205,6 +319,92 @@ void UserDemoTests::newUserCompletesNicknameAndReachesHome()
     QTest::mouseClick(save, Qt::LeftButton);
     QVERIFY(!save->isEnabled());
     waitForMainWindow();
+}
+
+void UserDemoTests::newUserReloginUsesExistingUserAndSavedNickname()
+{
+    const QString phone = testValue(QStringLiteral("newUserPhone"));
+    const QString savedNickname = testValue(QStringLiteral("newUserSavedNickname"));
+    submitPhone(phone);
+    QTRY_VERIFY_WITH_TIMEOUT(m_profileEdit->isVisible(), 3000);
+
+    QLineEdit *nickname = m_profileEdit->findChild<QLineEdit *>(
+        QStringLiteral("nicknameEdit"));
+    QPushButton *save = m_profileEdit->findChild<QPushButton *>(
+        QStringLiteral("saveButton"));
+    QVERIFY(nickname);
+    QVERIFY(save);
+    nickname->setText(savedNickname);
+    QTest::mouseClick(save, Qt::LeftButton);
+    waitForMainWindow();
+
+    QToolButton *profileNav = m_mainWindow->findChild<QToolButton *>(
+        QStringLiteral("profileNav"));
+    QPushButton *logout = m_mainWindow->findChild<QPushButton *>(
+        QStringLiteral("btnLogout"));
+    QVERIFY(profileNav);
+    QVERIFY(logout);
+    QTest::mouseClick(profileNav, Qt::LeftButton);
+    QTest::mouseClick(logout, Qt::LeftButton);
+    QTRY_VERIFY_WITH_TIMEOUT(m_login->isVisible(), 2000);
+
+    submitPhone(phone);
+    waitForMainWindow();
+    QVERIFY(!m_profileEdit->isVisible());
+    QTest::mouseClick(profileNav, Qt::LeftButton);
+    QLabel *summary = m_mainWindow->findChild<QLabel *>(
+        QStringLiteral("profileSummaryLabel"));
+    QVERIFY(summary);
+    QCOMPARE(summary->text(), savedNickname);
+}
+
+void UserDemoTests::editedNicknameSurvivesRelogin()
+{
+    const QString phone = userForScenario(QStringLiteral("normal"))
+                              .value(QStringLiteral("phone")).toString();
+    const QString editedNickname = testValue(QStringLiteral("editedNickname"));
+    submitPhone(phone);
+    waitForMainWindow();
+
+    QToolButton *profileNav = m_mainWindow->findChild<QToolButton *>(
+        QStringLiteral("profileNav"));
+    QToolButton *editProfile = m_mainWindow->findChild<QToolButton *>(
+        QStringLiteral("btnEditProfile"));
+    QVERIFY(profileNav);
+    QVERIFY(editProfile);
+    QTest::mouseClick(profileNav, Qt::LeftButton);
+    QTest::mouseClick(editProfile, Qt::LeftButton);
+    QTRY_VERIFY(m_profileEdit->isVisible());
+
+    QLineEdit *nickname = m_profileEdit->findChild<QLineEdit *>(
+        QStringLiteral("nicknameEdit"));
+    QPushButton *save = m_profileEdit->findChild<QPushButton *>(
+        QStringLiteral("saveButton"));
+    QPushButton *back = m_profileEdit->findChild<QPushButton *>(
+        QStringLiteral("backButton"));
+    QVERIFY(nickname);
+    QVERIFY(save);
+    QVERIFY(back);
+    nickname->setText(editedNickname);
+    QTest::mouseClick(save, Qt::LeftButton);
+    QTRY_COMPARE(m_assembly->userUiBinder()->currentProfileEditViewState().submitState,
+                 SubmitState::Success);
+    QTest::mouseClick(back, Qt::LeftButton);
+    QTRY_VERIFY(m_mainWindow->isVisible());
+
+    QPushButton *logout = m_mainWindow->findChild<QPushButton *>(
+        QStringLiteral("btnLogout"));
+    QVERIFY(logout);
+    QTest::mouseClick(logout, Qt::LeftButton);
+    QTRY_VERIFY_WITH_TIMEOUT(m_login->isVisible(), 2000);
+    submitPhone(phone);
+    waitForMainWindow();
+
+    QTest::mouseClick(profileNav, Qt::LeftButton);
+    QLabel *summary = m_mainWindow->findChild<QLabel *>(
+        QStringLiteral("profileSummaryLabel"));
+    QVERIFY(summary);
+    QCOMPARE(summary->text(), editedNickname);
 }
 
 void UserDemoTests::networkFailureKeepsInputAndSecondSubmitSucceeds()

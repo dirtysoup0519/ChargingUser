@@ -20,7 +20,8 @@
     "invalidPhone": "123",
     "newUserPhone": "13500005678",
     "newUserGeneratedNickname": "用户5678",
-    "newUserSavedNickname": "新用户昵称"
+    "newUserSavedNickname": "新用户昵称",
+    "editedNickname": "修改后昵称"
   },
   "nicknameFailures": {
     "网络错误": { "code": "connection-lost", "message": "演示网络连接中断。", "retryable": true },

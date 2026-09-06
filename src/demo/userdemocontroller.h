@@ -43,6 +43,8 @@ public:
 private:
     void configureLogin(const QString &phone);
     void configureNicknameSave(const QString &nickname);
+    void rememberConfirmedLogin(const LoginResult &result);
+    void rememberConfirmedNickname(const UserProfileResult &result);
     void handleNavigation(NavigationTarget target);
     void showOnly(QWidget *target);
 

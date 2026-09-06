@@ -41,6 +41,13 @@ MainWindow::MainWindow(QWidget *parent) : QWidget(parent), ui(new Ui::MainWindow
 
 MainWindow::~MainWindow() { delete ui; }
 
+void MainWindow::registerSecondaryPage(QWidget *page)
+{
+    if (!page || ui->pageStack->indexOf(page) >= 0)
+        return;
+    ui->pageStack->addWidget(page);
+}
+
 void MainWindow::renderPrimaryPage(PrimaryPage page)
 {
     QWidget *target = ui->homePage;
@@ -81,8 +88,7 @@ void MainWindow::renderSecondaryPage(QWidget *page)
 {
     if (!page)
         return;
-    if (ui->pageStack->indexOf(page) < 0)
-        ui->pageStack->addWidget(page);
+    registerSecondaryPage(page);
     ui->pageStack->setCurrentWidget(page);
     ui->bottomBar->hide();
 }

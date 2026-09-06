@@ -100,6 +100,13 @@ UserDemoController::UserDemoController(MockUserNetworkApi *network,
     Q_ASSERT(m_profileEdit);
     Q_ASSERT(m_mainWindow);
 
+    // These widgets are constructed with MainWindow as their parent. Register
+    // them before MainWindow is ever shown, otherwise Qt auto-shows ordinary
+    // child widgets and the last-created recharge page covers the home page.
+    m_mainWindow->registerSecondaryPage(m_stationDetail);
+    m_mainWindow->registerSecondaryPage(m_navigation);
+    m_mainWindow->registerSecondaryPage(m_walletRecharge);
+
     MockUserNetworkApi::Behavior profileBehavior;
     profileBehavior.delayMs = DemoDelayMs;
     m_network->setQueryBehavior(profileBehavior);
@@ -117,6 +124,14 @@ UserDemoController::UserDemoController(MockUserNetworkApi *network,
             m_binder, &IUserUiBinder::profileSaveRequested);
     connect(m_mainWindow, &MainWindow::logoutRequested,
             m_binder, &IUserUiBinder::logoutRequested);
+
+    // The fixture file is only the initial server snapshot. Keep successful
+    // registrations and profile updates in the Demo's runtime server state so
+    // logout/relogin behaves like a real backend instead of replaying fixtures.
+    connect(m_network, &IUserNetworkApi::loginSucceeded,
+            this, &UserDemoController::rememberConfirmedLogin);
+    connect(m_network, &IUserNetworkApi::nicknameUpdateSucceeded,
+            this, &UserDemoController::rememberConfirmedNickname);
 
     connect(m_binder, &IUserUiBinder::loginViewStateChanged,
             m_login, &LoginWindow::render);
@@ -220,6 +235,32 @@ void UserDemoController::configureNicknameSave(const QString &nickname)
         }
     }
     m_network->setNicknameBehavior(behavior);
+}
+
+void UserDemoController::rememberConfirmedLogin(const LoginResult &result)
+{
+    const QString phone = result.session.profile.phone;
+    if (phone.isEmpty())
+        return;
+
+    DemoUserData &user = m_demoUsers[phone];
+    user.nickname = result.session.profile.nickname;
+    user.status = result.session.accountStatus;
+}
+
+void UserDemoController::rememberConfirmedNickname(const UserProfileResult &result)
+{
+    const QString phone = result.profile.phone;
+    if (phone.isEmpty())
+        return;
+
+    DemoUserData &user = m_demoUsers[phone];
+    user.nickname = result.profile.nickname;
+    user.status = result.accountStatus;
+
+    // Subsequent profile refreshes must return the same confirmed nickname.
+    // Failed/result-unknown callbacks never reach this slot and are not saved.
+    m_network->setUserProfileResult(result);
 }
 
 void UserDemoController::handleNavigation(NavigationTarget target)
