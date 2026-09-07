@@ -12,8 +12,15 @@ Makefile.*
 *.o
 *.obj
 moc_*.cpp
+moc_predefs.h
 qrc_*.cpp
 ui_*.h
+
+# Test/build helpers generated in the project root by qmake verification runs
+target_wrapper.sh
+tm.mk
+tencent-map-service-tests*
+*.moc
 
 # Runtime files
 *.log
