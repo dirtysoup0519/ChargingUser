@@ -5,11 +5,14 @@ HEADERS += \
     $$PWD/../presentation/contracts/profileviewstate.h \
     $$PWD/imapuibinder.h \
     $$PWD/mapuibinder.h \
+    $$PWD/icharginguibinder.h \
+    $$PWD/charginguibinder.h \
     $$PWD/iuseruibinder.h \
     $$PWD/useruibinder.h \
     $$PWD/application.h
 
 SOURCES += \
     $$PWD/mapuibinder.cpp \
+    $$PWD/charginguibinder.cpp \
     $$PWD/useruibinder.cpp \
     $$PWD/application.cpp
