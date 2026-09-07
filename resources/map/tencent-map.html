@@ -75,8 +75,11 @@
           marker.on("click", () => bridge && bridge.selectStation(item.stationId));
           markers.push(marker);
         });
-        if (data.length)
-          map.setCenter(new TMap.LatLng(data[0].latitude, data[0].longitude));
+        const selected = data.find(item =>
+          item.stationId === String(snapshot.selectedStationId || ""));
+        const focus = selected || data[0];
+        if (focus)
+          map.setCenter(new TMap.LatLng(focus.latitude, focus.longitude));
 
         if (routeLine) {
           routeLine.setMap(null);

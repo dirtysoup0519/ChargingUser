@@ -143,6 +143,7 @@ void InteractiveMapWidget::setMarkers(const QList<Marker> &markers)
         }
         QJsonObject snapshot;
         snapshot.insert(QStringLiteral("markers"), items);
+        snapshot.insert(QStringLiteral("selectedStationId"), m_selectedStationId);
         m_mapBridge->setSnapshot(snapshot);
     }
 #endif
@@ -174,6 +175,7 @@ void InteractiveMapWidget::setRoutePolyline(const QVector<GeoPoint> &polyline)
         }
         snapshot.insert(QStringLiteral("markers"), markers);
         snapshot.insert(QStringLiteral("routePolyline"), points);
+        snapshot.insert(QStringLiteral("selectedStationId"), m_selectedStationId);
         m_mapBridge->setSnapshot(snapshot);
     }
 #else
@@ -182,7 +184,27 @@ void InteractiveMapWidget::setRoutePolyline(const QVector<GeoPoint> &polyline)
 }
 
 void InteractiveMapWidget::setSelectedStation(const QString &stationId)
-{ m_selectedStationId = stationId; update(); }
+{
+    m_selectedStationId = stationId;
+#ifdef CHARGINGUSER_ENABLE_TENCENT_WEBMAP
+    if (m_mapBridge) {
+        QJsonArray items;
+        for (const Marker &marker : m_markers) {
+            if (!marker.point.isValid()) continue;
+            items.append(QJsonObject{
+                {QStringLiteral("stationId"), marker.stationId},
+                {QStringLiteral("latitude"), marker.point.latitude},
+                {QStringLiteral("longitude"), marker.point.longitude},
+                {QStringLiteral("available"), marker.available}});
+        }
+        QJsonObject snapshot;
+        snapshot.insert(QStringLiteral("markers"), items);
+        snapshot.insert(QStringLiteral("selectedStationId"), m_selectedStationId);
+        m_mapBridge->setSnapshot(snapshot);
+    }
+#endif
+    update();
+}
 
 void InteractiveMapWidget::centerStation(const QString &stationId)
 {
