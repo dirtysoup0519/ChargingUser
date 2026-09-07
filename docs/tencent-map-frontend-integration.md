@@ -301,14 +301,17 @@ HomeMapViewState::canRetryMap
 
 ### 6.1 本轮修复后的可测试入口
 
-默认 Demo 仍使用 `MockMapService`，无需 Key，适合完整 UI 回归。要让地址解析和路线请求改走腾讯 WebService，在启动进程中设置：
+仓库提供 `config/tencent-map.example.json`，本地复制为 `config/tencent-map.local.json` 后填写 Key 并将 `provider` 改为 `tencent`。本地文件已由 `.gitignore` 排除，不进入提交和推送。未提供本地配置时 Demo 使用 `MockMapService`，无需 Key，适合完整 UI 回归。
+
+也可以使用启动进程环境变量覆盖本地配置：
 
 ```text
 CHARGING_MAP_PROVIDER=tencent
 TENCENT_MAP_KEY=<本地腾讯 WebService Key>
+TENCENT_MAP_REGION=深圳市  # 可选，默认深圳市
 ```
 
-Key 只从进程环境读取，不写入仓库、qrc 或日志。腾讯适配器当前不提供设备定位；定位失败后首页会继续按默认城市目录加载站点，进入路线页后输入手动起点即可联调地理编码与路线。`polyline` 按腾讯官方数字数组差分格式解析；缺失/非法候选坐标会被丢弃，避免 `(0,0)` 假坐标。
+Key 只从被忽略的本地配置或进程环境读取，不写入已跟踪文件、qrc 或日志。腾讯适配器当前不提供设备定位；定位失败后首页会继续按默认城市目录加载站点，进入路线页后输入手动起点即可联调地理编码与路线。地址提示显式携带城市范围；`polyline` 按腾讯官方数字数组差分格式解析；缺失/非法候选坐标会被丢弃，避免 `(0,0)` 假坐标。腾讯状态 `121` 映射为不可重试的 `map-quota-exceeded`，鉴权状态 `110/111/112` 映射为 `map-auth-failed`。
 
 当前 BitDev 检查结果：Ubuntu 22.04、Qt 6.2.4；`Qt6WebEngineWidgets`、`Qt6WebChannel`、`Qt6Positioning` 和 `QWebEngineView` 头文件均缺失。这不阻塞 `TencentMapService` 的 WebService 接入，但阻塞真实腾讯 JS 底图和基于 Qt Positioning 的设备定位。安装依赖属于环境准备步骤，不能通过 Mock 测试冒充完成。
 
