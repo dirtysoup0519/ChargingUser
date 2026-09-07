@@ -1,5 +1,12 @@
 QT += widgets network
 
+# WebEngine/WebChannel are optional: local Qt kits without these modules must
+# still start with the existing painter-based fallback map.
+qtHaveModule(webenginewidgets):qtHaveModule(webchannel) {
+    QT += webenginewidgets webchannel
+    DEFINES += CHARGINGUSER_ENABLE_TENCENT_WEBMAP
+}
+
 CONFIG += c++17
 CONFIG -= app_bundle
 

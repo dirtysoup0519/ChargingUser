@@ -6,6 +6,9 @@
 #include <QVector>
 #include <optional>
 
+class QWebEngineView;
+class TencentMapBridge;
+
 /** 只负责绘制已规范化的路线数据；不调用地图供应商或业务服务。 */
 class RoutePreviewWidget final : public QLabel
 {
@@ -23,6 +26,7 @@ protected:
     void paintEvent(QPaintEvent *event) override;
 
 private:
+    void initializeTencentMap();
     QPointF mapPoint(const GeoPoint &point, const QRectF &area,
                      double minLatitude, double maxLatitude,
                      double minLongitude, double maxLongitude) const;
@@ -30,4 +34,6 @@ private:
     QVector<GeoPoint> m_polyline;
     std::optional<GeoPoint> m_origin;
     std::optional<GeoPoint> m_destination;
+    QWebEngineView *m_webView = nullptr;
+    TencentMapBridge *m_mapBridge = nullptr;
 };

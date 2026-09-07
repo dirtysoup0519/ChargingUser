@@ -8,6 +8,7 @@
 /bin/
 Makefile
 Makefile.*
+.qmake.stash
 *.o
 *.obj
 moc_*.cpp

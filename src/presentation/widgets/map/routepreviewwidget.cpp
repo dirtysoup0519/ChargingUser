@@ -1,18 +1,64 @@
 #include "routepreviewwidget.h"
+#include "tencentmapbridge.h"
 
 #include <QPainter>
 #include <QPainterPath>
 #include <algorithm>
+#ifdef CHARGINGUSER_ENABLE_TENCENT_WEBMAP
+#include <QFile>
+#include <QJsonArray>
+#include <QJsonObject>
+#include <QWebChannel>
+#include <QWebEngineView>
+#include <QUrl>
+#endif
 
 RoutePreviewWidget::RoutePreviewWidget(QWidget *parent)
     : QLabel(parent)
 {
     setScaledContents(false);
+    initializeTencentMap();
+}
+
+void RoutePreviewWidget::initializeTencentMap()
+{
+#ifdef CHARGINGUSER_ENABLE_TENCENT_WEBMAP
+    const QString key = qEnvironmentVariable("TENCENT_MAP_KEY");
+    if (key.trimmed().isEmpty())
+        return;
+    m_webView = new QWebEngineView(this);
+    m_webView->setGeometry(rect());
+    m_mapBridge = new TencentMapBridge(m_webView);
+    auto *channel = new QWebChannel(m_webView);
+    channel->registerObject(QStringLiteral("tencentMapBridge"), m_mapBridge);
+    m_webView->page()->setWebChannel(channel);
+    QFile file(QStringLiteral(":/map/tencent-map.html"));
+    if (!file.open(QIODevice::ReadOnly)) return;
+    QString html = QString::fromUtf8(file.readAll());
+    html.replace(QStringLiteral("__TENCENT_KEY__"), QString::fromUtf8(QUrl::toPercentEncoding(key)));
+    m_webView->setHtml(html, QUrl(QStringLiteral("qrc:///map/")));
+    m_webView->show();
+#endif
 }
 
 void RoutePreviewWidget::setRoutePolyline(const QVector<GeoPoint> &polyline)
 {
     m_polyline = polyline;
+#ifdef CHARGINGUSER_ENABLE_TENCENT_WEBMAP
+    if (m_mapBridge) {
+        QJsonArray points;
+        for (const GeoPoint &point : polyline) {
+            if (!point.isValid()) continue;
+            QJsonObject item;
+            item.insert(QStringLiteral("latitude"), point.latitude);
+            item.insert(QStringLiteral("longitude"), point.longitude);
+            points.append(item);
+        }
+        QJsonObject snapshot;
+        snapshot.insert(QStringLiteral("routePolyline"), points);
+        m_mapBridge->setSnapshot(snapshot);
+    }
+#endif
     update();
 }
 

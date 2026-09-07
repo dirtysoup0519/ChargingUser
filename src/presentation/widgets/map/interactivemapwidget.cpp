@@ -1,6 +1,9 @@
 #include "interactivemapwidget.h"
+#include "tencentmapbridge.h"
 
 #include <QFrame>
+#include <QJsonArray>
+#include <QJsonObject>
 #include <QHBoxLayout>
 #include <QIcon>
 #include <QMouseEvent>
@@ -8,6 +11,12 @@
 #include <QPushButton>
 #include <QStyle>
 #include <QTimer>
+#ifdef CHARGINGUSER_ENABLE_TENCENT_WEBMAP
+#include <QFile>
+#include <QWebChannel>
+#include <QWebEngineView>
+#include <QUrl>
+#endif
 #include <QVBoxLayout>
 
 InteractiveMapWidget::InteractiveMapWidget(QWidget *parent)
@@ -69,6 +78,7 @@ InteractiveMapWidget::InteractiveMapWidget(QWidget *parent)
             this, &InteractiveMapWidget::reload);
     connect(m_locationRetryButton, &QPushButton::clicked,
             this, &InteractiveMapWidget::locateRequested);
+    initializeTencentMap();
 }
 
 void InteractiveMapWidget::setMarkers(const QList<Marker> &markers)
@@ -80,7 +90,56 @@ void InteractiveMapWidget::setMarkers(const QList<Marker> &markers)
             found = found || marker.stationId == m_selectedStationId;
         if (!found) m_selectedStationId.clear();
     }
+#ifdef CHARGINGUSER_ENABLE_TENCENT_WEBMAP
+    if (m_mapBridge) {
+        QJsonArray items;
+        for (const Marker &marker : m_markers) {
+            if (!marker.point.isValid()) continue;
+            QJsonObject item;
+            item.insert(QStringLiteral("stationId"), marker.stationId);
+            item.insert(QStringLiteral("latitude"), marker.point.latitude);
+            item.insert(QStringLiteral("longitude"), marker.point.longitude);
+            item.insert(QStringLiteral("available"), marker.available);
+            items.append(item);
+        }
+        QJsonObject snapshot;
+        snapshot.insert(QStringLiteral("markers"), items);
+        m_mapBridge->setSnapshot(snapshot);
+    }
+#endif
     update();
+}
+
+void InteractiveMapWidget::setRoutePolyline(const QVector<GeoPoint> &polyline)
+{
+#ifdef CHARGINGUSER_ENABLE_TENCENT_WEBMAP
+    if (m_mapBridge) {
+        QJsonArray points;
+        for (const GeoPoint &point : polyline) {
+            if (!point.isValid()) continue;
+            QJsonObject item;
+            item.insert(QStringLiteral("latitude"), point.latitude);
+            item.insert(QStringLiteral("longitude"), point.longitude);
+            points.append(item);
+        }
+        QJsonObject snapshot;
+        QJsonArray markers;
+        for (const Marker &marker : m_markers) {
+            if (!marker.point.isValid()) continue;
+            QJsonObject item;
+            item.insert(QStringLiteral("stationId"), marker.stationId);
+            item.insert(QStringLiteral("latitude"), marker.point.latitude);
+            item.insert(QStringLiteral("longitude"), marker.point.longitude);
+            item.insert(QStringLiteral("available"), marker.available);
+            markers.append(item);
+        }
+        snapshot.insert(QStringLiteral("markers"), markers);
+        snapshot.insert(QStringLiteral("routePolyline"), points);
+        m_mapBridge->setSnapshot(snapshot);
+    }
+#else
+    Q_UNUSED(polyline)
+#endif
 }
 
 void InteractiveMapWidget::setSelectedStation(const QString &stationId)
@@ -124,6 +183,33 @@ void InteractiveMapWidget::renderMapStatus(MapLoadStatus status,
     m_mapStatePanel->style()->polish(m_mapStatePanel);
     m_mapStatePanel->adjustSize();
     positionOverlayButtons();
+}
+
+void InteractiveMapWidget::initializeTencentMap()
+{
+#ifdef CHARGINGUSER_ENABLE_TENCENT_WEBMAP
+    const QString key = qEnvironmentVariable("TENCENT_MAP_KEY");
+    if (key.trimmed().isEmpty())
+        return; // keep the painter fallback when local credentials are absent
+    m_webView = new QWebEngineView(this);
+    m_webView->setGeometry(rect());
+    m_webView->setAttribute(Qt::WA_TransparentForMouseEvents, false);
+    m_mapBridge = new TencentMapBridge(m_webView);
+    auto *channel = new QWebChannel(m_webView);
+    channel->registerObject(QStringLiteral("tencentMapBridge"), m_mapBridge);
+    m_webView->page()->setWebChannel(channel);
+    connect(m_mapBridge, &TencentMapBridge::mapReady, this, &InteractiveMapWidget::mapReady);
+    connect(m_mapBridge, &TencentMapBridge::stationSelected, this, &InteractiveMapWidget::markerSelected);
+    QFile file(QStringLiteral(":/map/tencent-map.html"));
+    if (!file.open(QIODevice::ReadOnly)) {
+        m_mapBridge->reportLoadFailed(QStringLiteral("腾讯地图资源加载失败"));
+        return;
+    }
+    QString html = QString::fromUtf8(file.readAll());
+    html.replace(QStringLiteral("__TENCENT_KEY__"), QString::fromUtf8(QUrl::toPercentEncoding(key)));
+    m_webView->setHtml(html, QUrl(QStringLiteral("qrc:///map/")));
+    m_webView->show();
+#endif
 }
 
 void InteractiveMapWidget::renderLocationStatus(MapLoadStatus status,

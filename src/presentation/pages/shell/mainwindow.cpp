@@ -160,7 +160,8 @@ void MainWindow::renderHome(const HomeMapViewState &state)
             markers.append({marker.stationId,
                             QPointF((marker.point.longitude - minLongitude) / longitudeSpan,
                                     1.0 - (marker.point.latitude - minLatitude) / latitudeSpan),
-                            true});
+                            true,
+                            marker.point});
         }
     }
     ui->mapView->setMarkers(markers);

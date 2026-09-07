@@ -13,15 +13,18 @@
 
 class QPushButton;
 class QFrame;
+class QWebEngineView;
+class TencentMapBridge;
 
 class InteractiveMapWidget final : public QLabel
 {
     Q_OBJECT
 public:
-    struct Marker { QString stationId; QPointF normalizedPosition; bool available = true; };
+    struct Marker { QString stationId; QPointF normalizedPosition; bool available = true; GeoPoint point; };
 
     explicit InteractiveMapWidget(QWidget *parent = nullptr);
     void setMarkers(const QList<Marker> &markers);
+    void setRoutePolyline(const QVector<GeoPoint> &polyline);
     void setSelectedStation(const QString &stationId);
     void centerStation(const QString &stationId);
     void fitStations(const QStringList &stationIds);
@@ -49,6 +52,7 @@ protected:
     void resizeEvent(QResizeEvent *event) override;
 
 private:
+    void initializeTencentMap();
     QPointF markerPoint(const Marker &marker) const;
     QRectF markerRect(const Marker &marker) const;
     void positionOverlayButtons();
@@ -70,4 +74,6 @@ private:
     QFrame *m_locationStatePanel;
     QLabel *m_locationStateLabel;
     QPushButton *m_locationRetryButton;
+    QWebEngineView *m_webView = nullptr;
+    TencentMapBridge *m_mapBridge = nullptr;
 };
