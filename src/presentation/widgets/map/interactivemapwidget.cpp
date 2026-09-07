@@ -174,7 +174,9 @@ void InteractiveMapWidget::mousePressEvent(QMouseEvent *event)
             emit markerSelected(marker.stationId); return;
         }
     }
-    m_dragStart = event->pos(); m_dragging = true; m_userMoved = false;
+    m_dragStart = event->pos();
+    m_dragOriginOffset = m_offset;
+    m_dragging = true; m_userMoved = false;
     setCursor(Qt::ClosedHandCursor);
 }
 
@@ -191,7 +193,25 @@ void InteractiveMapWidget::mouseReleaseEvent(QMouseEvent *event)
     Q_UNUSED(event)
     if (!m_dragging) return;
     m_dragging = false; setCursor(Qt::OpenHandCursor);
-    if (m_userMoved) m_searchAreaButton->show();
+    if (!m_userMoved || !m_viewportBounds)
+        return;
+
+    const QPointF delta = m_offset - m_dragOriginOffset;
+    const double latitudeSpan = m_viewportBounds->northEast.latitude
+                                - m_viewportBounds->southWest.latitude;
+    const double longitudeSpan = m_viewportBounds->northEast.longitude
+                                 - m_viewportBounds->southWest.longitude;
+    const double latitudeShift = delta.y() / qMax(1, height()) * latitudeSpan;
+    const double longitudeShift = -delta.x() / qMax(1, width()) * longitudeSpan;
+    GeoBounds shifted = *m_viewportBounds;
+    shifted.southWest.latitude += latitudeShift;
+    shifted.northEast.latitude += latitudeShift;
+    shifted.southWest.longitude += longitudeShift;
+    shifted.northEast.longitude += longitudeShift;
+    if (shifted.isValid()) {
+        m_viewportBounds = shifted;
+        m_searchAreaButton->show();
+    }
 }
 
 void InteractiveMapWidget::paintEvent(QPaintEvent *event)

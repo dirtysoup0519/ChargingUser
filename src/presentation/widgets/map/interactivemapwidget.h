@@ -9,6 +9,8 @@
 #include <QString>
 #include <QStringList>
 
+#include <optional>
+
 class QPushButton;
 class QFrame;
 
@@ -55,7 +57,9 @@ private:
     QList<Marker> m_markers;
     QString m_selectedStationId;
     QPoint m_dragStart;
+    QPointF m_dragOriginOffset;
     QPointF m_offset;
+    std::optional<GeoBounds> m_viewportBounds;
     bool m_dragging = false;
     bool m_userMoved = false;
     QPushButton *m_locateButton;
