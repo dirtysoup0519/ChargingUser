@@ -1,8 +1,10 @@
 #include <QApplication>
+#include <QDebug>
 #include <QFile>
 
 #include "app/application.h"
 #include "app/mapuibinder.h"
+#include "demo/mapdemofixtureloader.h"
 #include "demo/userdemocontroller.h"
 #include "modules/charger/mockchargerservice.h"
 #include "modules/map/mockmapservice.h"
@@ -13,45 +15,6 @@
 
 namespace {
 
-StationDetail makeStation(const QString &id,
-                          const QString &name,
-                          const QString &address,
-                          const GeoPoint &point,
-                          qint64 priceCents,
-                          int available,
-                          int total)
-{
-    StationDetail detail;
-    detail.stationId = id;
-    detail.summary.stationId = id;
-    detail.summary.name = name;
-    detail.summary.address = address;
-    detail.summary.point = point;
-    detail.summary.priceCentsPerKwh = priceCents;
-    detail.summary.availableCount = available;
-    detail.summary.totalCount = total;
-    detail.updatedAtUtc = QDateTime::currentDateTimeUtc();
-    for (int index = 0; index < total; ++index) {
-        ChargerSummary charger;
-        charger.chargerId = QStringLiteral("%1-%2")
-                                .arg(id)
-                                .arg(index + 1, 2, 10, QLatin1Char('0'));
-        charger.type = index % 2 == 0 ? QStringLiteral("直流快充")
-                                      : QStringLiteral("交流慢充");
-        charger.powerKw = index % 2 == 0 ? 120.0 : 7.0;
-        charger.online = index != total - 1 || available == total;
-        charger.businessStatus = index < available
-                                     ? ChargerBusinessStatus::Idle
-                                     : ChargerBusinessStatus::Charging;
-        charger.canStartCharging = index < available;
-        if (!charger.canStartCharging) {
-            charger.disabledReason = QStringLiteral("充电桩当前不可用");
-        }
-        detail.chargers.append(charger);
-    }
-    return detail;
-}
-
 RouteResult makeRoute(const StationDetail &station,
                       TravelMode mode,
                       const GeoPoint &origin)
@@ -61,6 +24,10 @@ RouteResult makeRoute(const StationDetail &station,
                     + (mode == TravelMode::Driving
                            ? QStringLiteral("-driving")
                            : QStringLiteral("-walking"));
+    route.stationId = station.stationId;
+    route.mode = mode;
+    route.origin = origin;
+    route.destination = *station.summary.point;
     route.polyline = {
         origin,
         {(origin.latitude + station.summary.point->latitude) / 2.0,
@@ -79,34 +46,40 @@ RouteResult makeRoute(const StationDetail &station,
     return route;
 }
 
-void configureMapDemo(MockChargerService *chargerService,
-                      MockMapService *mapService)
+template<typename Behavior>
+void applyDemoBehavior(const MapDemoBehavior &source, Behavior *target)
 {
-    const GeoPoint origin{22.543096, 114.057865};
-    QVector<StationDetail> stations = {
-        makeStation(QStringLiteral("station-sz-civic-center"),
-                    QStringLiteral("市民中心充电站"),
-                    QStringLiteral("福田区福中三路市民中心"),
-                    {22.543430, 114.059560}, 168, 3, 5),
-        makeStation(QStringLiteral("station-futian-cbd"),
-                    QStringLiteral("福田 CBD 充电站"),
-                    QStringLiteral("福田区金田路 3088 号"),
-                    {22.536170, 114.060100}, 152, 1, 4),
-        makeStation(QStringLiteral("station-nanshan-tech-park"),
-                    QStringLiteral("南山科技园充电站"),
-                    QStringLiteral("南山区科技南十二路"),
-                    {22.531550, 113.950660}, 135, 0, 3)
-    };
-    stations[0].summary.distanceMeters = 900;
-    stations[1].summary.distanceMeters = 1800;
-    stations[2].summary.distanceMeters = 12500;
-    chargerService->setStationCatalog(stations);
+    target->responseDelayMs = source.responseDelayMs;
+    target->timeoutMs = source.timeoutMs;
+    if (source.outcome == QStringLiteral("failure"))
+        target->outcome = decltype(target->outcome)::Failure;
+    else if (source.outcome == QStringLiteral("no-response"))
+        target->outcome = decltype(target->outcome)::NoResponse;
+    target->error.code = source.errorCode;
+    target->error.displayMessage = source.errorMessage;
+    target->error.retryable = source.retryable;
+}
 
-    LocationResult location;
-    location.point = origin;
-    location.accuracyMeters = 18.0;
-    location.capturedAtUtc = QDateTime::currentDateTimeUtc();
-    mapService->setLocationResult(location);
+MapDemoFixture configureMapDemo(MockChargerService *chargerService,
+                                MockMapService *mapService)
+{
+    MapDemoFixture fixture;
+    QString fixtureError;
+    if (!loadMapDemoFixture(QStringLiteral(":/demo/map-demo-data.tmp"),
+                            &fixture, &fixtureError)) {
+        qWarning().noquote() << fixtureError;
+        chargerService->setStationCatalog({});
+        fixture.canvasState = QStringLiteral("error");
+        return fixture;
+    }
+    chargerService->setStationCatalog(fixture.stations);
+    mapService->setLocationResult(fixture.location);
+    MockMapService::Behavior locationBehavior;
+    applyDemoBehavior(fixture.locationBehavior, &locationBehavior);
+    mapService->setLocateBehavior(locationBehavior);
+    MockChargerService::Behavior stationsBehavior;
+    applyDemoBehavior(fixture.stationsBehavior, &stationsBehavior);
+    chargerService->setStationsBehavior(stationsBehavior);
     GeocodeResult shenzhenNorth;
     shenzhenNorth.candidates = {
         {QStringLiteral("shenzhen-north-east"),
@@ -120,12 +93,15 @@ void configureMapDemo(MockChargerService *chargerService,
     };
     mapService->setGeocodeResult(QStringLiteral("深圳北站"), shenzhenNorth);
 
-    for (const StationDetail &station : stations) {
+    for (const StationDetail &station : fixture.stations) {
         mapService->setRouteResult(station.stationId, TravelMode::Driving,
-                                   makeRoute(station, TravelMode::Driving, origin));
+                                   makeRoute(station, TravelMode::Driving,
+                                             fixture.location.point));
         mapService->setRouteResult(station.stationId, TravelMode::Walking,
-                                   makeRoute(station, TravelMode::Walking, origin));
+                                   makeRoute(station, TravelMode::Walking,
+                                             fixture.location.point));
     }
+    return fixture;
 }
 
 } // namespace
@@ -145,7 +121,7 @@ int main(int argc, char *argv[])
     UserApplicationAssembly assembly(&network);
     MockChargerService chargerService;
     MockMapService mapService;
-    configureMapDemo(&chargerService, &mapService);
+    const MapDemoFixture mapFixture = configureMapDemo(&chargerService, &mapService);
     MapUiBinder mapBinder(&chargerService, &mapService);
 
     LoginWindow login;
@@ -153,6 +129,10 @@ int main(int argc, char *argv[])
     MainWindow mainWindow;
     UserDemoController controller(&network, assembly.userUiBinder(), &mapBinder,
                                   &login, &profileEdit, &mainWindow);
+    if (mapFixture.canvasState == QStringLiteral("error"))
+        mapBinder.mapLoadFailed();
+    else if (mapFixture.canvasState == QStringLiteral("ready"))
+        mapBinder.mapReady();
     controller.showInitialPage();
 
     return app.exec();

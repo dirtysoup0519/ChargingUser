@@ -170,6 +170,8 @@ UserDemoController::UserDemoController(MockUserNetworkApi *network,
             m_mapBinder, &IMapUiBinder::stationSearchRetryRequested);
     connect(m_mainWindow, &MainWindow::stationSearchCleared,
             m_mapBinder, &IMapUiBinder::stationSearchCleared);
+    connect(m_mainWindow, &MainWindow::mapReloadRequested,
+            m_mapBinder, &IMapUiBinder::mapReady);
     connect(m_mainWindow, &MainWindow::searchAreaRequested,
             m_mapBinder, &IMapUiBinder::searchAreaRequested);
     connect(m_mainWindow, &MainWindow::stationSelected,
@@ -201,8 +203,6 @@ UserDemoController::UserDemoController(MockUserNetworkApi *network,
             m_navigation, &NavigationWindow::render);
     connect(m_mapBinder, &IMapUiBinder::pageRequested,
             this, &UserDemoController::handleMapPage);
-    // 当前 InteractiveMapWidget 是离线展示桥，构造完成即可视为 ready。
-    m_mapBinder->mapReady();
     connect(m_mainWindow, &MainWindow::rechargePageRequested,
             this, [this] {
         m_walletRecharge->renderBalance(

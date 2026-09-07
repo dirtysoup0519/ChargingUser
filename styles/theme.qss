@@ -33,10 +33,6 @@ QPushButton#avatarButton:disabled { color: #1677FF; }
 QLabel#nicknameLabel, QLabel#phoneLabel {
     color: #202B3C; font-size: 13px; font-weight: 700;
 }
-QPushButton#cityButton {
-    background: transparent; border: none; color: #202B3C;
-    font-size: 15px; font-weight: 700; text-align: left; padding: 0;
-}
 QLineEdit {
     background: #F8FAFC; border: 1px solid #E5EAF0;
     border-radius: 10px; padding: 0 13px; font-size: 13px;
@@ -72,8 +68,10 @@ QPushButton#btnStationSearch {
 }
 QPushButton#btnLocateMap {
     background: #FFFFFF; color: #1677FF; border: 1px solid #D5E4FA;
-    border-radius: 21px; font-size: 22px; font-weight: 700;
+    border-radius: 21px; padding: 7px;
 }
+QPushButton#btnLocateMap:hover { background: #F2F7FF; border-color: #9FC4FF; }
+QPushButton#btnLocateMap:pressed { background: #E7F1FF; border-color: #1677FF; }
 QPushButton#btnSearchArea {
     background: #FFFFFF; color: #1677FF; border: 1px solid #D5E4FA;
     border-radius: 19px; font-size: 12px; font-weight: 700;
@@ -161,30 +159,60 @@ QListWidget#profileMenuList::item {
     border-bottom: 1px solid #EDF1F5; font-size: 14px;
 }
 QListWidget#profileMenuList::item:hover { background: #F7FAFF; color: #1677FF; }
-QPushButton#stationButton1, QPushButton#stationButton2, QPushButton#stationButton3 {
-    background: #FFFFFF; border: none; border-bottom: 1px solid #EDF1F5;
-    text-align: left; padding: 8px 92px 8px 12px; color: #202B3C;
-    font-size: 11px;
-}
-QPushButton#stationButton1:hover, QPushButton#stationButton2:hover, QPushButton#stationButton3:hover {
-    background: #F9FBFF; border: 1px solid #73AAFF; border-radius: 8px;
-}
-QPushButton#stationButton1[selected="true"], QPushButton#stationButton2[selected="true"],
-QPushButton#stationButton3[selected="true"] {
-    background: #F7FAFF; border: 2px solid #2878FF; border-radius: 11px;
-    padding: 7px 91px 7px 11px; font-weight: 600;
-}
 QPushButton#stationRow {
     background: #FFFFFF; border: none; border-bottom: 1px solid #EDF1F5;
-    text-align: left; padding: 8px 92px 8px 12px; color: #202B3C; font-size: 11px;
+    padding: 0; color: #202B3C;
 }
+QFrame#mapStatePanel, QFrame#locationStatePanel {
+    background: rgba(255, 255, 255, 238); border: 1px solid #DCE5F0;
+    border-radius: 11px;
+}
+QFrame#mapStatePanel[state="error"], QFrame#locationStatePanel[state="error"] {
+    background: rgba(255, 247, 247, 242); border-color: #F0CACA;
+}
+QLabel#mapStateLabel, QLabel#locationStateLabel {
+    background: transparent; border: none; color: #596579; font-size: 11px;
+}
+QFrame#mapStatePanel[state="error"] QLabel#mapStateLabel,
+QFrame#locationStatePanel[state="error"] QLabel#locationStateLabel { color: #C93636; }
+QPushButton#mapRetryButton, QPushButton#locationRetryButton,
+QPushButton#stationRetryButton {
+    background: #EAF3FF; color: #1677FF; border: 1px solid #A9CBFF;
+    border-radius: 8px; padding: 0 8px; font-size: 10px; font-weight: 700;
+}
+QFrame#stationStateBar {
+    background: #F3F7FC; border: none; border-bottom: 1px solid #E1E8F0;
+}
+QFrame#stationStateBar[state="empty"] { background: #F7F9FC; }
+QFrame#stationStateBar[state="error"] { background: #FFF4F4; border-bottom-color: #F2CACA; }
+QLabel#stationStateLabel { background: transparent; color: #687386; font-size: 11px; }
+QFrame#stationStateBar[state="error"] QLabel#stationStateLabel { color: #C93636; }
+QLabel#stationCountLabel { color: #8A94A3; font-size: 10px; }
+QComboBox#stationSortCombo {
+    background: #FFFFFF; color: #4E596A; border: 1px solid #DCE5F0;
+    border-radius: 8px; padding: 3px 7px; font-size: 10px;
+}
+QComboBox#stationSortCombo:hover { border-color: #8BB9FF; color: #1677FF; }
+QComboBox#stationSortCombo::drop-down { border: none; width: 18px; }
 QPushButton#stationRow[selected="true"] {
     background: #F7FAFF; border: 2px solid #2878FF; border-radius: 11px;
-    padding: 7px 91px 7px 11px; font-weight: 600;
+    padding: 0;
+}
+QLabel#stationRowIcon { background: transparent; border: none; }
+QLabel#stationRowName {
+    background: transparent; color: #202B3C; border: none;
+    font-size: 12px; font-weight: 700;
+}
+QLabel#stationRowAddress, QLabel#stationRowDistance {
+    background: transparent; color: #7D8898; border: none; font-size: 10px;
+}
+QLabel#stationRowMeta {
+    background: transparent; color: #1677FF; border: none;
+    font-size: 10px; font-weight: 600;
 }
 QPushButton#stationDetailsButton {
     background: #EAF3FF; color: #1677FF; border: 1px solid #A9CBFF;
-    border-radius: 15px; padding: 0; font-size: 11px; font-weight: 700;
+    border-radius: 14px; padding: 0; font-size: 10px; font-weight: 700;
 }
 QPushButton#stationDetailsButton:hover {
     background: #1677FF; color: #FFFFFF; border-color: #1677FF;

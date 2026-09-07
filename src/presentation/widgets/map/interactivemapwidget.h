@@ -1,12 +1,16 @@
 #pragma once
 
+#include "presentation/contracts/mapviewstates.h"
+
 #include <QLabel>
 #include <QList>
 #include <QPointF>
+#include <QRectF>
 #include <QString>
 #include <QStringList>
 
 class QPushButton;
+class QFrame;
 
 class InteractiveMapWidget final : public QLabel
 {
@@ -20,11 +24,18 @@ public:
     void centerStation(const QString &stationId);
     void fitStations(const QStringList &stationIds);
     void setLocateEnabled(bool enabled);
+    void renderMapStatus(MapLoadStatus status,
+                         const QString &message,
+                         bool canRetry);
+    void renderLocationStatus(MapLoadStatus status,
+                              const QString &message,
+                              bool canRetry);
 
 signals:
     void markerSelected(const QString &stationId);
     void locateRequested();
     void searchAreaRequested();
+    void mapReloadRequested();
 
 protected:
     void mousePressEvent(QMouseEvent *event) override;
@@ -35,6 +46,7 @@ protected:
 
 private:
     QPointF markerPoint(const Marker &marker) const;
+    QRectF markerRect(const Marker &marker) const;
     void positionOverlayButtons();
     void clampOffset();
 
@@ -46,4 +58,10 @@ private:
     bool m_userMoved = false;
     QPushButton *m_locateButton;
     QPushButton *m_searchAreaButton;
+    QFrame *m_mapStatePanel;
+    QLabel *m_mapStateLabel;
+    QPushButton *m_mapRetryButton;
+    QFrame *m_locationStatePanel;
+    QLabel *m_locationStateLabel;
+    QPushButton *m_locationRetryButton;
 };

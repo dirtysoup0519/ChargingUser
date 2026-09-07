@@ -2,6 +2,7 @@
  <qresource prefix="/">
   <file alias="styles/theme.qss">../styles/theme.qss</file>
   <file alias="demo/user-demo-data.tmp">../src/demo/user-demo-data.tmp</file>
+  <file alias="demo/map-demo-data.tmp">../src/demo/map-demo-data.tmp</file>
   <file alias="images/login_hero.png">images/login_hero.png</file>
   <file alias="images/home_map.png">images/home_map.png</file>
   <file alias="images/station_hero.png">images/station_hero.png</file>
@@ -22,5 +23,11 @@
   <file alias="icons/user_active.png">icons/user_active.png</file>
   <file alias="icons/wallet_card.png">icons/wallet_card.png</file>
   <file alias="icons/security_shield.png">icons/security_shield.png</file>
+  <file alias="icons/map_locate.png">icons/map_locate.png</file>
+  <file alias="icons/map_station_marker.png">icons/map_station_marker.png</file>
+  <file alias="icons/map_station_marker_active.png">icons/map_station_marker_active.png</file>
+  <file alias="icons/map_station_marker_unavailable.png">icons/map_station_marker_unavailable.png</file>
+  <file alias="icons/station_charge.png">icons/station_charge.png</file>
+  <file alias="icons/station_charge_active.png">icons/station_charge_active.png</file>
  </qresource>
 </RCC>

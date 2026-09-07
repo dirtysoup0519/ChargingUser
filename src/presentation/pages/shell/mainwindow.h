@@ -39,6 +39,7 @@ signals:
     void stationSearchRequested(const QString &keyword);
     void stationSearchRetryRequested();
     void stationSearchCleared();
+    void mapReloadRequested();
     void searchAreaRequested(const GeoBounds &bounds);
     void stationSelected(const QString &stationId);
     void profileEditRequested();
@@ -46,13 +47,20 @@ signals:
     void logoutRequested();
 
 private:
+    enum class StationSortMode { Distance, Availability };
+
     void rebuildStationRows(const QVector<StationListItemView> &stations);
     QPushButton *createStationButton(const StationListItemView &station);
-    void addDetailsButton(QPushButton *stationButton, const QString &stationId);
+    void updateStationButton(QPushButton *button,
+                             const StationListItemView &station);
+    void applyStationOrder(const QString &selectedStationId);
     void selectStation(const QString &stationId, bool emitIntent);
 
     Ui::MainWindow *ui;
     QHash<QString, QPushButton *> m_stationButtons;
+    QVector<StationListItemView> m_stationItems;
+    QString m_selectedStationId;
+    StationSortMode m_stationSortMode = StationSortMode::Distance;
     std::optional<GeoBounds> m_viewportBounds;
     quint64 m_cameraRevision = 0;
 };

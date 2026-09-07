@@ -1,26 +1,72 @@
 #include "interactivemapwidget.h"
 
-#include <QLineF>
+#include <QFrame>
+#include <QHBoxLayout>
+#include <QIcon>
 #include <QMouseEvent>
 #include <QPainter>
 #include <QPushButton>
+#include <QStyle>
+#include <QVBoxLayout>
 
 InteractiveMapWidget::InteractiveMapWidget(QWidget *parent)
-    : QLabel(parent), m_locateButton(new QPushButton(tr("⌖"), this)),
-      m_searchAreaButton(new QPushButton(tr("搜索当前区域"), this))
+    : QLabel(parent), m_locateButton(new QPushButton(this)),
+      m_searchAreaButton(new QPushButton(tr("搜索当前区域"), this)),
+      m_mapStatePanel(new QFrame(this)),
+      m_mapStateLabel(new QLabel(m_mapStatePanel)),
+      m_mapRetryButton(new QPushButton(tr("重新加载地图"), m_mapStatePanel)),
+      m_locationStatePanel(new QFrame(this)),
+      m_locationStateLabel(new QLabel(m_locationStatePanel)),
+      m_locationRetryButton(new QPushButton(tr("重试定位"), m_locationStatePanel))
 {
     setCursor(Qt::OpenHandCursor);
     setScaledContents(false);
     m_locateButton->setObjectName(QStringLiteral("btnLocateMap"));
     m_locateButton->setFixedSize(42, 42);
+    m_locateButton->setIcon(QIcon(QStringLiteral(":/icons/map_locate.png")));
+    m_locateButton->setIconSize(QSize(26, 26));
+    m_locateButton->setToolTip(tr("定位到当前位置"));
+    m_locateButton->setAccessibleName(tr("定位到当前位置"));
     m_searchAreaButton->setObjectName(QStringLiteral("btnSearchArea"));
     m_searchAreaButton->setFixedSize(126, 38);
     m_searchAreaButton->hide();
+
+    m_mapStatePanel->setObjectName(QStringLiteral("mapStatePanel"));
+    m_mapStatePanel->setFixedWidth(252);
+    auto *mapStateLayout = new QVBoxLayout(m_mapStatePanel);
+    mapStateLayout->setContentsMargins(14, 11, 14, 11);
+    mapStateLayout->setSpacing(7);
+    m_mapStateLabel->setObjectName(QStringLiteral("mapStateLabel"));
+    m_mapStateLabel->setAlignment(Qt::AlignCenter);
+    m_mapStateLabel->setWordWrap(true);
+    m_mapRetryButton->setObjectName(QStringLiteral("mapRetryButton"));
+    m_mapRetryButton->setFixedHeight(30);
+    mapStateLayout->addWidget(m_mapStateLabel);
+    mapStateLayout->addWidget(m_mapRetryButton);
+    m_mapStatePanel->hide();
+
+    m_locationStatePanel->setObjectName(QStringLiteral("locationStatePanel"));
+    m_locationStatePanel->setMaximumWidth(270);
+    auto *locationStateLayout = new QHBoxLayout(m_locationStatePanel);
+    locationStateLayout->setContentsMargins(10, 6, 8, 6);
+    locationStateLayout->setSpacing(7);
+    m_locationStateLabel->setObjectName(QStringLiteral("locationStateLabel"));
+    m_locationStateLabel->setWordWrap(true);
+    m_locationRetryButton->setObjectName(QStringLiteral("locationRetryButton"));
+    m_locationRetryButton->setFixedSize(68, 28);
+    locationStateLayout->addWidget(m_locationStateLabel, 1);
+    locationStateLayout->addWidget(m_locationRetryButton);
+    m_locationStatePanel->hide();
+
     connect(m_locateButton, &QPushButton::clicked, this, &InteractiveMapWidget::locateRequested);
     connect(m_searchAreaButton, &QPushButton::clicked, this, [this] {
         m_searchAreaButton->hide();
         emit searchAreaRequested();
     });
+    connect(m_mapRetryButton, &QPushButton::clicked,
+            this, &InteractiveMapWidget::mapReloadRequested);
+    connect(m_locationRetryButton, &QPushButton::clicked,
+            this, &InteractiveMapWidget::locateRequested);
 }
 
 void InteractiveMapWidget::setMarkers(const QList<Marker> &markers)
@@ -42,8 +88,10 @@ void InteractiveMapWidget::centerStation(const QString &stationId)
 {
     for (const Marker &marker : m_markers) {
         if (marker.stationId != stationId) continue;
-        m_offset = QPointF((0.5 - marker.normalizedPosition.x()) * width() * 0.84,
-                           (0.5 - marker.normalizedPosition.y()) * height() * 0.84);
+        m_offset = QPointF(width() * 0.5
+                               - width() * (0.08 + marker.normalizedPosition.x() * 0.84),
+                           height() * 0.5
+                               - height() * (0.18 + marker.normalizedPosition.y() * 0.72));
         clampOffset(); update(); return;
     }
 }
@@ -54,6 +102,49 @@ void InteractiveMapWidget::fitStations(const QStringList &stationIds)
 void InteractiveMapWidget::setLocateEnabled(bool enabled)
 { m_locateButton->setEnabled(enabled); }
 
+void InteractiveMapWidget::renderMapStatus(MapLoadStatus status,
+                                            const QString &message,
+                                            bool canRetry)
+{
+    const bool loading = status == MapLoadStatus::Idle
+                         || status == MapLoadStatus::Loading;
+    const bool failed = status == MapLoadStatus::Error;
+    m_mapStatePanel->setVisible(loading || failed);
+    if (!loading && !failed)
+        return;
+    m_mapStatePanel->setProperty("state", failed ? "error" : "loading");
+    m_mapStateLabel->setText(message.isEmpty()
+                                 ? failed ? tr("地图暂时无法显示。")
+                                          : tr("地图加载中…")
+                                 : message);
+    m_mapRetryButton->setVisible(failed && canRetry);
+    m_mapStatePanel->style()->unpolish(m_mapStatePanel);
+    m_mapStatePanel->style()->polish(m_mapStatePanel);
+    m_mapStatePanel->adjustSize();
+    positionOverlayButtons();
+}
+
+void InteractiveMapWidget::renderLocationStatus(MapLoadStatus status,
+                                                 const QString &message,
+                                                 bool canRetry)
+{
+    const bool loading = status == MapLoadStatus::Loading;
+    const bool failed = status == MapLoadStatus::Error;
+    m_locationStatePanel->setVisible(loading || failed);
+    if (!loading && !failed)
+        return;
+    m_locationStatePanel->setProperty("state", failed ? "error" : "loading");
+    m_locationStateLabel->setText(message.isEmpty()
+                                      ? failed ? tr("无法获取当前位置。")
+                                               : tr("正在获取当前位置…")
+                                      : message);
+    m_locationRetryButton->setVisible(failed && canRetry);
+    m_locationStatePanel->style()->unpolish(m_locationStatePanel);
+    m_locationStatePanel->style()->polish(m_locationStatePanel);
+    m_locationStatePanel->adjustSize();
+    positionOverlayButtons();
+}
+
 void InteractiveMapWidget::mousePressEvent(QMouseEvent *event)
 {
     if (event->button() != Qt::LeftButton) return QLabel::mousePressEvent(event);
@@ -63,7 +154,7 @@ void InteractiveMapWidget::mousePressEvent(QMouseEvent *event)
     const QPointF pointer = event->localPos();
 #endif
     for (const Marker &marker : m_markers) {
-        if (QLineF(pointer, markerPoint(marker)).length() <= 24.0) {
+        if (markerRect(marker).adjusted(-4, -4, 4, 4).contains(pointer)) {
             emit markerSelected(marker.stationId); return;
         }
     }
@@ -90,7 +181,9 @@ void InteractiveMapWidget::mouseReleaseEvent(QMouseEvent *event)
 void InteractiveMapWidget::paintEvent(QPaintEvent *event)
 {
     Q_UNUSED(event)
-    QPainter painter(this); painter.setRenderHint(QPainter::Antialiasing);
+    QPainter painter(this);
+    painter.setRenderHint(QPainter::Antialiasing);
+    painter.setRenderHint(QPainter::SmoothPixmapTransform);
 #if QT_VERSION >= QT_VERSION_CHECK(5, 15, 0)
     const QPixmap map = pixmap(Qt::ReturnByValue);
 #else
@@ -103,14 +196,21 @@ void InteractiveMapWidget::paintEvent(QPaintEvent *event)
                             scaled.width(), scaled.height());
         painter.drawPixmap(target, map, map.rect());
     } else painter.fillRect(rect(), QColor(QStringLiteral("#EEF4F8")));
+    static const QPixmap availableMarker(
+        QStringLiteral(":/icons/map_station_marker.png"));
+    static const QPixmap selectedMarker(
+        QStringLiteral(":/icons/map_station_marker_active.png"));
+    static const QPixmap unavailableMarker(
+        QStringLiteral(":/icons/map_station_marker_unavailable.png"));
     for (const Marker &marker : m_markers) {
-        const QPointF point = markerPoint(marker);
         const bool selected = marker.stationId == m_selectedStationId;
-        painter.setPen(QPen(Qt::white, 2));
-        painter.setBrush(selected ? QColor("#1677FF") : marker.available ? QColor("#18B7A0") : QColor("#A0A8B4"));
-        painter.drawEllipse(point, selected ? 17 : 13, selected ? 17 : 13);
-        painter.setPen(QPen(Qt::white, 3)); painter.drawLine(point + QPointF(-4, 3), point + QPointF(1, -5));
-        painter.drawLine(point + QPointF(1, -5), point + QPointF(5, 2));
+        const QPixmap &markerPixmap = selected
+                                          ? selectedMarker
+                                          : marker.available
+                                                ? availableMarker
+                                                : unavailableMarker;
+        painter.drawPixmap(markerRect(marker), markerPixmap,
+                           QRectF(markerPixmap.rect()));
     }
 }
 
@@ -118,13 +218,29 @@ void InteractiveMapWidget::resizeEvent(QResizeEvent *event)
 { QLabel::resizeEvent(event); clampOffset(); positionOverlayButtons(); }
 
 QPointF InteractiveMapWidget::markerPoint(const Marker &marker) const
-{ return QPointF(width() * (0.08 + marker.normalizedPosition.x() * 0.84) + m_offset.x(), height() * (0.08 + marker.normalizedPosition.y() * 0.84) + m_offset.y()); }
+{ return QPointF(width() * (0.08 + marker.normalizedPosition.x() * 0.84) + m_offset.x(), height() * (0.18 + marker.normalizedPosition.y() * 0.72) + m_offset.y()); }
+
+QRectF InteractiveMapWidget::markerRect(const Marker &marker) const
+{
+    const bool selected = marker.stationId == m_selectedStationId;
+    const QSizeF size = selected ? QSizeF(46, 55) : QSizeF(40, 48);
+    const QPointF anchor = markerPoint(marker);
+    return QRectF(qRound(anchor.x() - size.width() / 2.0),
+                  qRound(anchor.y() - size.height()),
+                  size.width(), size.height());
+}
 
 void InteractiveMapWidget::positionOverlayButtons()
 {
     m_locateButton->move(width() - m_locateButton->width() - 14, height() - m_locateButton->height() - 14);
     m_searchAreaButton->move((width() - m_searchAreaButton->width()) / 2, height() - m_searchAreaButton->height() - 16);
-    m_locateButton->raise(); m_searchAreaButton->raise();
+    m_mapStatePanel->move((width() - m_mapStatePanel->width()) / 2,
+                          (height() - m_mapStatePanel->height()) / 2);
+    m_locationStatePanel->move(12, 12);
+    m_mapStatePanel->raise();
+    m_locationStatePanel->raise();
+    m_locateButton->raise();
+    m_searchAreaButton->raise();
 }
 
 void InteractiveMapWidget::clampOffset()
