@@ -6,7 +6,8 @@ SOURCES += \
     $$PROJECT_ROOT/massagehandler.cpp \
     $$PROJECT_ROOT/src/network/qtnetworktransport.cpp \
     $$PROJECT_ROOT/src/network/backendclient.cpp \
-    $$PROJECT_ROOT/src/network/realusernetworkapi.cpp
+    $$PROJECT_ROOT/src/network/realusernetworkapi.cpp \
+    $$PROJECT_ROOT/src/network/realchargerservice.cpp
 
 HEADERS += \
     $$PROJECT_ROOT/massagehandler.h \
@@ -14,4 +15,5 @@ HEADERS += \
     $$PROJECT_ROOT/src/network/inetworktransport.h \
     $$PROJECT_ROOT/src/network/qtnetworktransport.h \
     $$PROJECT_ROOT/src/network/backendclient.h \
-    $$PROJECT_ROOT/src/network/realusernetworkapi.h
+    $$PROJECT_ROOT/src/network/realusernetworkapi.h \
+    $$PROJECT_ROOT/src/network/realchargerservice.h
