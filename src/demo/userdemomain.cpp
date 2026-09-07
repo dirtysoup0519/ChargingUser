@@ -1,5 +1,10 @@
 #include <QApplication>
+#include <QCoreApplication>
+#include <QDir>
 #include <QFile>
+#include <QJsonDocument>
+#include <QJsonObject>
+#include <QStringList>
 
 #include "app/application.h"
 #include "app/mapuibinder.h"
@@ -13,6 +18,29 @@
 #include "presentation/pages/profile/profileeditwindow.h"
 
 namespace {
+
+QJsonObject loadTencentMapConfig()
+{
+    QStringList candidates;
+    const QString explicitPath = qEnvironmentVariable("CHARGING_TENCENT_CONFIG");
+    if (!explicitPath.trimmed().isEmpty())
+        candidates.append(explicitPath);
+    candidates.append(QDir::current().filePath(
+        QStringLiteral("config/tencent-map.local.json")));
+    candidates.append(QDir(QCoreApplication::applicationDirPath()).filePath(
+        QStringLiteral("../config/tencent-map.local.json")));
+
+    for (const QString &path : candidates) {
+        QFile file(path);
+        if (!file.open(QIODevice::ReadOnly))
+            continue;
+        QJsonParseError error;
+        const QJsonDocument document = QJsonDocument::fromJson(file.readAll(), &error);
+        if (error.error == QJsonParseError::NoError && document.isObject())
+            return document.object();
+    }
+    return {};
+}
 
 StationDetail makeStation(const QString &id,
                           const QString &name,
@@ -149,10 +177,22 @@ int main(int argc, char *argv[])
     TencentMapService tencentMapService;
     configureMapDemo(&chargerService, &mockMapService);
 
+    const QJsonObject localMapConfig = loadTencentMapConfig();
+    QString provider = qEnvironmentVariable("CHARGING_MAP_PROVIDER");
+    if (provider.isEmpty())
+        provider = localMapConfig.value(QStringLiteral("provider")).toString(
+            QStringLiteral("mock"));
     IMapService *mapService = &mockMapService;
-    if (qEnvironmentVariable("CHARGING_MAP_PROVIDER").compare(
-            QStringLiteral("tencent"), Qt::CaseInsensitive) == 0) {
-        tencentMapService.setApiKey(qEnvironmentVariable("TENCENT_MAP_KEY"));
+    if (provider.compare(QStringLiteral("tencent"), Qt::CaseInsensitive) == 0) {
+        QString apiKey = qEnvironmentVariable("TENCENT_MAP_KEY");
+        if (apiKey.isEmpty())
+            apiKey = localMapConfig.value(QStringLiteral("key")).toString();
+        QString region = qEnvironmentVariable("TENCENT_MAP_REGION");
+        if (region.isEmpty())
+            region = localMapConfig.value(QStringLiteral("region")).toString(
+                QStringLiteral("深圳市"));
+        tencentMapService.setApiKey(apiKey);
+        tencentMapService.setSearchRegion(region);
         mapService = &tencentMapService;
     }
     MapUiBinder mapBinder(&chargerService, mapService);

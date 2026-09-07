@@ -21,3 +21,6 @@ ui_*.h
 
 # Local VMware credentials; never commit
 .vm-credentials
+
+# Local Tencent Map credentials; keep the example file tracked.
+/config/tencent-map.local.json

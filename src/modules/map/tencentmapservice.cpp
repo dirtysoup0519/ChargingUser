@@ -122,6 +122,12 @@ void TencentMapService::setServiceBaseUrl(const QString &baseUrl)
     m_baseUrl = baseUrl;
 }
 
+void TencentMapService::setSearchRegion(const QString &region)
+{
+    const QString trimmed = region.trimmed();
+    m_searchRegion = trimmed.isEmpty() ? QStringLiteral("深圳市") : trimmed;
+}
+
 void TencentMapService::setDefaultTimeoutMs(int timeoutMs)
 {
     m_defaultTimeoutMs = timeoutMs;
@@ -165,6 +171,7 @@ void TencentMapService::geocode(const RequestContext &context,
     QUrlQuery parameters;
     parameters.addQueryItem(QStringLiteral("key"), m_apiKey);
     parameters.addQueryItem(QStringLiteral("keyword"), keyword);
+    parameters.addQueryItem(QStringLiteral("region"), m_searchRegion);
     QUrl url(m_baseUrl + QStringLiteral("/ws/place/v1/suggestion"));
     url.setQuery(parameters);
     startGet(context, QStringLiteral("geocode"), url);
@@ -341,12 +348,18 @@ void TencentMapService::onReplyFinished(const QString &requestId)
         return;
     }
 
-    // 供应商错误映射：120/121 属于频率与配额限制，稍后重试有意义；
-    // 其余（授权、参数、内部错误）重试大概率无效，按不可重试上报。
-    if (status == 120 || status == 121) {
+    // 腾讯公共状态码必须按稳定项目错误分类，不能把每日额度耗尽误导为可重试。
+    if (status == 121) {
         const ClientError error = mappedError(
-            requestId, QStringLiteral("map-rate-limited"),
-            QStringLiteral("地图服务请求过于频繁，请稍后重试"), /*retryable=*/true);
+            requestId, QStringLiteral("map-quota-exceeded"),
+            QStringLiteral("地图服务今日调用额度已用完"), /*retryable=*/false);
+        emit requestFailed(error);
+        return;
+    }
+    if (status == 110 || status == 111 || status == 112) {
+        const ClientError error = mappedError(
+            requestId, QStringLiteral("map-auth-failed"),
+            QStringLiteral("腾讯地图鉴权失败，请检查本地 Key 配置"), /*retryable=*/false);
         emit requestFailed(error);
         return;
     }

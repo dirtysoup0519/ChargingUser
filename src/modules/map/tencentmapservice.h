@@ -51,6 +51,9 @@ public:
      */
     void setServiceBaseUrl(const QString &baseUrl);
 
+    /** 设置地址提示的城市范围；默认与当前首页城市一致为深圳市。 */
+    void setSearchRegion(const QString &region);
+
     /** 覆盖单个请求的传输超时（毫秒）。默认 10s：Web Service 官方建议客户端超时兜底。 */
     void setDefaultTimeoutMs(int timeoutMs);
 
@@ -100,6 +103,7 @@ private:
     bool m_ownedNam = false;
     QString m_apiKey;
     QString m_baseUrl = QStringLiteral("https://apis.map.qq.com");
+    QString m_searchRegion = QStringLiteral("深圳市");
     int m_defaultTimeoutMs = 10000;
 
     /** requestId → 在途请求。迟到应答以"查不到关联"被识别并丢弃。 */

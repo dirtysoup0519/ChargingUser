@@ -168,6 +168,7 @@ private slots:
         QVERIFY(m_nam->lastUrl.query().contains(QStringLiteral("keyword=%E5%88%9B%E6%96%B0%E5%A4%A7%E5%8E%A6"))
                 || m_nam->lastUrl.query().contains(QStringLiteral("keyword=")));
         QVERIFY(m_nam->lastUrl.query().contains(QStringLiteral("key=unit-test-key")));
+        QVERIFY(m_nam->lastUrl.query().contains(QStringLiteral("region=")));
         QVERIFY(m_nam->createdReplies.first() != nullptr);
         m_nam->createdReplies.first()->finishNow();
 
@@ -345,11 +346,11 @@ private slots:
                  QStringLiteral("map-parse"));
     }
 
-    void providerRateLimitIsRetryableFailure()
+    void providerDailyQuotaIsNonRetryableFailure()
     {
         m_nam->factory = [](const QNetworkRequest &request) {
             return new FakeReply(request,
-                                 QByteArrayLiteral("{\"status\":120,\"message\":\"请求过于频繁\"}"));
+                                 QByteArrayLiteral("{\"status\":121,\"message\":\"此key每日调用量已达到上限\"}"));
         };
         QSignalSpy failedSpy(m_service, &IMapService::requestFailed);
         m_service->geocode(readOnlyContext(QStringLiteral("req-rate-1")), QStringLiteral("地址"));
@@ -357,8 +358,8 @@ private slots:
         QCOMPARE(failedSpy.count(), 1);
         const ClientError error = failedSpy.first().at(0).value<ClientError>();
         QCOMPARE(error.requestId, QStringLiteral("req-rate-1"));
-        QCOMPARE(error.code, QStringLiteral("map-rate-limited"));
-        QVERIFY(error.retryable);
+        QCOMPARE(error.code, QStringLiteral("map-quota-exceeded"));
+        QVERIFY(!error.retryable);
         QVERIFY(!error.resultUnknown);
     }
 
@@ -373,9 +374,9 @@ private slots:
         m_nam->createdReplies.first()->finishNow();
         QCOMPARE(failedSpy.count(), 1);
         const ClientError error = failedSpy.first().at(0).value<ClientError>();
-        QCOMPARE(error.code, QStringLiteral("map-provider-error"));
+        QCOMPARE(error.code, QStringLiteral("map-auth-failed"));
         QVERIFY(!error.retryable);
-        QVERIFY(error.displayMessage.contains(QStringLiteral("请求来源未被授权")));
+        QVERIFY(error.displayMessage.contains(QStringLiteral("鉴权失败")));
     }
 
     void networkFailureIsRetryableFailure()
