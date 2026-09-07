@@ -7,6 +7,8 @@ HEADERS += \
     $$PWD/mapuibinder.h \
     $$PWD/icharginguibinder.h \
     $$PWD/charginguibinder.h \
+    $$PWD/ichargingsessionuibinder.h \
+    $$PWD/chargingsessionuibinder.h \
     $$PWD/iuseruibinder.h \
     $$PWD/useruibinder.h \
     $$PWD/application.h
@@ -14,5 +16,6 @@ HEADERS += \
 SOURCES += \
     $$PWD/mapuibinder.cpp \
     $$PWD/charginguibinder.cpp \
+    $$PWD/chargingsessionuibinder.cpp \
     $$PWD/useruibinder.cpp \
     $$PWD/application.cpp
