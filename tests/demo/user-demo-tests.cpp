@@ -2,7 +2,10 @@
 
 #include "app/application.h"
 #include "app/iuseruibinder.h"
+#include "app/mapuibinder.h"
 #include "demo/userdemocontroller.h"
+#include "modules/charger/mockchargerservice.h"
+#include "modules/map/mockmapservice.h"
 #include "modules/user/mockusernetworkapi.h"
 #include "presentation/pages/auth/loginwindow.h"
 #include "presentation/pages/shell/mainwindow.h"
@@ -71,6 +74,9 @@ private:
     QString currentMainPageName() const;
 
     MockUserNetworkApi *m_network = nullptr;
+    MockChargerService *m_chargerService = nullptr;
+    MockMapService *m_mapService = nullptr;
+    MapUiBinder *m_mapBinder = nullptr;
     UserApplicationAssembly *m_assembly = nullptr;
     LoginWindow *m_login = nullptr;
     ProfileEditWindow *m_profileEdit = nullptr;
@@ -82,10 +88,39 @@ void UserDemoTests::init()
 {
     m_network = new MockUserNetworkApi(this);
     m_assembly = new UserApplicationAssembly(m_network, this);
+    m_chargerService = new MockChargerService(this);
+    m_mapService = new MockMapService(this);
+    StationDetail station;
+    station.stationId = QStringLiteral("station-test");
+    station.summary.stationId = station.stationId;
+    station.summary.name = QStringLiteral("Test station");
+    station.summary.address = QStringLiteral("Test address");
+    station.summary.point = GeoPoint{22.51, 114.01};
+    station.summary.availableCount = 1;
+    station.summary.totalCount = 1;
+    ChargerSummary charger;
+    charger.chargerId = QStringLiteral("charger-test");
+    charger.online = true;
+    charger.businessStatus = ChargerBusinessStatus::Idle;
+    charger.canStartCharging = true;
+    station.chargers.append(charger);
+    m_chargerService->setStationCatalog({station});
+    LocationResult location;
+    location.point = {22.50, 114.00};
+    location.capturedAtUtc = QDateTime::currentDateTimeUtc();
+    m_mapService->setLocationResult(location);
+    RouteResult route;
+    route.routeId = QStringLiteral("route-test");
+    route.polyline = {location.point, *station.summary.point};
+    route.distanceMeters = 1200;
+    route.durationSeconds = 600;
+    m_mapService->setRouteResult(station.stationId, TravelMode::Driving, route);
+    m_mapBinder = new MapUiBinder(m_chargerService, m_mapService, this);
     m_login = new LoginWindow;
     m_profileEdit = new ProfileEditWindow;
     m_mainWindow = new MainWindow;
     m_controller = new UserDemoController(m_network, m_assembly->userUiBinder(),
+                                          m_mapBinder,
                                           m_login, m_profileEdit, m_mainWindow,
                                           this);
     m_controller->showInitialPage();
@@ -99,6 +134,9 @@ void UserDemoTests::cleanup()
     delete m_profileEdit;
     delete m_login;
     delete m_assembly;
+    delete m_mapBinder;
+    delete m_mapService;
+    delete m_chargerService;
     delete m_network;
 
     m_controller = nullptr;
@@ -106,6 +144,9 @@ void UserDemoTests::cleanup()
     m_profileEdit = nullptr;
     m_login = nullptr;
     m_assembly = nullptr;
+    m_mapBinder = nullptr;
+    m_mapService = nullptr;
+    m_chargerService = nullptr;
     m_network = nullptr;
 }
 
@@ -218,17 +259,21 @@ void UserDemoTests::stationAndRechargeNavigationMatchesPages()
                     .value(QStringLiteral("phone")).toString());
     waitForMainWindow();
 
+    QTRY_VERIFY_WITH_TIMEOUT(
+        m_mainWindow->findChild<QPushButton *>(QStringLiteral("stationDetailsButton")),
+        1000);
     QPushButton *station = m_mainWindow->findChild<QPushButton *>(
-        QStringLiteral("stationButton1"));
-    QVERIFY(station);
+        QStringLiteral("stationDetailsButton"));
     QTest::mouseClick(station, Qt::LeftButton);
     QCOMPARE(currentMainPageName(), QStringLiteral("StationDetailWindow"));
 
     QPushButton *navigate = m_mainWindow->findChild<QPushButton *>(
         QStringLiteral("navigationButton"));
     QVERIFY(navigate);
+    QTRY_VERIFY_WITH_TIMEOUT(navigate->isEnabled(), 1000);
     QTest::mouseClick(navigate, Qt::LeftButton);
-    QCOMPARE(currentMainPageName(), QStringLiteral("NavigationWindow"));
+    QTRY_COMPARE_WITH_TIMEOUT(currentMainPageName(),
+                              QStringLiteral("NavigationWindow"), 1000);
 
     QWidget *navigationPage = m_mainWindow->findChild<QWidget *>(
         QStringLiteral("NavigationWindow"));

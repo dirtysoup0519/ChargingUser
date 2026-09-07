@@ -1,8 +1,18 @@
 # 地图与导航最终合同
 
-日期：2026-09-05；代码核对基线：`56a5614`。状态：**客户端公共合同已冻结并生效，冻结提交为 `34a4094`。第 10.2 节外部接缝允许在实现阶段逐项确认，但只能通过独立 `contract:` 变更更新。**
+日期：2026-09-05；最近决策更新：2026-09-07；代码核对基线：`56a5614`。状态：**客户端公共合同已冻结并生效，冻结提交为 `34a4094`。第 10.2 节外部接缝允许在实现阶段逐项确认，但只能通过独立 `contract:` 变更更新。**
 
 本文是首页地图、站点详情与路线导航的唯一权威合同，合并原协作约定与接口审核稿。合同同时约束 UI、逻辑、网络和集成负责人；接口冻结前新增声明不能被当作已接入实现调用。其他文档与本文冲突时，以本文为准并同步修订旧文档。
+
+## 0. 2026-09-07 腾讯地图实施决策增补
+
+用户已确认本项目以实习学习和内部演示为目标，腾讯 Key、腾讯路线/地理编码请求、供应商错误映射、本地限流和供应商替换集中在 Qt 前端；后端只提供站点业务数据、稳定 stationId、目的地坐标、坐标系和入口点语义。业务请求固定由 `IMapService` 的前端实现调用腾讯 WebService，腾讯 JavaScript API 只负责底图和图形展示。
+
+具体 UI 调整、接口提案、当前差距和分阶段实现见 [腾讯地图前端直连与 UI 接入协议](tencent-map-frontend-integration.md)。该文档是本文的供应商实施细则，不改变本文已冻结的现有 DTO 和业务接口；其中新增 `IMapCanvas`、`MapCanvasFailure` 及 `mapLoadFailed(MapCanvasFailure)` 仍是待评审提案，编码前必须通过独立合同变更冻结。
+
+前端 Key 可被提取是已接受的学习项目风险，但真实 Key 仍不得提交、写入 qrc、日志或截图。腾讯控制台决定实际配额；前端只能实现本机缓存、节流和错误展示，不能声称管理全局额度。
+
+当前 BitDev 实测为 Ubuntu 22.04 / Qt 6.2.4，尚未安装 Qt6 WebEngineWidgets、WebChannel、Positioning 和 QWebEngineView 头文件。腾讯 WebService 适配器可以先开发；真实腾讯 JS 底图和设备定位必须在补齐并验证与 Qt 6.2.4 Kit 匹配的依赖后实施。
 
 ## 1. 依据与本轮范围
 
@@ -19,13 +29,13 @@
 
 | 项目 | 现状 |
 |---|---|
-| 首页 | 位于 `ui/shell/mainwindow.ui` 与 `pages/shell/mainwindow.*`，地图为图片，站点为固定展示；尚无独立 HomePage |
-| 站点详情 | `src/presentation/pages/home/stationdetailwindow.*` 与 `ui/home/stationdetailwindow.ui` 已存在 |
-| 地图导航 | `src/presentation/pages/home/navigationwindow.*` 与 `ui/home/navigationwindow.ui` 已存在 |
+| 首页 | 位于 `ui/shell/mainwindow.ui` 与 `pages/shell/mainwindow.*`；站点已按 ViewState 动态渲染，地图仍为图片背景和自绘标记，不能返回真实视野 |
+| 站点详情 | 已按 `StationDetailViewState` 动态渲染详情、充电桩、加载/错误和路线能力 |
+| 地图导航 | 已按 `NavigationViewState` 展示驾车/步行、手动起点、候选地址、路线摘要和步骤；路线仍为无道路底图的自绘预览 |
 | 页面容器 | `MainWindow::renderSecondaryPage(QWidget*)`，二级页进入同一 pageStack |
-| Demo | 已连接站点详情、地图导航和返回；当前忽略 stationId，不能表示已经查询指定站点 |
-| 业务与地图 | 当前 `src/modules/` 只有 user；IMapService、IChargerService 在概要设计中有名称，尚无对应实现 |
-| Qt 模块 | 正式工程当前为 widgets、network，尚未登记 webenginewidgets/webchannel |
+| Demo | 已使用 `MapUiBinder + MockMapService + MockChargerService` 贯通动态站点、指定 stationId 详情、路线和返回 |
+| 业务与地图 | `IMapService`、`IChargerService`、Mock、坐标转换和 `MapUiBinder` 已实现；真实站点协议和腾讯适配器未实现 |
+| Qt 模块 | 正式工程当前为 widgets、network；BitDev Qt 6.2.4 尚缺 WebEngineWidgets/WebChannel 开发组件 |
 
 现有信号必须兼容迁移：
 
@@ -213,7 +223,7 @@ Binder 按定位、列表、详情、路线分别保存最新 requestId 和会�
 
 地图服务密钥缺失、无定位权限、无定位来源、无路线、网络失败、供应商限流和无效坐标需要可区分错误；Binder 把 ClientError 转为 UI 文案和 canRetry，页面不解析供应商错误码。读取失败不清空搜索草稿。
 
-供应商能力必须始终经 `IMapService` 发起并返回规范化 DTO。底层适配器可依据最终腾讯地图方案使用 WebService 或受控 JS provider bridge；页面点击不得直接调用供应商接口。WebChannel 只传输受控事件和经过校验的数据。
+供应商能力必须始终经 `IMapService` 发起并返回规范化 DTO。路线和地理编码由 Qt 前端适配器调用腾讯 WebService；受控 JS bridge 只负责底图和绘制。页面点击不得直接调用供应商接口，WebChannel 只传输受控事件和经过校验的数据。
 
 ## 7. 页面流程与降级
 
@@ -252,8 +262,8 @@ Binder 按定位、列表、详情、路线分别保存最新 requestId 和会�
 
 ## 8. WebEngine、资源与安全协作
 
-- 概要设计指定腾讯地图 JS API；具体 SDK 版本、定位提供方式、路线 API/配额和授权配置尚未核实。真实接入前由逻辑负责人核对官方资料并记录，不能凭此草案声称已支持。
-- 在 BitDev 检查目标 Qt Kit 是否包含 WebEngine/WebChannel，再由指定一人登记对应模块。近期 Qt 6.2.4 Demo 构建成功不代表 WebEngine 可用；团队文档仍要求 Qt 5.15.3，两者差异需共同确认，不能静默改验收基线。
+- 概要设计指定腾讯地图 JS API；路线调用已确定为 Qt 前端直连腾讯 WebService，JS API 只负责底图和绘制。具体 API 版本、Key 类型、定位提供方式、配额和授权限制仍须在真实接入前核对并记录。
+- BitDev 已确认使用 Qt 6.2.4，当前不包含 WebEngine/WebChannel。先完成基于 `QNetworkAccessManager` 的腾讯 WebService 适配器；安装与 Kit 匹配的开发组件并验证最小工程后，再由指定一人登记 `webenginewidgets/webchannel`。
 - HTML/JS 展示资源由 UI 维护并登记 qrc；图标使用 PNG/JPG，不新增 SVG 运行资源。地图版权/供应商标识按授权要求保留。
 - WebChannel 只暴露地图 ready、选中 stationId、用户视野变化等最小接口，校验 ID、坐标和数据长度；不得暴露任意文件、命令、通用网络请求或完整 Binder。
 - 第三方返回文案作为文本展示，不能未经处理拼入 JS/HTML。限制页面导航及桥可访问来源；页面刷新/销毁时解绑回调。
@@ -382,7 +392,7 @@ git diff --name-only FREEZE_COMMIT...HEAD
 - [ ] 网络失败、Key 缺失、地图加载失败、无路线、超时可恢复；不伪造充电成功。
 - [ ] 登录、资料、钱包现有链路无回归；Qt 5/Qt 6 及 WebEngine 实际版本分开记录。
 
-每次交接附源码提交号、接口变更、构建命令、BitDev/Ubuntu/Qt 版本、通过项和未验证项。Windows 文件检查不是运行验收。公共合同冒烟测试已在 BitDev / Ubuntu 22.04 / Qt 5.15.3 通过 5/5；真实地图、站点协议与 GUI 尚未验证。
+每次交接附源码提交号、接口变更、构建命令、BitDev/Ubuntu/Qt 版本、通过项和未验证项。Windows 文件检查不是运行验收。公共合同曾在 Qt 5.15.3 通过 5/5；当前 Mock 逻辑、Binder 和 GUI 已在 BitDev / Ubuntu 22.04 / Qt 6.2.4 验证，真实腾讯地图与真实站点协议仍未验证。
 
 ## 10. 最终审核与冻结记录
 
@@ -394,7 +404,7 @@ git diff --name-only FREEZE_COMMIT...HEAD
 |---|---|
 | 坐标 | 跨层统一 GCJ-02；未知值使用 `std::optional` |
 | 定位 | 优先设备定位；拒绝/不可用时使用手动地址，不提供伪当前位置 |
-| 路线供应商边界 | 统一经过 IMapService；适配器可使用 WebService 或受控 JS bridge |
+| 路线供应商边界 | Qt 前端 `IMapService` 实现直连腾讯 WebService；JS bridge 只负责底图和绘制 |
 | 默认出行方式 | Driving |
 | 地址多候选 | 用户按 candidateId 选择，不自动取第一项 |
 | 站点分页 | cursor/nextCursor/hasMore，默认 pageSize 20 |
@@ -402,7 +412,7 @@ git diff --name-only FREEZE_COMMIT...HEAD
 | 首页结构 | 本轮保留 MainWindow，不强制拆 HomePage |
 | 旧 navigationRequested | 集成期映射 Driving；新接口接通后立即断开旧连接 |
 | Binder | 使用 IMapUiBinder；MapPageTarget 与 M1 NavigationTarget 分离 |
-| Qt 验收环境 | BitDev / Ubuntu 22.04.3 / Qt 5.15.3 / WebEngineWidgets |
+| Qt 验收环境 | BitDev / Ubuntu 22.04 / Qt 6.2.4；真实底图前补装并验证 WebEngineWidgets/WebChannel |
 | Mock | 实现正式接口；固定数据只在 tests/demo fixture |
 | 空关键词 | 不提交查询；清除关键词使用独立 stationSearchCleared 意图 |
 
@@ -416,9 +426,9 @@ git diff --name-only FREEZE_COMMIT...HEAD
 4. 服务端是否支持 cursor 分页；不支持时是否明确首版只返回单页，并由适配器设置 hasMore=false。
 5. 价格是否始终使用 priceCents（分/度），以及价格缺失时的展示与业务语义。
 6. 成功和失败应答是否回显 requestId；若不回显，服务端必须确认同类请求防重规则，适配器采用保守关联并依赖超时兜底。
-7. 腾讯地图正式 API/SDK 版本、Key 类型及域名/配额限制。
+7. 腾讯地图正式 API/SDK 版本、Key 类型及实际配额仍需在创建前端 Key 后记录；调用位置已确认在 Qt 前端。
 8. 定位来源：虚拟机无设备定位时是否以手动地址作为首版正式路径。
-9. 路线实现采用腾讯地图 WebService 还是 JS DirectionsService；无论选择哪种，调用边界保持 IMapService 不变。
+9. 路线实现已确认使用 Qt 前端 `TencentMapService` 调腾讯 WebService；JS API 只用于底图和绘制，调用边界保持 `IMapService` 不变。
 10. 共享文件唯一编辑人与集成负责人。
 
 ### 10.3 审核记录
@@ -435,6 +445,6 @@ UI 分支及负责人：`feature/map-navigation-ui` / 待填写。
 
 UI 确认人/日期：UI 负责人 / 2026-09-05。逻辑确认人/日期：逻辑负责人 / 2026-09-05。网络确认人/日期：按第 10.2 节逐项填写。用户确认日期：2026-09-05。
 
-接口冻结提交条件：UI 确认 ViewState 和页面意图；逻辑确认 DTO、校验、取消与世代规则；合同测试在 BitDev/Qt 5.15.3 通过。第 10.2 节不再整体阻塞客户端公共合同冻结，但每个真实网络/腾讯地图适配功能必须先确认其依赖项。记录冻结提交号后再创建并行分支。
+历史接口冻结条件为：UI 确认 ViewState 和页面意图；逻辑确认 DTO、校验、取消与世代规则；合同测试在 BitDev/Qt 5.15.3 通过。当前实施与回归基线已调整为 BitDev/Qt 6.2.4；第 10.2 节不再整体阻塞客户端公共合同冻结，但每个真实网络/腾讯地图适配功能必须先确认其依赖项。记录冻结提交号后再创建并行分支。
 
 开发前核对实际分支与远程引用，不把旧文档中的共同基线当作当前 HEAD。UI 与逻辑各在约定分支工作，合并前先交换小提交；不要整文件覆盖 `.pro`、MainWindow 或 Binder。迁移、接口、UI 和真实适配分开提交。Qt Creator `.pro.user`、构建产物、本机测试夹具与 AGENTme.md 保持本地；伙伴已纳入版本管理的 tests 不擅自移除。提交、推送由用户明确发起，不强推公共分支。
