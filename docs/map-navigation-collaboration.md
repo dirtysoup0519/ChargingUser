@@ -151,7 +151,7 @@ void NavigationWindow::render(const NavigationViewState &state);
 
 render 不发请求、不发意图；程序更新地图中心/标记不得回触发查询。地图拖动仅显示“搜索当前地图区域”，点击后才发查询。地图 ready 前缓存最后一份展示快照，ready 后重放一次，避免不断新增标记或重复连接。
 
-首页顶部搜索栏固定为“城市入口 + 搜索输入框 + 搜索按钮”。输入框右侧必须是明确的 `btnStationSearch`，点击按钮或在输入框按回车都只发出一次 `stationSearchRequested(keyword)`；空关键词不提交查询，清除搜索通过独立 `stationSearchCleared()` 意图恢复附近/当前视野结果。UI 不把定位按钮当作搜索确认。定位入口 `btnLocateMap` 放在地图区域右下角，使用悬浮圆形按钮，点击发出 `locateRequested()`；定位中显示忙碌态并阻止重复点击。地图被用户拖动后，地图底部居中显示独立的 `btnSearchArea`，它与定位及关键词搜索是三个不同意图。
+首页顶部不再提供城市入口，固定为“自适应搜索输入框 + 右侧搜索按钮”。输入框右侧必须是明确的 `btnStationSearch`，点击按钮或在输入框按回车都只发出一次 `stationSearchRequested(keyword)`；空关键词不提交查询，清除搜索通过独立 `stationSearchCleared()` 意图恢复附近/当前视野结果。UI 不把定位按钮当作搜索确认。定位入口 `btnLocateMap` 放在地图区域右下角，使用悬浮圆形按钮，点击发出 `locateRequested()`；定位中显示忙碌态并阻止重复点击。地图被用户拖动后，地图底部居中显示独立的 `btnSearchArea`，它与定位及关键词搜索是三个不同意图。
 
 ### 5.1 关键词搜索接口与界面结果
 
@@ -231,6 +231,7 @@ Binder 按定位、列表、详情、路线分别保存最新 requestId 和会�
 2. 用户在顶部输入关键词后，通过右侧“搜索”按钮或回车确认；两种操作提交同一个 stationSearchRequested(keyword)，一次动作只产生一次请求。地图区域必须支持用户按下拖动和平移；拖动结束后保留新视野并显示“搜索当前地图区域”，不能在每个移动事件中连续请求站点。
 3. 地图标记与下方站点行必须使用同一个稳定 `stationId`。点击地图标记后，页面发出 `stationSelected(stationId)`，把对应站点行从当前位置移动到列表第一行，并以边框、阴影或底色形成“浮起”选中态；不得仅改变地图标记而让列表保持无反馈。
 4. “提起显示”会改变当前展示顺序：最新选中的站点始终位于第一行，其余站点保持移动前的相对顺序，不复制站点行。再次选择其他标记时，取消旧行高亮并把新站点移动到第一行。页面必须按 `stationId` 移动已有数据，不能通过重新请求或名称匹配实现。程序为了同步列表而移动地图或调整列表时不得再次发出选择意图，避免循环。
+   首页允许用户在“按距离”和“可用优先”之间切换本地展示顺序。`StationListItemView` 同时提供 `distanceMeters`、`availableCount`、`totalCount` 作为排序键，UI 不解析本地化后的距离或可用数文案。选中站点仍固定在第一行；按距离时其余站点由近到远，距离未知项置后；可用优先时 `availableCount > 0` 的站点置前，同组按距离排序。排序只移动已有 stationId 行，不发起业务请求或选择意图。
 5. 点击下方站点行时执行相反联动：发出 `stationSelected(stationId)`，选中同 stationId 的地图标记、把地图平移到该站点，并将该行置顶高亮。每个站点行必须提供明确的“查看详情”按钮；只有点击该按钮才发出 `stationDetailsRequested(stationId)`。详情按钮点击不得额外触发站点行点击，地图标记点击也不得进入详情。
 6. 详情加载成功且坐标有效后允许规划路线。起点未知先提示定位或手动地址；不使用 (0,0)。
 7. 切换驾车/步行产生新请求。路线空结果显示“暂无可用路线”；失败提供重试并保留起终点。
@@ -393,6 +394,45 @@ git diff --name-only FREEZE_COMMIT...HEAD
 - [ ] 登录、资料、钱包现有链路无回归；Qt 5/Qt 6 及 WebEngine 实际版本分开记录。
 
 每次交接附源码提交号、接口变更、构建命令、BitDev/Ubuntu/Qt 版本、通过项和未验证项。Windows 文件检查不是运行验收。公共合同曾在 Qt 5.15.3 通过 5/5；当前 Mock 逻辑、Binder 和 GUI 已在 BitDev / Ubuntu 22.04 / Qt 6.2.4 验证，真实腾讯地图与真实站点协议仍未验证。
+
+### 9.7 2026-09-07 UI 本地实现交接
+
+以下内容已在 UI 负责人的本地工作区实现，尚未以本节记录提交号。逻辑负责人合并前应按本节核对接口，不要用旧版固定站点控件覆盖当前动态渲染代码。
+
+当前首页 UI 已完成这些调整：
+
+- 删除城市入口，顶部只保留自适应搜索输入框和固定宽度的搜索按钮；定位按钮仍位于地图右下角。
+- 移除固定写死的站点按钮和地图标记。站点行与标记均从 `HomeMapViewState.stations`、`HomeMapViewState.markers` 按稳定 `stationId` 动态创建、更新和删除。
+- 站点行使用独立图标、名称、地址、距离、可用数量、价格和“查看详情”按钮。点击整行只选择站点并联动地图；点击“查看详情”才发出 `stationDetailsRequested(stationId)`。
+- 首页提供“按距离”和“可用优先”两种本地排序。当前选中站点始终固定在第一行；排序仅重排已有行，不请求数据、不改变 stationId，也不额外发出选择意图。
+- 地图、定位、站点列表和关键词搜索分别展示 Loading、Empty、Error、Ready 等状态及各自重试入口，任一区域失败不清空其他区域已有内容。
+- 地图标记、选中标记、不可用标记、站点闪电图标和定位图标已替换为清晰的资源图片。当前 `InteractiveMapWidget` 仍是可拖动的 Mock/降级画布，不代表腾讯真实地图已经接入。
+
+本轮公共合同只有一项展示字段扩展：`StationListItemView` 增加 `distanceMeters`、`availableCount`、`totalCount`。这些字段是 UI 排序的原始键，Binder 从站点 DTO 直接映射；UI 不解析 `distanceText`、`availabilityText`。已有页面意图、`IChargerService` 和 `IMapService` 签名没有因排序改变。
+
+Demo 数据链路固定为：
+
+```text
+src/demo/map-demo-data.tmp
+  -> MapDemoFixtureLoader
+  -> MockChargerService / MockMapService
+  -> MapUiBinder
+  -> HomeMapViewState
+  -> MainWindow::renderHome()
+```
+
+`map-demo-data.tmp` 可调整当前位置、任意数量站点、每站任意数量充电桩及响应场景。`scenario.canvasState` 控制画布 ready/loading/error；定位和站点场景支持 success/failure/no-response、延迟、超时和错误文案。生产页面不得直接读取 tmp，未来接入真实数据库或网络时只替换服务实现，保留 Binder、ViewState 和页面渲染链路。该文件受全局 `*.tmp` 忽略规则影响，提交 Demo 时必须显式纳入版本管理，否则资源清单会引用缺失文件。
+
+`MainWindow::mapReloadRequested()` 是展示画布的重载意图。Demo 可将它接到 `IMapUiBinder::mapReady()` 来恢复场景；正式集成应由地图画布适配器重新初始化真实底图，并根据结果回报 `mapReady()` 或 `mapLoadFailed()`，不得把重载按钮直接解释为站点查询。
+
+推荐按两个小提交交接：
+
+1. `contract:` 提交只包含本文、`mapviewstates.h` 和 `mapuibinder.cpp` 的字段映射，供逻辑负责人先评审或摘取。
+2. `feat(ui):` 提交包含页面、Widget、资源和 Demo fixture；不要与伙伴的真实服务适配器整文件互相覆盖。
+
+当前仍由逻辑/集成负责人完成的部分包括：真实腾讯底图、真实视野 `GeoBounds`、真实当前定位点与精度圈、站点数据库/网络适配、异步超时和迟到响应处理。真实视野未接通前，“搜索当前区域”只能作为接口预留，不能把 Mock 图片的拖动范围伪装成真实经纬度查询。
+
+验收状态：动态站点、图标、详情入口和各区域状态已由 UI 负责人在 BitDev / Qt 6.2.4 做过界面验收；本轮新增的“按距离/可用优先”排序及连续切换站点后的顺序仍需在同一环境补一次回归，再记录提交号和结果。
 
 ## 10. 最终审核与冻结记录
 

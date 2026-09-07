@@ -745,6 +745,9 @@ void MapUiBinder::rebuildHomeResults(const StationPage &page)
                                 availabilityText(station.availableCount,
                                                  station.totalCount),
                                 priceText(station.priceCentsPerKwh),
+                                station.distanceMeters,
+                                station.availableCount,
+                                station.totalCount,
                                 false});
         if (station.point && station.point->isValid()) {
             m_home.markers.append({station.stationId,

@@ -57,6 +57,9 @@ struct StationListItemView
     QString distanceText;
     QString availabilityText;
     QString priceText;
+    std::optional<int> distanceMeters;
+    int availableCount = 0;
+    int totalCount = 0;
     bool selected = false;
 };
 
