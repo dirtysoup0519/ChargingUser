@@ -1,5 +1,6 @@
 #include "stationdetailwindow.h"
 #include "ui_stationdetailwindow.h"
+#include "presentation/widgets/map/interactivemapwidget.h"
 #include <QFrame>
 #include <QHBoxLayout>
 #include <QLabel>
@@ -12,6 +13,11 @@ StationDetailWindow::StationDetailWindow(QWidget *parent)
     : QWidget(parent), ui(new Ui::StationDetailWindow)
 {
     ui->setupUi(this);
+    m_map = new InteractiveMapWidget(this);
+    m_map->setMapKey(qEnvironmentVariable("TENCENT_MAP_KEY"));
+    m_map->setMinimumSize(366, 180);
+    m_map->setMaximumHeight(180);
+    ui->contentLayout->insertWidget(1, m_map);
     connect(ui->backButton, &QPushButton::clicked,
             this, &StationDetailWindow::backRequested);
     connect(ui->navigationButton, &QPushButton::clicked, this, [this] {
@@ -32,6 +38,14 @@ StationDetailWindow::~StationDetailWindow() { delete ui; }
 void StationDetailWindow::render(const StationDetailViewState &state)
 {
     m_state = state;
+    if (m_map) {
+        QList<InteractiveMapWidget::Marker> markers;
+        if (state.point && state.point->isValid())
+            markers.append({state.stationId, QPointF(0.5, 0.5), true, *state.point});
+        m_map->setMarkers(markers);
+        m_map->setSelectedStation(state.stationId);
+        m_map->renderMapStatus(state.status, state.message, state.canRetry);
+    }
     ui->stationName->setText(state.name.isEmpty() ? tr("充电站详情") : state.name);
     ui->addressLabel->setText(state.address.isEmpty() ? tr("地址待加载") : state.address);
     ui->availabilityLabel->setText(state.availabilityText.isEmpty()

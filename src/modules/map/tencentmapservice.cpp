@@ -125,7 +125,7 @@ void TencentMapService::setServiceBaseUrl(const QString &baseUrl)
 void TencentMapService::setSearchRegion(const QString &region)
 {
     const QString trimmed = region.trimmed();
-    m_searchRegion = trimmed.isEmpty() ? QStringLiteral("深圳市") : trimmed;
+    m_searchRegion = trimmed.isEmpty() ? QStringLiteral("北京市") : trimmed;
 }
 
 void TencentMapService::setDefaultTimeoutMs(int timeoutMs)
@@ -133,8 +133,29 @@ void TencentMapService::setDefaultTimeoutMs(int timeoutMs)
     m_defaultTimeoutMs = timeoutMs;
 }
 
+void TencentMapService::setFallbackLocation(
+    const std::optional<LocationResult> &location)
+{
+    m_fallbackLocation = location && location->point.isValid()
+                             ? location
+                             : std::nullopt;
+}
+
 void TencentMapService::locate(const RequestContext &context)
 {
+    if (!context.isValid() || context.isMutation()) {
+        failLocal(context,
+                  QStringLiteral("map-readonly-operation"),
+                  QStringLiteral("定位是只读查询，不允许携带 operationId"));
+        return;
+    }
+    if (m_fallbackLocation) {
+        const LocationResult result = *m_fallbackLocation;
+        QTimer::singleShot(0, this, [this, context, result] {
+            emit locationReady(context, result);
+        });
+        return;
+    }
     // 定位来源尚未冻结（BitDev 虚拟机无设备定位，手动地址是首版正式路径）。
     // 这里返回可区分错误而不是伪造定位，保证 UI 显示"定位不可用"而不是假当前位置。
     failLocal(context,

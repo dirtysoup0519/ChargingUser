@@ -30,6 +30,8 @@ MainWindow::MainWindow(QWidget *parent) : QWidget(parent), ui(new Ui::MainWindow
             this, &MainWindow::searchAreaRequested);
     connect(ui->mapView, &InteractiveMapWidget::mapReady,
             this, &MainWindow::mapReady);
+    connect(ui->mapView, &InteractiveMapWidget::mapLoadFailed,
+            this, &MainWindow::mapLoadFailed);
     connect(ui->btnStationSearch, &QPushButton::clicked, this, [this] {
         const QString keyword = ui->searchBox->text().trimmed();
         if (keyword.isEmpty())
@@ -74,6 +76,12 @@ MainWindow::MainWindow(QWidget *parent) : QWidget(parent), ui(new Ui::MainWindow
             this, &MainWindow::rechargePageRequested);
     connect(ui->btnLogout, &QPushButton::clicked,
             this, &MainWindow::logoutRequested);
+}
+
+void MainWindow::setMapKey(const QString &key)
+{
+    if (ui && ui->mapView)
+        ui->mapView->setMapKey(key);
 }
 
 MainWindow::~MainWindow() { delete ui; }

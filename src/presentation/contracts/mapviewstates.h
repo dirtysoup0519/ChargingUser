@@ -125,6 +125,7 @@ struct HomeMapViewState
 struct StationDetailViewState
 {
     QString stationId;
+    std::optional<GeoPoint> point;
     MapLoadStatus status = MapLoadStatus::Idle;
     QString name;
     QString address;

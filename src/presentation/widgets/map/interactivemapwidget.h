@@ -14,6 +14,7 @@
 class QPushButton;
 class QFrame;
 class QWebEngineView;
+class QShowEvent;
 class TencentMapBridge;
 
 class InteractiveMapWidget final : public QLabel
@@ -23,6 +24,7 @@ public:
     struct Marker { QString stationId; QPointF normalizedPosition; bool available = true; GeoPoint point; };
 
     explicit InteractiveMapWidget(QWidget *parent = nullptr);
+    void setMapKey(const QString &key);
     void setMarkers(const QList<Marker> &markers);
     void setRoutePolyline(const QVector<GeoPoint> &polyline);
     void setSelectedStation(const QString &stationId);
@@ -40,6 +42,7 @@ public:
 
 signals:
     void mapReady();
+    void mapLoadFailed();
     void markerSelected(const QString &stationId);
     void locateRequested();
     void searchAreaRequested(const GeoBounds &bounds);
@@ -50,6 +53,7 @@ protected:
     void mouseReleaseEvent(QMouseEvent *event) override;
     void paintEvent(QPaintEvent *event) override;
     void resizeEvent(QResizeEvent *event) override;
+    void showEvent(QShowEvent *event) override;
 
 private:
     void initializeTencentMap();
@@ -64,6 +68,7 @@ private:
     QPointF m_dragOriginOffset;
     QPointF m_offset;
     std::optional<GeoBounds> m_viewportBounds;
+    QString m_mapKey;
     bool m_dragging = false;
     bool m_userMoved = false;
     QPushButton *m_locateButton;

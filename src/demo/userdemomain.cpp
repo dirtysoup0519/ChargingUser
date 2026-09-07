@@ -1,4 +1,6 @@
 #include <QApplication>
+#include <QFileInfo>
+#include <QDir>
 #include <QCoreApplication>
 #include <QDebug>
 #include <QDir>
@@ -63,15 +65,23 @@ RouteResult makeRoute(const StationDetail &station,
          (origin.longitude + station.summary.point->longitude) / 2.0},
         *station.summary.point
     };
-    route.distanceMeters = mode == TravelMode::Driving ? 3200 : 2100;
-    route.durationSeconds = mode == TravelMode::Driving ? 720 : 1680;
+    const int directDistance = station.summary.distanceMeters.value_or(800);
+    route.distanceMeters = mode == TravelMode::Driving
+                               ? qMax(300, directDistance * 13 / 10)
+                               : qMax(200, directDistance);
+    route.durationSeconds = mode == TravelMode::Driving
+                                ? qMax(180, route.distanceMeters / 7)
+                                : qMax(240, route.distanceMeters * 4 / 5);
+    const int firstLeg = route.distanceMeters / 4;
+    const int secondLeg = route.distanceMeters * 3 / 5;
+    const int finalLeg = route.distanceMeters - firstLeg - secondLeg;
     route.steps = mode == TravelMode::Driving
-                      ? QVector<RouteStep>{{QStringLiteral("沿当前道路向南行驶"), 800},
-                                           {QStringLiteral("右转进入主干道"), 1900},
-                                           {QStringLiteral("到达充电站入口"), 500}}
-                      : QVector<RouteStep>{{QStringLiteral("沿人行道向南步行"), 600},
-                                           {QStringLiteral("通过路口后继续直行"), 1100},
-                                           {QStringLiteral("到达充电站入口"), 400}};
+                      ? QVector<RouteStep>{{QStringLiteral("驶出良乡校区周边道路"), firstLeg},
+                                           {QStringLiteral("沿良乡大学城道路行驶"), secondLeg},
+                                           {QStringLiteral("进入充电站停车区域"), finalLeg}}
+                      : QVector<RouteStep>{{QStringLiteral("从良乡校区步行出发"), firstLeg},
+                                           {QStringLiteral("沿公共人行道路前往充电站"), secondLeg},
+                                           {QStringLiteral("到达充电站停车区域"), finalLeg}};
     return route;
 }
 
@@ -109,18 +119,20 @@ MapDemoFixture configureMapDemo(MockChargerService *chargerService,
     MockChargerService::Behavior stationsBehavior;
     applyDemoBehavior(fixture.stationsBehavior, &stationsBehavior);
     chargerService->setStationsBehavior(stationsBehavior);
-    GeocodeResult shenzhenNorth;
-    shenzhenNorth.candidates = {
-        {QStringLiteral("shenzhen-north-east"),
-         QStringLiteral("深圳北站东广场"),
-         QStringLiteral("深圳市龙华区民治街道深圳北站东广场"),
-         {22.609900, 114.035700}},
-        {QStringLiteral("shenzhen-north-west"),
-         QStringLiteral("深圳北站西广场"),
-         QStringLiteral("深圳市龙华区致远中路深圳北站西广场"),
-         {22.610800, 114.029900}}
+    GeocodeResult bitLiangxiang;
+    bitLiangxiang.candidates = {
+        {QStringLiteral("bit-liangxiang-main"),
+         QStringLiteral("北京理工大学良乡校区"),
+         QStringLiteral("北京市房山区良乡高教园区良乡东路9号院"),
+         {39.731782, 116.172130}},
+        {QStringLiteral("bit-liangxiang-east"),
+         QStringLiteral("北京理工大学良乡校区东区"),
+         QStringLiteral("北京市房山区良乡东路7号院"),
+         {39.733771, 116.175246}}
     };
-    mapService->setGeocodeResult(QStringLiteral("深圳北站"), shenzhenNorth);
+    mapService->setGeocodeResult(QStringLiteral("北京理工大学"), bitLiangxiang);
+    mapService->setGeocodeResult(QStringLiteral("北京理工大学良乡校区"),
+                                 bitLiangxiang);
 
     for (const StationDetail &station : fixture.stations) {
         mapService->setRouteResult(station.stationId, TravelMode::Driving,
@@ -137,6 +149,22 @@ MapDemoFixture configureMapDemo(MockChargerService *chargerService,
 
 int main(int argc, char *argv[])
 {
+    // Resolve the matching Qt6 helper before creating QApplication so
+    // Chromium can spawn its renderer process.
+    if (qEnvironmentVariableIsEmpty("QTWEBENGINEPROCESS_PATH")) {
+        const QString executableDir = QFileInfo(
+            QString::fromLocal8Bit(argv[0])).absolutePath();
+        const QStringList candidates = {
+            QDir(executableDir).filePath(QStringLiteral("QtWebEngineProcess")),
+            QStringLiteral("/usr/lib/x86_64-linux-gnu/qt6/libexec/QtWebEngineProcess"),
+            QStringLiteral("/usr/lib/qt6/libexec/QtWebEngineProcess")};
+        for (const QString &candidate : candidates) {
+            if (QFileInfo::exists(candidate)) {
+                qputenv("QTWEBENGINEPROCESS_PATH", candidate.toUtf8());
+                break;
+            }
+        }
+    }
     QApplication app(argc, argv);
     app.setApplicationName(QStringLiteral("智充用户流程 Demo"));
     app.setStyle(QStringLiteral("Fusion"));
@@ -160,6 +188,7 @@ int main(int argc, char *argv[])
         provider = localMapConfig.value(QStringLiteral("provider")).toString(
             QStringLiteral("mock"));
     IMapService *mapService = &mockMapService;
+    QString mapApiKey;
     if (provider.compare(QStringLiteral("tencent"), Qt::CaseInsensitive) == 0) {
         QString apiKey = qEnvironmentVariable("TENCENT_MAP_KEY");
         if (apiKey.isEmpty())
@@ -167,22 +196,42 @@ int main(int argc, char *argv[])
         QString region = qEnvironmentVariable("TENCENT_MAP_REGION");
         if (region.isEmpty())
             region = localMapConfig.value(QStringLiteral("region")).toString(
-                QStringLiteral("深圳市"));
+                QStringLiteral("北京市"));
         tencentMapService.setApiKey(apiKey);
+        mapApiKey = apiKey;
         tencentMapService.setSearchRegion(region);
+        const QJsonObject locationConfig = localMapConfig.value(
+            QStringLiteral("defaultLocation")).toObject();
+        LocationResult defaultLocation;
+        defaultLocation.point = {
+            locationConfig.value(QStringLiteral("latitude")).toDouble(39.731782),
+            locationConfig.value(QStringLiteral("longitude")).toDouble(116.172130)};
+        defaultLocation.capturedAtUtc = QDateTime::currentDateTimeUtc();
+        defaultLocation.source = LocationSource::Manual;
+        tencentMapService.setFallbackLocation(defaultLocation);
         mapService = &tencentMapService;
     }
     MapUiBinder mapBinder(&chargerService, mapService);
 
     LoginWindow login;
     ProfileEditWindow profileEdit;
+    if (!mapApiKey.trimmed().isEmpty())
+        qputenv("TENCENT_MAP_KEY", mapApiKey.toUtf8());
     MainWindow mainWindow;
     UserDemoController controller(&network, assembly.userUiBinder(), &mapBinder,
                                   &login, &profileEdit, &mainWindow);
-    if (mapFixture.canvasState == QStringLiteral("error"))
+    const bool useTencentMap = provider.compare(
+        QStringLiteral("tencent"), Qt::CaseInsensitive) == 0;
+    if (useTencentMap) {
+        if (mapApiKey.trimmed().isEmpty())
+            mapBinder.mapLoadFailed();
+        else
+            mainWindow.setMapKey(mapApiKey);
+    } else if (mapFixture.canvasState == QStringLiteral("error")) {
         mapBinder.mapLoadFailed();
-    else if (mapFixture.canvasState == QStringLiteral("ready"))
+    } else if (mapFixture.canvasState == QStringLiteral("ready")) {
         mapBinder.mapReady();
+    }
     controller.showInitialPage();
 
     return app.exec();

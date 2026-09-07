@@ -415,6 +415,7 @@ void MapUiBinder::handleStationDetailReady(const RequestContext &context,
     summary.stationId = detail.stationId;
     m_stationsById.insert(detail.stationId, summary);
     m_detail.name = summary.name;
+    m_detail.point = summary.point;
     m_detail.address = summary.address;
     m_detail.availabilityText = availabilityText(summary.availableCount,
                                                   summary.totalCount);
@@ -593,7 +594,8 @@ void MapUiBinder::handleMapRequestFailed(const ClientError &error)
                                                QStringLiteral("无法获取当前位置。"));
         m_home.canRetryLocation = error.retryable;
         publishHome();
-        // 定位不可用不应阻断站点浏览。无区域查询由后端默认城市（Demo 为深圳目录）处理。
+        // 定位不可用不应阻断站点浏览。无区域查询由后端默认城市
+        // （Demo 为北京理工大学良乡校区周边目录）处理。
         if (m_home.stationsStatus == MapLoadStatus::Idle) {
             startStationQuery(StationQuery{});
         }

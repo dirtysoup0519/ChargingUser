@@ -28,5 +28,6 @@ private:
     void rebuildChargers(const QVector<ChargerListItemView> &chargers);
 
     Ui::StationDetailWindow *ui;
+    class InteractiveMapWidget *m_map = nullptr;
     StationDetailViewState m_state;
 };

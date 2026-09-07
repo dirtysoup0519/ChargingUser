@@ -10,6 +10,12 @@ qtHaveModule(webenginewidgets):qtHaveModule(webchannel) {
 CONFIG += c++17
 CONFIG -= app_bundle
 
+# Local/Qt Creator builds should exercise the complete UI assembly by default.
+# Production network integration remains an explicit CONFIG+=real_network mode.
+!contains(CONFIG, real_network) {
+    CONFIG += user_demo
+}
+
 TEMPLATE = app
 TARGET = ChargingUserUI
 

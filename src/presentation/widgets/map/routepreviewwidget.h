@@ -7,6 +7,7 @@
 #include <optional>
 
 class QWebEngineView;
+class QShowEvent;
 class TencentMapBridge;
 
 /** 只负责绘制已规范化的路线数据；不调用地图供应商或业务服务。 */
@@ -24,6 +25,8 @@ public:
 
 protected:
     void paintEvent(QPaintEvent *event) override;
+    void resizeEvent(QResizeEvent *event) override;
+    void showEvent(QShowEvent *event) override;
 
 private:
     void initializeTencentMap();

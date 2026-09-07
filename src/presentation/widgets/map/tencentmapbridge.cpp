@@ -59,7 +59,47 @@ void TencentMapBridge::reportViewport(const QJsonObject &bounds)
 
 void TencentMapBridge::setSnapshot(const QJsonObject &snapshot)
 {
-    m_snapshot = snapshot;
+    QJsonObject sanitized;
+    const QJsonArray inputMarkers = snapshot.value(QStringLiteral("markers")).toArray();
+    QJsonArray markers;
+    for (const QJsonValue &value : inputMarkers) {
+        if (markers.size() >= 500 || !value.isObject()) break;
+        const QJsonObject item = value.toObject();
+        const QString stationId = item.value(QStringLiteral("stationId")).toString();
+        const double latitude = item.value(QStringLiteral("latitude")).toDouble(qQNaN());
+        const double longitude = item.value(QStringLiteral("longitude")).toDouble(qQNaN());
+        GeoPoint point{latitude, longitude};
+        if (!validId(stationId) || !point.isValid()) continue;
+        QJsonObject clean;
+        clean.insert(QStringLiteral("stationId"), stationId);
+        clean.insert(QStringLiteral("latitude"), latitude);
+        clean.insert(QStringLiteral("longitude"), longitude);
+        clean.insert(QStringLiteral("available"), item.value(QStringLiteral("available")).toBool(true));
+        markers.append(clean);
+    }
+    sanitized.insert(QStringLiteral("markers"), markers);
+    const QJsonArray inputRoute = snapshot.value(QStringLiteral("routePolyline")).toArray();
+    QJsonArray route;
+    for (const QJsonValue &value : inputRoute) {
+        if (route.size() >= 5000 || !value.isObject()) break;
+        const QJsonObject item = value.toObject();
+        GeoPoint point{item.value(QStringLiteral("latitude")).toDouble(qQNaN()),
+                       item.value(QStringLiteral("longitude")).toDouble(qQNaN())};
+        if (!point.isValid()) continue;
+        route.append(QJsonObject{{QStringLiteral("latitude"), point.latitude},
+                                 {QStringLiteral("longitude"), point.longitude}});
+    }
+    sanitized.insert(QStringLiteral("routePolyline"), route);
+    sanitized.insert(QStringLiteral("selectedStationId"), snapshot.value(QStringLiteral("selectedStationId")).toString());
+    m_snapshot = sanitized;
     if (m_ready)
         emit snapshotChanged(m_snapshot);
+}
+
+void TencentMapBridge::reset()
+{
+    if (!m_ready)
+        return;
+    m_ready = false;
+    emit readyChanged(false);
 }

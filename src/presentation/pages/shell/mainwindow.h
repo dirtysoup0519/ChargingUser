@@ -19,6 +19,7 @@ public:
     Q_ENUM(PrimaryPage)
 
     explicit MainWindow(QWidget *parent = nullptr);
+    void setMapKey(const QString &key);
     ~MainWindow() override;
 
     /**
@@ -36,6 +37,7 @@ signals:
     void primaryPageRequested(MainWindow::PrimaryPage page);
     void stationDetailsRequested(const QString &stationId);
     void mapReady();
+    void mapLoadFailed();
     void locateRequested();
     void stationSearchRequested(const QString &keyword);
     void stationSearchRetryRequested();

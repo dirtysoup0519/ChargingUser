@@ -1,13 +1,166 @@
 <!doctype html>
 <html lang="zh-CN">
-<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<style>html,body,#map{margin:0;width:100%;height:100%;overflow:hidden}#error{display:none;padding:16px;color:#a33;font:14px sans-serif}</style>
-<script src="https://map.qq.com/api/gljs?v=1.exp&key=__TENCENT_KEY__"></script>
-<script src="qrc:///qtwebchannel/qwebchannel.js"></script></head>
-<body><div id="map"></div><div id="error"></div>
-<script>
-let bridge=null,map=null,markers=[],routeLine=null;
-function fail(message){document.getElementById('error').textContent=message;document.getElementById('error').style.display='block';if(bridge)bridge.reportLoadFailed(message)}
-function render(snapshot){if(!map||!snapshot)return; markers.forEach(m=>m.setMap(null));markers=[]; (snapshot.markers||[]).forEach(item=>{if(!Number.isFinite(item.latitude)||!Number.isFinite(item.longitude))return;const marker=new TMap.MultiMarker({map,styles:{default:{width:32,height:32,anchor:{x:16,y:32}}},geometries:[{position:new TMap.LatLng(item.latitude,item.longitude),id:item.stationId}]});marker.on('click',()=>bridge&&bridge.selectStation(item.stationId));markers.push(marker)});if(routeLine)routeLine.setMap(null);const path=(snapshot.routePolyline||[]).filter(p=>Number.isFinite(p.latitude)&&Number.isFinite(p.longitude)).map(p=>new TMap.LatLng(p.latitude,p.longitude));if(path.length>1)routeLine=new TMap.MultiPolyline({map,styles:{polyline:{color:'#1976d2',width:6}},geometries:[{id:'route',paths:path}]})}
-new QWebChannel(qt.webChannelTransport,channel=>{bridge=channel.objects.tencentMapBridge;bridge.snapshotChanged.connect(render);try{map=new TMap.Map('map',{zoom:12,center:new TMap.LatLng(22.5431,114.0579)});bridge.reportReady();}catch(e){fail(String(e))}});
-</script></body></html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <style>
+    html, body, #map { margin: 0; width: 100%; height: 100%; overflow: hidden; }
+    #error { display: none; padding: 16px; color: #a33; font: 14px sans-serif; }
+  </style>
+  <script src="https://map.qq.com/api/gljs?v=1&key=__TENCENT_KEY__"></script>
+  <script src="qrc:///qtwebchannel/qwebchannel.js"></script>
+</head>
+<body>
+  <div id="map"></div>
+  <div id="error"></div>
+  <script>
+    let bridge = null;
+    let map = null;
+    let markers = [];
+    let routeLine = null;
+    let tilesReady = false;
+    let pendingError = "";
+
+    function errorText(value) {
+      if (value instanceof Error)
+        return value.stack || value.message;
+      return String(value || "未知错误");
+    }
+
+    function fail(message) {
+      const text = errorText(message);
+      pendingError = text;
+      console.error("Tencent map load failed:", text);
+      document.getElementById("map").style.display = "none";
+      const panel = document.getElementById("error");
+      panel.textContent = text;
+      panel.style.display = "block";
+      if (bridge)
+        bridge.reportLoadFailed(text);
+    }
+
+    window.addEventListener("error", event => {
+      fail(event.error || event.message || "JavaScript 执行失败");
+    });
+    window.addEventListener("unhandledrejection", event => {
+      fail(event.reason || "JavaScript Promise 执行失败");
+    });
+
+    function supportsWebGL() {
+      try {
+        const canvas = document.createElement("canvas");
+        return Boolean(canvas.getContext("webgl2") || canvas.getContext("webgl"));
+      } catch (error) {
+        console.error("WebGL detection failed:", error);
+        return false;
+      }
+    }
+
+    function render(snapshot) {
+      if (!map || !snapshot)
+        return;
+      try {
+        markers.forEach(marker => marker.setMap(null));
+        markers = [];
+        const data = (snapshot.markers || []).filter(item =>
+          Number.isFinite(item.latitude) && Number.isFinite(item.longitude));
+        data.forEach(item => {
+          const marker = new TMap.MultiMarker({
+            map,
+            geometries: [{
+              id: item.stationId,
+              position: new TMap.LatLng(item.latitude, item.longitude)
+            }]
+          });
+          marker.on("click", () => bridge && bridge.selectStation(item.stationId));
+          markers.push(marker);
+        });
+        if (data.length)
+          map.setCenter(new TMap.LatLng(data[0].latitude, data[0].longitude));
+
+        if (routeLine) {
+          routeLine.setMap(null);
+          routeLine = null;
+        }
+        const path = (snapshot.routePolyline || [])
+          .filter(point => Number.isFinite(point.latitude)
+                           && Number.isFinite(point.longitude))
+          .map(point => new TMap.LatLng(point.latitude, point.longitude));
+        if (path.length > 1) {
+          routeLine = new TMap.MultiPolyline({
+            map,
+            geometries: [{ id: "route", paths: path }]
+          });
+        }
+      } catch (error) {
+        fail(error);
+      }
+    }
+
+    function initializeMap() {
+      if (!supportsWebGL()) {
+        fail("当前 QtWebEngine 无法创建 WebGL 上下文，请检查虚拟机 3D 加速或 Chromium 启动参数。");
+        return;
+      }
+      if (typeof TMap === "undefined") {
+        fail("腾讯地图 JavaScript API GL 未加载，请检查网络和 Key。");
+        return;
+      }
+
+      try {
+        map = new TMap.Map("map", {
+          zoom: 12,
+          center: new TMap.LatLng(39.731782, 116.172130)
+        });
+        map.on("tilesloaded", () => {
+          if (tilesReady)
+            return;
+          tilesReady = true;
+          bridge.reportReady();
+        });
+        map.on("bounds_changed", () => {
+          try {
+            const bounds = map.getBounds();
+            const southWest = bounds.getSouthWest();
+            const northEast = bounds.getNorthEast();
+            bridge.reportViewport({
+              southWest: {
+                latitude: southWest.getLat(),
+                longitude: southWest.getLng()
+              },
+              northEast: {
+                latitude: northEast.getLat(),
+                longitude: northEast.getLng()
+              }
+            });
+          } catch (error) {
+            console.warn("Unable to report map viewport:", error);
+          }
+        });
+        window.setTimeout(() => {
+          if (!tilesReady)
+            fail("腾讯地图瓦片加载超时，请查看程序日志中的 JavaScript 鉴权或 WebGL 错误。");
+        }, 15000);
+      } catch (error) {
+        fail(error);
+      }
+    }
+
+    if (typeof QWebChannel === "undefined"
+        || typeof qt === "undefined"
+        || !qt.webChannelTransport) {
+      fail("Qt WebChannel 初始化失败。");
+    } else {
+      new QWebChannel(qt.webChannelTransport, channel => {
+        bridge = channel.objects.tencentMapBridge;
+        bridge.snapshotChanged.connect(render);
+        if (pendingError) {
+          bridge.reportLoadFailed(pendingError);
+          return;
+        }
+        initializeMap();
+      });
+    }
+  </script>
+</body>
+</html>

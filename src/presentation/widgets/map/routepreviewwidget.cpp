@@ -3,12 +3,14 @@
 
 #include <QPainter>
 #include <QPainterPath>
+#include <QTimer>
 #include <algorithm>
 #ifdef CHARGINGUSER_ENABLE_TENCENT_WEBMAP
 #include <QFile>
 #include <QJsonArray>
 #include <QJsonObject>
 #include <QWebChannel>
+#include <QWebEngineSettings>
 #include <QWebEngineView>
 #include <QUrl>
 #endif
@@ -17,7 +19,6 @@ RoutePreviewWidget::RoutePreviewWidget(QWidget *parent)
     : QLabel(parent)
 {
     setScaledContents(false);
-    initializeTencentMap();
 }
 
 void RoutePreviewWidget::initializeTencentMap()
@@ -28,16 +29,24 @@ void RoutePreviewWidget::initializeTencentMap()
         return;
     m_webView = new QWebEngineView(this);
     m_webView->setGeometry(rect());
+    m_webView->settings()->setAttribute(QWebEngineSettings::JavascriptEnabled,
+                                        true);
+    m_webView->settings()->setAttribute(QWebEngineSettings::WebGLEnabled,
+                                        true);
     m_mapBridge = new TencentMapBridge(m_webView);
     auto *channel = new QWebChannel(m_webView);
     channel->registerObject(QStringLiteral("tencentMapBridge"), m_mapBridge);
     m_webView->page()->setWebChannel(channel);
+    connect(m_mapBridge, &TencentMapBridge::mapReady,
+            m_webView, &QWebEngineView::show);
+    connect(m_mapBridge, &TencentMapBridge::mapLoadFailed,
+            m_webView, &QWebEngineView::hide);
     QFile file(QStringLiteral(":/map/tencent-map.html"));
     if (!file.open(QIODevice::ReadOnly)) return;
     QString html = QString::fromUtf8(file.readAll());
     html.replace(QStringLiteral("__TENCENT_KEY__"), QString::fromUtf8(QUrl::toPercentEncoding(key)));
-    m_webView->setHtml(html, QUrl(QStringLiteral("qrc:///map/")));
     m_webView->show();
+    m_webView->setHtml(html, QUrl(QStringLiteral("https://localhost/")));
 #endif
 }
 
@@ -81,6 +90,27 @@ void RoutePreviewWidget::clearRoute()
     m_origin.reset();
     m_destination.reset();
     update();
+}
+
+void RoutePreviewWidget::resizeEvent(QResizeEvent *event)
+{
+    QLabel::resizeEvent(event);
+#ifdef CHARGINGUSER_ENABLE_TENCENT_WEBMAP
+    if (m_webView) m_webView->setGeometry(rect());
+#endif
+}
+
+void RoutePreviewWidget::showEvent(QShowEvent *event)
+{
+    QLabel::showEvent(event);
+#ifdef CHARGINGUSER_ENABLE_TENCENT_WEBMAP
+    if (!m_webView && !qEnvironmentVariableIsEmpty("TENCENT_MAP_KEY")) {
+        QTimer::singleShot(0, this, [this] {
+            if (isVisible() && !m_webView)
+                initializeTencentMap();
+        });
+    }
+#endif
 }
 
 void RoutePreviewWidget::paintEvent(QPaintEvent *event)

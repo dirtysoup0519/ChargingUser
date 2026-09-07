@@ -24,6 +24,7 @@ public:
     Q_INVOKABLE void reportViewport(const QJsonObject &bounds);
 
     void setSnapshot(const QJsonObject &snapshot);
+    void reset();
 
 signals:
     void readyChanged(bool ready);

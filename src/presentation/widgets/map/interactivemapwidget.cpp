@@ -2,6 +2,7 @@
 #include "tencentmapbridge.h"
 
 #include <QFrame>
+#include <QDebug>
 #include <QJsonArray>
 #include <QJsonObject>
 #include <QHBoxLayout>
@@ -14,10 +15,35 @@
 #ifdef CHARGINGUSER_ENABLE_TENCENT_WEBMAP
 #include <QFile>
 #include <QWebChannel>
+#include <QWebEnginePage>
+#include <QWebEngineSettings>
 #include <QWebEngineView>
 #include <QUrl>
 #endif
 #include <QVBoxLayout>
+
+#ifdef CHARGINGUSER_ENABLE_TENCENT_WEBMAP
+namespace {
+class MapWebEnginePage final : public QWebEnginePage
+{
+public:
+    explicit MapWebEnginePage(QObject *parent) : QWebEnginePage(parent) {}
+
+protected:
+    void javaScriptConsoleMessage(JavaScriptConsoleMessageLevel level,
+                                  const QString &message,
+                                  int lineNumber,
+                                  const QString &sourceId) override
+    {
+        Q_UNUSED(level)
+        qWarning().noquote()
+            << QStringLiteral("Tencent map JavaScript: %1 (%2:%3)")
+                   .arg(message, sourceId)
+                   .arg(lineNumber);
+    }
+};
+}
+#endif
 
 InteractiveMapWidget::InteractiveMapWidget(QWidget *parent)
     : QLabel(parent), m_locateButton(new QPushButton(this)),
@@ -78,7 +104,20 @@ InteractiveMapWidget::InteractiveMapWidget(QWidget *parent)
             this, &InteractiveMapWidget::reload);
     connect(m_locationRetryButton, &QPushButton::clicked,
             this, &InteractiveMapWidget::locateRequested);
-    initializeTencentMap();
+}
+
+void InteractiveMapWidget::setMapKey(const QString &key)
+{
+#ifdef CHARGINGUSER_ENABLE_TENCENT_WEBMAP
+    m_mapKey = key.trimmed();
+    if (!m_mapKey.isEmpty())
+        qputenv("TENCENT_MAP_KEY", m_mapKey.toUtf8());
+    if (!m_mapKey.isEmpty() && isVisible() && !m_webView) {
+        initializeTencentMap();
+    }
+#else
+    Q_UNUSED(key)
+#endif
 }
 
 void InteractiveMapWidget::setMarkers(const QList<Marker> &markers)
@@ -183,23 +222,55 @@ void InteractiveMapWidget::renderMapStatus(MapLoadStatus status,
     m_mapStatePanel->style()->polish(m_mapStatePanel);
     m_mapStatePanel->adjustSize();
     positionOverlayButtons();
+    m_mapStatePanel->raise();
 }
 
 void InteractiveMapWidget::initializeTencentMap()
 {
 #ifdef CHARGINGUSER_ENABLE_TENCENT_WEBMAP
-    const QString key = qEnvironmentVariable("TENCENT_MAP_KEY");
+    const QString key = m_mapKey.isEmpty()
+                            ? qEnvironmentVariable("TENCENT_MAP_KEY")
+                            : m_mapKey;
     if (key.trimmed().isEmpty())
         return; // keep the painter fallback when local credentials are absent
     m_webView = new QWebEngineView(this);
     m_webView->setGeometry(rect());
     m_webView->setAttribute(Qt::WA_TransparentForMouseEvents, false);
+    m_webView->setPage(new MapWebEnginePage(m_webView));
+    m_webView->settings()->setAttribute(QWebEngineSettings::JavascriptEnabled,
+                                        true);
+    m_webView->settings()->setAttribute(QWebEngineSettings::WebGLEnabled,
+                                        true);
     m_mapBridge = new TencentMapBridge(m_webView);
     auto *channel = new QWebChannel(m_webView);
     channel->registerObject(QStringLiteral("tencentMapBridge"), m_mapBridge);
     m_webView->page()->setWebChannel(channel);
-    connect(m_mapBridge, &TencentMapBridge::mapReady, this, &InteractiveMapWidget::mapReady);
+    connect(m_mapBridge, &TencentMapBridge::mapReady, this, [this] {
+        m_webView->show();
+        emit mapReady();
+        m_locateButton->raise();
+        m_searchAreaButton->raise();
+        m_mapStatePanel->raise();
+        m_locationStatePanel->raise();
+    });
     connect(m_mapBridge, &TencentMapBridge::stationSelected, this, &InteractiveMapWidget::markerSelected);
+    connect(m_mapBridge, &TencentMapBridge::mapLoadFailed,
+            this, [this](const QString &message) {
+                m_webView->hide();
+                renderMapStatus(MapLoadStatus::Error, message, true);
+                emit mapLoadFailed();
+            });
+    connect(m_webView->page(), &QWebEnginePage::renderProcessTerminated,
+            this, [this](QWebEnginePage::RenderProcessTerminationStatus,
+                         int exitCode) {
+                m_mapBridge->reportLoadFailed(
+                    tr("腾讯地图渲染进程异常退出（%1）。").arg(exitCode));
+            });
+    connect(m_webView, &QWebEngineView::loadFinished, this, [this](bool ok) {
+        if (!ok)
+            m_mapBridge->reportLoadFailed(
+                tr("腾讯地图页面加载失败，请检查网络或 JS Key 授权。"));
+    });
     QFile file(QStringLiteral(":/map/tencent-map.html"));
     if (!file.open(QIODevice::ReadOnly)) {
         m_mapBridge->reportLoadFailed(QStringLiteral("腾讯地图资源加载失败"));
@@ -207,8 +278,13 @@ void InteractiveMapWidget::initializeTencentMap()
     }
     QString html = QString::fromUtf8(file.readAll());
     html.replace(QStringLiteral("__TENCENT_KEY__"), QString::fromUtf8(QUrl::toPercentEncoding(key)));
-    m_webView->setHtml(html, QUrl(QStringLiteral("qrc:///map/")));
+    m_mapBridge->reset();
     m_webView->show();
+    m_webView->setHtml(html, QUrl(QStringLiteral("https://localhost/")));
+    m_locateButton->raise();
+    m_searchAreaButton->raise();
+    m_mapStatePanel->raise();
+    m_locationStatePanel->raise();
 #endif
 }
 
@@ -243,8 +319,18 @@ void InteractiveMapWidget::setViewportBounds(
 
 void InteractiveMapWidget::reload()
 {
+#ifdef CHARGINGUSER_ENABLE_TENCENT_WEBMAP
+    if (m_webView && m_mapBridge) {
+        m_mapBridge->reset();
+        m_webView->show();
+        renderMapStatus(MapLoadStatus::Loading,
+                        tr("正在重新加载腾讯地图…"), false);
+        m_webView->reload();
+        positionOverlayButtons();
+        return;
+    }
+#endif
     update();
-    QTimer::singleShot(0, this, [this] { emit mapReady(); });
 }
 
 void InteractiveMapWidget::mousePressEvent(QMouseEvent *event)
@@ -337,7 +423,29 @@ void InteractiveMapWidget::paintEvent(QPaintEvent *event)
 }
 
 void InteractiveMapWidget::resizeEvent(QResizeEvent *event)
-{ QLabel::resizeEvent(event); clampOffset(); positionOverlayButtons(); }
+{
+    QLabel::resizeEvent(event);
+#ifdef CHARGINGUSER_ENABLE_TENCENT_WEBMAP
+    if (m_webView) m_webView->setGeometry(rect());
+#endif
+    clampOffset();
+    positionOverlayButtons();
+}
+
+void InteractiveMapWidget::showEvent(QShowEvent *event)
+{
+    QLabel::showEvent(event);
+#ifdef CHARGINGUSER_ENABLE_TENCENT_WEBMAP
+    if (!m_webView
+        && !(m_mapKey.isEmpty()
+             && qEnvironmentVariableIsEmpty("TENCENT_MAP_KEY"))) {
+        QTimer::singleShot(0, this, [this] {
+            if (isVisible() && !m_webView)
+                initializeTencentMap();
+        });
+    }
+#endif
+}
 
 QPointF InteractiveMapWidget::markerPoint(const Marker &marker) const
 { return QPointF(width() * (0.08 + marker.normalizedPosition.x() * 0.84) + m_offset.x(), height() * (0.18 + marker.normalizedPosition.y() * 0.72) + m_offset.y()); }

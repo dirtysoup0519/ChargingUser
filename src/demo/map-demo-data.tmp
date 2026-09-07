@@ -20,71 +20,71 @@
       }
     },
     "origin": {
-      "latitude": 22.543096,
-      "longitude": 114.057865,
+      "latitude": 39.731782,
+      "longitude": 116.172130,
       "accuracyMeters": 18
     },
     "stations": [
       {
-        "stationId": "station-sz-civic-center",
-        "name": "市民中心充电站",
-        "address": "福田区福中三路市民中心",
-        "latitude": 22.543430,
-        "longitude": 114.059560,
-        "distanceMeters": 900,
+        "stationId": "station-dongyangzhuang-petrochina",
+        "name": "中国石油房山大学城东羊庄充电站",
+        "address": "房山区阳光南大街东羊庄新村东南角",
+        "latitude": 39.728750,
+        "longitude": 116.166237,
+        "distanceMeters": 607,
         "priceCentsPerKwh": 168,
         "chargers": [
-          {"chargerId": "station-sz-civic-center-01", "type": "直流快充", "powerKw": 120, "online": true, "status": "idle", "canStartCharging": true},
-          {"chargerId": "station-sz-civic-center-02", "type": "交流慢充", "powerKw": 7, "online": true, "status": "idle", "canStartCharging": true},
-          {"chargerId": "station-sz-civic-center-03", "type": "直流快充", "powerKw": 120, "online": true, "status": "idle", "canStartCharging": true},
-          {"chargerId": "station-sz-civic-center-04", "type": "交流慢充", "powerKw": 7, "online": true, "status": "charging", "canStartCharging": false, "disabledReason": "充电桩使用中"},
-          {"chargerId": "station-sz-civic-center-05", "type": "直流快充", "powerKw": 120, "online": false, "status": "fault", "canStartCharging": false, "disabledReason": "充电桩离线"}
+          {"chargerId": "station-dongyangzhuang-petrochina-01", "type": "直流快充", "powerKw": 120, "online": true, "status": "idle", "canStartCharging": true},
+          {"chargerId": "station-dongyangzhuang-petrochina-02", "type": "交流慢充", "powerKw": 7, "online": true, "status": "idle", "canStartCharging": true},
+          {"chargerId": "station-dongyangzhuang-petrochina-03", "type": "直流快充", "powerKw": 120, "online": true, "status": "idle", "canStartCharging": true},
+          {"chargerId": "station-dongyangzhuang-petrochina-04", "type": "交流慢充", "powerKw": 7, "online": true, "status": "charging", "canStartCharging": false, "disabledReason": "充电桩使用中"},
+          {"chargerId": "station-dongyangzhuang-petrochina-05", "type": "直流快充", "powerKw": 120, "online": false, "status": "fault", "canStartCharging": false, "disabledReason": "充电桩离线"}
         ]
       },
       {
-        "stationId": "station-futian-cbd",
-        "name": "福田 CBD 充电站",
-        "address": "福田区金田路 3088 号",
-        "latitude": 22.536170,
-        "longitude": 114.060100,
-        "distanceMeters": 1800,
+        "stationId": "station-times-square-teld",
+        "name": "特来电北京时代广场充电站",
+        "address": "房山区学园北街26号院北京时代广场地下停车场",
+        "latitude": 39.724103,
+        "longitude": 116.173046,
+        "distanceMeters": 858,
         "priceCentsPerKwh": 152,
         "chargers": [
-          {"chargerId": "station-futian-cbd-01", "type": "直流快充", "powerKw": 120, "online": true, "status": "charging", "canStartCharging": false, "disabledReason": "充电桩使用中"},
-          {"chargerId": "station-futian-cbd-02", "type": "交流慢充", "powerKw": 7, "online": true, "status": "charging", "canStartCharging": false, "disabledReason": "充电桩使用中"},
-          {"chargerId": "station-futian-cbd-03", "type": "直流快充", "powerKw": 120, "online": true, "status": "reserved", "canStartCharging": false, "disabledReason": "充电桩已预约"},
-          {"chargerId": "station-futian-cbd-04", "type": "交流慢充", "powerKw": 7, "online": false, "status": "unknown", "canStartCharging": false, "disabledReason": "充电桩状态未知"}
+          {"chargerId": "station-times-square-teld-01", "type": "直流快充", "powerKw": 120, "online": true, "status": "charging", "canStartCharging": false, "disabledReason": "充电桩使用中"},
+          {"chargerId": "station-times-square-teld-02", "type": "交流慢充", "powerKw": 7, "online": true, "status": "charging", "canStartCharging": false, "disabledReason": "充电桩使用中"},
+          {"chargerId": "station-times-square-teld-03", "type": "直流快充", "powerKw": 120, "online": true, "status": "reserved", "canStartCharging": false, "disabledReason": "充电桩已预约"},
+          {"chargerId": "station-times-square-teld-04", "type": "交流慢充", "powerKw": 7, "online": false, "status": "unknown", "canStartCharging": false, "disabledReason": "充电桩状态未知"}
         ]
       },
       {
-        "stationId": "station-nanshan-tech-park",
-        "name": "南山科技园充电站",
-        "address": "南山区科技南十二路",
-        "latitude": 22.531550,
-        "longitude": 113.950660,
-        "distanceMeters": 12500,
+        "stationId": "station-university-city-north",
+        "name": "良乡大学城北站停车场充电站",
+        "address": "房山区慧欣东路与长于大街交叉口东侧停车场",
+        "latitude": 39.728726,
+        "longitude": 116.184065,
+        "distanceMeters": 1077,
         "priceCentsPerKwh": 135,
         "chargers": [
-          {"chargerId": "station-nanshan-tech-park-01", "type": "直流快充", "powerKw": 120, "online": true, "status": "charging", "canStartCharging": false, "disabledReason": "充电桩使用中"},
-          {"chargerId": "station-nanshan-tech-park-02", "type": "交流慢充", "powerKw": 7, "online": false, "status": "fault", "canStartCharging": false, "disabledReason": "充电桩故障"},
-          {"chargerId": "station-nanshan-tech-park-03", "type": "直流快充", "powerKw": 120, "online": true, "status": "reserved", "canStartCharging": false, "disabledReason": "充电桩已预约"}
+          {"chargerId": "station-university-city-north-01", "type": "直流快充", "powerKw": 120, "online": true, "status": "charging", "canStartCharging": false, "disabledReason": "充电桩使用中"},
+          {"chargerId": "station-university-city-north-02", "type": "交流慢充", "powerKw": 7, "online": false, "status": "fault", "canStartCharging": false, "disabledReason": "充电桩故障"},
+          {"chargerId": "station-university-city-north-03", "type": "直流快充", "powerKw": 120, "online": true, "status": "reserved", "canStartCharging": false, "disabledReason": "充电桩已预约"}
         ]
       },
       {
-        "stationId": "station-luohu-mixc",
-        "name": "罗湖万象城充电站",
-        "address": "罗湖区宝安南路 1881 号",
-        "latitude": 22.543780,
-        "longitude": 114.116520,
-        "distanceMeters": 6300,
+        "stationId": "station-xiyue-tianjie-tesla",
+        "name": "特斯拉房山熙悦天街超级充电站",
+        "address": "房山区长于大街28号熙悦天街地下停车场B2层",
+        "latitude": 39.732436,
+        "longitude": 116.184702,
+        "distanceMeters": 1079,
         "priceCentsPerKwh": 146,
         "chargers": [
-          {"chargerId": "station-luohu-mixc-01", "type": "液冷超充", "powerKw": 240, "online": true, "status": "idle", "canStartCharging": true},
-          {"chargerId": "station-luohu-mixc-02", "type": "直流快充", "powerKw": 120, "online": true, "status": "idle", "canStartCharging": true},
-          {"chargerId": "station-luohu-mixc-03", "type": "直流快充", "powerKw": 120, "online": true, "status": "idle", "canStartCharging": true},
-          {"chargerId": "station-luohu-mixc-04", "type": "交流慢充", "powerKw": 7, "online": true, "status": "idle", "canStartCharging": true},
-          {"chargerId": "station-luohu-mixc-05", "type": "直流快充", "powerKw": 120, "online": true, "status": "charging", "canStartCharging": false, "disabledReason": "充电桩使用中"},
-          {"chargerId": "station-luohu-mixc-06", "type": "交流慢充", "powerKw": 7, "online": false, "status": "fault", "canStartCharging": false, "disabledReason": "充电桩故障"}
+          {"chargerId": "station-xiyue-tianjie-tesla-01", "type": "液冷超充", "powerKw": 240, "online": true, "status": "idle", "canStartCharging": true},
+          {"chargerId": "station-xiyue-tianjie-tesla-02", "type": "直流快充", "powerKw": 120, "online": true, "status": "idle", "canStartCharging": true},
+          {"chargerId": "station-xiyue-tianjie-tesla-03", "type": "直流快充", "powerKw": 120, "online": true, "status": "idle", "canStartCharging": true},
+          {"chargerId": "station-xiyue-tianjie-tesla-04", "type": "交流慢充", "powerKw": 7, "online": true, "status": "idle", "canStartCharging": true},
+          {"chargerId": "station-xiyue-tianjie-tesla-05", "type": "直流快充", "powerKw": 120, "online": true, "status": "charging", "canStartCharging": false, "disabledReason": "充电桩使用中"},
+          {"chargerId": "station-xiyue-tianjie-tesla-06", "type": "交流慢充", "powerKw": 7, "online": false, "status": "fault", "canStartCharging": false, "disabledReason": "充电桩故障"}
         ]
       }
     ]
