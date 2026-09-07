@@ -18,6 +18,12 @@ StationDetailWindow::StationDetailWindow(QWidget *parent)
     m_map->setMinimumSize(366, 180);
     m_map->setMaximumHeight(180);
     ui->contentLayout->insertWidget(1, m_map);
+    // 详情页没有独立的定位业务上下文；点击地图定位按钮时，
+    // 将当前站点重新置于视野中心，避免按钮看起来无响应。
+    connect(m_map, &InteractiveMapWidget::locateRequested, this, [this] {
+        if (m_state.point && m_state.point->isValid())
+            m_map->centerStation(m_state.stationId);
+    });
     connect(ui->backButton, &QPushButton::clicked,
             this, &StationDetailWindow::backRequested);
     connect(ui->navigationButton, &QPushButton::clicked, this, [this] {

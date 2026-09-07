@@ -208,6 +208,10 @@ void InteractiveMapWidget::setSelectedStation(const QString &stationId)
 
 void InteractiveMapWidget::centerStation(const QString &stationId)
 {
+#ifdef CHARGINGUSER_ENABLE_TENCENT_WEBMAP
+    if (m_mapBridge)
+        m_mapBridge->focusStation(stationId);
+#endif
     for (const Marker &marker : m_markers) {
         if (marker.stationId != stationId) continue;
         m_offset = QPointF(width() * 0.5
@@ -264,6 +268,10 @@ void InteractiveMapWidget::initializeTencentMap()
     m_webView->settings()->setAttribute(QWebEngineSettings::WebGLEnabled,
                                         true);
     m_mapBridge = new TencentMapBridge(m_webView);
+    // 详情页通常在首次显示前就已 render；那时 WebChannel 尚未创建。
+    // 将 C++ 中缓存的标记和选中站点写入桥，mapReady 后会自动重放，
+    // 否则 JS 的 markerData 为空，后续 focusStation 无法找到目标。
+    setMarkers(m_markers);
     auto *channel = new QWebChannel(m_webView);
     channel->registerObject(QStringLiteral("tencentMapBridge"), m_mapBridge);
     m_webView->page()->setWebChannel(channel);

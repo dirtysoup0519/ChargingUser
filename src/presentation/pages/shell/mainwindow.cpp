@@ -25,7 +25,18 @@ MainWindow::MainWindow(QWidget *parent) : QWidget(parent), ui(new Ui::MainWindow
     connect(ui->mapView, &InteractiveMapWidget::markerSelected,
             this, [this](const QString &stationId) { selectStation(stationId, true); });
     connect(ui->mapView, &InteractiveMapWidget::locateRequested,
-            this, &MainWindow::locateRequested);
+            this, [this] {
+        // 先立即给出视野反馈；定位服务返回后 Binder 会刷新站点数据。
+        // 若已有选中站点，将其重新置中，避免点击按钮没有可见响应。
+        const QString focusId = !m_selectedStationId.isEmpty()
+                                    ? m_selectedStationId
+                                    : (m_stationItems.isEmpty()
+                                           ? QString()
+                                           : m_stationItems.first().stationId);
+        if (!focusId.isEmpty())
+            ui->mapView->centerStation(focusId);
+        emit locateRequested();
+    });
     connect(ui->mapView, &InteractiveMapWidget::searchAreaRequested,
             this, &MainWindow::searchAreaRequested);
     connect(ui->mapView, &InteractiveMapWidget::mapReady,
@@ -384,6 +395,8 @@ void MainWindow::applyStationOrder(const QString &selectedStationId)
             const bool rightAvailable = right.availableCount > 0;
             if (leftAvailable != rightAvailable)
                 return leftAvailable;
+            if (left.availableCount != right.availableCount)
+                return left.availableCount > right.availableCount;
         }
         return distanceKey(left) < distanceKey(right);
     });

@@ -50,6 +50,12 @@ void TencentMapBridge::selectStation(const QString &stationId)
         emit stationSelected(stationId);
 }
 
+void TencentMapBridge::focusStation(const QString &stationId)
+{
+    if (validId(stationId))
+        emit focusStationRequested(stationId);
+}
+
 void TencentMapBridge::reportViewport(const QJsonObject &bounds)
 {
     const auto parsed = parseBounds(bounds);

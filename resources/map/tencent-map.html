@@ -17,6 +17,7 @@
     let bridge = null;
     let map = null;
     let markers = [];
+    let markerData = [];
     let routeLine = null;
     let tilesReady = false;
     let pendingError = "";
@@ -64,6 +65,7 @@
         markers = [];
         const data = (snapshot.markers || []).filter(item =>
           Number.isFinite(item.latitude) && Number.isFinite(item.longitude));
+        markerData = data;
         data.forEach(item => {
           const marker = new TMap.MultiMarker({
             map,
@@ -98,6 +100,14 @@
       } catch (error) {
         fail(error);
       }
+    }
+
+    function focusStation(stationId) {
+      if (!map)
+        return;
+      const target = markerData.find(item => item.stationId === String(stationId || ""));
+      if (target)
+        map.setCenter(new TMap.LatLng(target.latitude, target.longitude));
     }
 
     function initializeMap() {
@@ -157,6 +167,7 @@
       new QWebChannel(qt.webChannelTransport, channel => {
         bridge = channel.objects.tencentMapBridge;
         bridge.snapshotChanged.connect(render);
+        bridge.focusStationRequested.connect(focusStation);
         if (pendingError) {
           bridge.reportLoadFailed(pendingError);
           return;
