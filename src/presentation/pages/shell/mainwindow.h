@@ -35,6 +35,7 @@ public:
 signals:
     void primaryPageRequested(MainWindow::PrimaryPage page);
     void stationDetailsRequested(const QString &stationId);
+    void mapReady();
     void locateRequested();
     void stationSearchRequested(const QString &keyword);
     void stationSearchRetryRequested();
