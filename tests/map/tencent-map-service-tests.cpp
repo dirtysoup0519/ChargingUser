@@ -122,42 +122,6 @@ public:
     QVector<FakeReply *> createdReplies;
 };
 
-/** 与适配器解码互逆的压缩编码器：用于构造真实形状的 polyline 样本。 */
-void encodeDelta(qint32 value, QString &out)
-{
-    // 解码侧：(result&1)?~(result>>1):(result>>1)；此为其逆变换（无符号域运算）。
-    quint32 zigzag = (value < 0) ? ((~static_cast<quint32>(value)) << 1) | 1u
-                                 : static_cast<quint32>(value) << 1;
-    do {
-        quint32 chunk = zigzag & 0x1fu;
-        zigzag >>= 5;
-        if (zigzag > 0) {
-            chunk |= 0x20u;
-        }
-        // 解码侧 chunk = 字符码 - 63 - 1，即字符码 = chunk + 64。
-        out += QChar(static_cast<ushort>(chunk + 64u));
-    } while (zigzag > 0);
-}
-
-QString encodePolyline(const QVector<GeoPoint> &points)
-{
-    // 差分编码：相邻点按纬度、经度分别累加。
-    QString text;
-    double previousLat = 0.0;
-    double previousLng = 0.0;
-    for (const GeoPoint &point : points) {
-        const qint32 deltaLat =
-            static_cast<qint32>(qRound64(point.latitude * 1e6)) - static_cast<qint32>(qRound64(previousLat * 1e6));
-        const qint32 deltaLng =
-            static_cast<qint32>(qRound64(point.longitude * 1e6)) - static_cast<qint32>(qRound64(previousLng * 1e6));
-        encodeDelta(deltaLat, text);
-        encodeDelta(deltaLng, text);
-        previousLat = point.latitude;
-        previousLng = point.longitude;
-    }
-    return text;
-}
-
 } // namespace
 
 class TencentMapServiceTests final : public QObject
@@ -240,21 +204,38 @@ private slots:
         QVERIFY(result.candidates.isEmpty());
     }
 
+    void geocodeCandidatesWithoutValidCoordinatesAreDropped()
+    {
+        m_nam->factory = [](const QNetworkRequest &request) {
+            return new FakeReply(request, QByteArrayLiteral(
+                "{\"status\":0,\"data\":["
+                "{\"id\":\"missing\",\"title\":\"无坐标\"},"
+                "{\"id\":\"typed-wrong\",\"location\":{\"lat\":\"22.5\",\"lng\":114.0}},"
+                "{\"id\":\"valid\",\"location\":{\"lat\":22.5,\"lng\":114.0}}]}"));
+        };
+        QSignalSpy geocodeSpy(m_service, &IMapService::geocodeReady);
+        m_service->geocode(readOnlyContext(QStringLiteral("req-geo-invalid")),
+                           QStringLiteral("测试"));
+        m_nam->createdReplies.first()->finishNow();
+        QCOMPARE(geocodeSpy.count(), 1);
+        const GeocodeResult result = geocodeSpy.first().at(1).value<GeocodeResult>();
+        QCOMPARE(result.candidates.size(), 1);
+        QCOMPARE(result.candidates.first().candidateId, QStringLiteral("valid"));
+    }
+
     void routeDrivingParsesDistanceDurationPolylineAndSteps()
     {
         const QVector<GeoPoint> polyline{
             {22.540000, 113.930000},
             {22.545000, 113.935000},
             {22.550000, 113.940000}};
-        const QString encoded = encodePolyline(polyline);
-        const QByteArray payload = QStringLiteral(
-                                       "{\"status\":0,\"message\":\"query ok\","
-                                       "\"result\":{\"routes\":[{\"distance\":1500,\"duration\":12,"
-                                       "\"polyline\":\"%1\","
-                                       "\"steps\":[{\"instruction\":\"沿<b>科技路</b>行驶500米\",\"distance\":500}]"
-                                       "}]}}")
-                                       .arg(encoded)
-                                       .toUtf8();
+        // 腾讯格式：首个坐标对为绝对值，后续值是相对前两个位置的 1e-6 度增量。
+        const QByteArray payload = QByteArrayLiteral(
+            "{\"status\":0,\"message\":\"query ok\","
+            "\"result\":{\"routes\":[{\"distance\":1500,\"duration\":12,"
+            "\"polyline\":[22.54,113.93,5000,5000,5000,5000],"
+            "\"steps\":[{\"instruction\":\"沿<b>科技路</b>行驶500米\",\"distance\":500}]"
+            "}]}}" );
         m_nam->factory = [&payload](const QNetworkRequest &request) {
             return new FakeReply(request, payload);
         };
@@ -327,6 +308,41 @@ private slots:
         QCOMPARE(result.stationId, QStringLiteral("station-empty"));
         QVERIFY(result.polyline.isEmpty());
         QCOMPARE(result.distanceMeters, 0);
+    }
+
+    void routeWithoutRoutesFieldFailsAsMalformedPayload()
+    {
+        m_nam->factory = [](const QNetworkRequest &request) {
+            return new FakeReply(request,
+                                 QByteArrayLiteral("{\"status\":0,\"result\":{}}"));
+        };
+        QSignalSpy routeSpy(m_service, &IMapService::routeReady);
+        QSignalSpy failedSpy(m_service, &IMapService::requestFailed);
+        m_service->planRoute(readOnlyContext(QStringLiteral("req-route-malformed")),
+                             drivingQuery(QStringLiteral("station-malformed")));
+        m_nam->createdReplies.first()->finishNow();
+        QCOMPARE(routeSpy.count(), 0);
+        QCOMPARE(failedSpy.count(), 1);
+        QCOMPARE(failedSpy.first().at(0).value<ClientError>().code,
+                 QStringLiteral("map-parse"));
+    }
+
+    void routeWithMalformedPolylineFailsAsMalformedPayload()
+    {
+        m_nam->factory = [](const QNetworkRequest &request) {
+            return new FakeReply(request, QByteArrayLiteral(
+                "{\"status\":0,\"result\":{\"routes\":[{"
+                "\"distance\":10,\"duration\":1,\"polyline\":\"wrong-type\"}]}}"));
+        };
+        QSignalSpy routeSpy(m_service, &IMapService::routeReady);
+        QSignalSpy failedSpy(m_service, &IMapService::requestFailed);
+        m_service->planRoute(readOnlyContext(QStringLiteral("req-route-polyline")),
+                             drivingQuery(QStringLiteral("station-polyline")));
+        m_nam->createdReplies.first()->finishNow();
+        QCOMPARE(routeSpy.count(), 0);
+        QCOMPARE(failedSpy.count(), 1);
+        QCOMPARE(failedSpy.first().at(0).value<ClientError>().code,
+                 QStringLiteral("map-parse"));
     }
 
     void providerRateLimitIsRetryableFailure()
@@ -464,7 +480,7 @@ private slots:
         QCOMPARE(m_nam->requestCount, 0);
         QCOMPARE(failedSpy.count(), 1);
         QCOMPARE(failedSpy.first().at(0).value<ClientError>().code,
-                 QStringLiteral("map-key-missing"));
+                 QStringLiteral("map-config-missing"));
     }
 
     void mutationContextIsRejectedAsReadonlyViolation()

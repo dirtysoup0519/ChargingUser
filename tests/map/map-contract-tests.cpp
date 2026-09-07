@@ -97,10 +97,13 @@ private slots:
     {
         StationQuery query;
         QVERIFY(!query.hasExactlyOneArea());
+        QVERIFY(query.hasAtMostOneArea());
         query.center = GeoPoint{22.543096, 114.057865};
         QVERIFY(query.hasExactlyOneArea());
+        QVERIFY(query.hasAtMostOneArea());
         query.bounds = GeoBounds{{22.0, 113.0}, {23.0, 115.0}};
         QVERIFY(!query.hasExactlyOneArea());
+        QVERIFY(!query.hasAtMostOneArea());
     }
 
     void mockServicesPublishRequestContext()

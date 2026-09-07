@@ -1,10 +1,14 @@
 #pragma once
 
+#include "modules/map/maptypes.h"
+
 #include <QLabel>
 #include <QList>
 #include <QPointF>
 #include <QString>
 #include <QStringList>
+
+#include <optional>
 
 class QPushButton;
 
@@ -20,11 +24,14 @@ public:
     void centerStation(const QString &stationId);
     void fitStations(const QStringList &stationIds);
     void setLocateEnabled(bool enabled);
+    void setViewportBounds(const std::optional<GeoBounds> &bounds);
+    void reload();
 
 signals:
+    void mapReady();
     void markerSelected(const QString &stationId);
     void locateRequested();
-    void searchAreaRequested();
+    void searchAreaRequested(const GeoBounds &bounds);
 
 protected:
     void mousePressEvent(QMouseEvent *event) override;
@@ -41,7 +48,9 @@ private:
     QList<Marker> m_markers;
     QString m_selectedStationId;
     QPoint m_dragStart;
+    QPointF m_dragOriginOffset;
     QPointF m_offset;
+    std::optional<GeoBounds> m_viewportBounds;
     bool m_dragging = false;
     bool m_userMoved = false;
     QPushButton *m_locateButton;

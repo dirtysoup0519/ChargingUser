@@ -35,6 +35,7 @@ public:
 signals:
     void primaryPageRequested(MainWindow::PrimaryPage page);
     void stationDetailsRequested(const QString &stationId);
+    void mapReady();
     void locateRequested();
     void stationSearchRequested(const QString &keyword);
     void stationSearchRetryRequested();
@@ -53,6 +54,5 @@ private:
 
     Ui::MainWindow *ui;
     QHash<QString, QPushButton *> m_stationButtons;
-    std::optional<GeoBounds> m_viewportBounds;
     quint64 m_cameraRevision = 0;
 };

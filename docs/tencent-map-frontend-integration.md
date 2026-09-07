@@ -287,16 +287,27 @@ HomeMapViewState::canRetryMap
 
 | 项目 | 当前代码 | 目标 | 处理 |
 |---|---|---|---|
-| 路线服务 | `MockMapService` 固定结果 | `TencentMapService` 真实请求 | 新增供应商适配器，保留 Mock 测试 |
+| 路线服务 | `TencentMapService` 已实现地理编码和驾车/步行路线请求 | 真实请求 | 已接入适配器并保留 Mock 测试；仍需真实 Key 人工联调 |
 | 首页地图 | 图片背景、自绘标记 | 腾讯底图和真实视野 | 新增 `IMapCanvas/TencentMapWidget` |
-| 视野范围 | 拖动只改变图片偏移，不能产生新 `GeoBounds` | JS 地图回传真实 bounds | 由展示桥实现 |
+| 视野范围 | 降级地图基于站点 bounds 推算拖动范围 | JS 地图回传真实 bounds | Mock 可测试，真实底图仍由展示桥实现 |
 | 路线地图 | 自绘折线，无道路底图 | 腾讯底图上绘制路线 | 替换为地图画布，保留文字降级 |
-| Key | 无配置加载 | 本地排除配置注入 | 新增配置类型和示例文件 |
-| 错误 | Mock 错误 | 腾讯错误稳定映射 | `TencentMapService -> ClientError` |
+| Key | Demo 支持环境变量运行时注入 | 本地排除配置注入 | 当前不落盘；后续可增加本地配置类型 |
+| 错误 | 腾讯网络/超时/频率/供应商/解析错误已映射 | 腾讯错误稳定映射 | 继续细化鉴权与配额错误码 |
 | 坐标 | 公共类型直接假定 GCJ-02 | 后端显式声明来源后转换 | 在网络适配边界转换 |
 | 导航定义 | 路线预览 | 首版仍为路线预览 | UI 不使用“开始实时导航”文案 |
 | Qt 依赖 | `widgets network` | 真实底图需要 WebEngine/WebChannel | 先安装并验证目标 Kit，再改 `.pro` |
-| Demo 激活 | 控制器直接调用 `mapReady()` | 由真实地图加载完成回报 | 真实装配移除手工 ready |
+| Demo 激活 | 降级地图构造后 ready，失败状态可显示并重载 | 由真实地图加载完成回报 | 腾讯画布接入后移除手工 ready |
+
+### 6.1 本轮修复后的可测试入口
+
+默认 Demo 仍使用 `MockMapService`，无需 Key，适合完整 UI 回归。要让地址解析和路线请求改走腾讯 WebService，在启动进程中设置：
+
+```text
+CHARGING_MAP_PROVIDER=tencent
+TENCENT_MAP_KEY=<本地腾讯 WebService Key>
+```
+
+Key 只从进程环境读取，不写入仓库、qrc 或日志。腾讯适配器当前不提供设备定位；定位失败后首页会继续按默认城市目录加载站点，进入路线页后输入手动起点即可联调地理编码与路线。`polyline` 按腾讯官方数字数组差分格式解析；缺失/非法候选坐标会被丢弃，避免 `(0,0)` 假坐标。
 
 当前 BitDev 检查结果：Ubuntu 22.04、Qt 6.2.4；`Qt6WebEngineWidgets`、`Qt6WebChannel`、`Qt6Positioning` 和 `QWebEngineView` 头文件均缺失。这不阻塞 `TencentMapService` 的 WebService 接入，但阻塞真实腾讯 JS 底图和基于 Qt Positioning 的设备定位。安装依赖属于环境准备步骤，不能通过 Mock 测试冒充完成。
 

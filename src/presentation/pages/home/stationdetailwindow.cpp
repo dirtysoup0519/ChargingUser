@@ -62,9 +62,10 @@ void StationDetailWindow::render(const StationDetailViewState &state)
     ui->detailRetryButton->setVisible(state.canRetry && !loading);
     ui->detailRetryButton->setEnabled(state.canRetry && !loading);
 
-    rebuildChargers(ready ? state.chargers : QVector<ChargerListItemView>{});
-    ui->chargerListHost->setVisible(ready && !state.chargers.isEmpty());
-    ui->sectionTitle->setVisible(ready);
+    // 刷新期间和刷新失败后保留上一次成功内容，只通过状态文案标明新鲜度。
+    rebuildChargers(state.chargers);
+    ui->chargerListHost->setVisible(!state.chargers.isEmpty());
+    ui->sectionTitle->setVisible(ready || !state.chargers.isEmpty());
 
     ui->navigationButton->setEnabled(ready && state.canNavigate
                                      && !state.stationId.isEmpty());

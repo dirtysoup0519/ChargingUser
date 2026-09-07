@@ -125,12 +125,13 @@ bool MockChargerService::validateContext(const RequestContext &context)
 bool MockChargerService::validateStationQuery(const RequestContext &context,
                                               const StationQuery &query)
 {
-    if (!query.hasExactlyOneArea()
+    // 未定位时允许按默认城市/服务端默认目录浏览；center 与 bounds 仍不能同时出现。
+    if (!query.hasAtMostOneArea()
         || (query.center && !query.center->isValid())
         || (query.bounds && !query.bounds->isValid())) {
         failLocal(context,
                   QStringLiteral("charger-invalid-area"),
-                  QStringLiteral("Exactly one valid search area is required."));
+                  QStringLiteral("At most one valid search area is allowed."));
         return false;
     }
     if (query.pageSize < 1 || query.pageSize > kMaximumPageSize) {

@@ -11,61 +11,43 @@
 #include <QStringList>
 #include <QTimer>
 #include <QUrlQuery>
+#include <QtGlobal>
 
 namespace {
 
 /**
- * 腾讯方向服务返回的 polyline 是增量压缩字符串：每个坐标对按"纬度、经度"顺序，
- * 以 5 位一组变长编码并基于前一个点累加，最终除以 1e6 得到度。
- * 实现按腾讯官方 demo 的解码规则移植；入口非法（长度越界）时返回空列表，
- * 由上层把空 polyline 统一映射为"暂无路线"，不制造半截数据。
+ * 腾讯方向 WebService 的 polyline 是数字数组。前一组纬度、经度是绝对值，
+ * 从第三个数字开始是相对前两个位置的百万分之一度增量：
+ * values[i] = values[i - 2] + values[i] / 1e6。
  */
-qint32 decodePolylineDelta(const QVector<uint> &codes, int &index, bool &ok)
-{
-    // 官方规则：字符码 - 63 - 1 得到原始分组，低位 5 位是数据，0x1f 是结束标志。
-    qint32 result = 0;
-    int shift = 0;
-    qint32 chunk = 0;
-    do {
-        if (index >= codes.size()) {
-            ok = false;
-            return 0;
-        }
-        chunk = static_cast<qint32>(codes.at(index++)) - 63 - 1;
-        result += (chunk & 0x1f) << shift;
-        shift += 5;
-    } while (chunk >= 0x1f);
-    // 最高位是符号：1 表示负增量（ zigzag 变体），否则为正增量。
-    return (result & 1) ? ~(result >> 1) : (result >> 1);
-}
-
-QVector<GeoPoint> decodeTencentPolyline(const QString &text)
+QVector<GeoPoint> decodeTencentPolyline(const QJsonValue &value)
 {
     QVector<GeoPoint> points;
-    if (text.isEmpty()) {
+    if (!value.isArray()) {
         return points;
     }
-    const QVector<uint> codes = text.toUcs4();
-    int index = 0;
-    double lat = 0.0;
-    double lng = 0.0;
-    while (index < codes.size()) {
-        bool ok = true;
-        const qint32 deltaLat = decodePolylineDelta(codes, index, ok);
-        if (!ok) {
-            // 剩余字节不足：供应商数据被截断，宁可返回已解码前缀之外的空结果，
-            // 也不拼出偏移的错误坐标交给地图绘制。
+    const QJsonArray encoded = value.toArray();
+    if (encoded.size() < 2 || encoded.size() % 2 != 0) {
+        return {};
+    }
+    QVector<double> decoded;
+    decoded.reserve(encoded.size());
+    for (int index = 0; index < encoded.size(); ++index) {
+        if (!encoded.at(index).isDouble()) {
             return {};
         }
-        const qint32 deltaLng = decodePolylineDelta(codes, index, ok);
-        if (!ok) {
+        double coordinate = encoded.at(index).toDouble();
+        if (!qIsFinite(coordinate)) {
             return {};
         }
-        lat += deltaLat;
-        lng += deltaLng;
-        const GeoPoint point{lat / 1e6, lng / 1e6};
+        if (index >= 2) {
+            coordinate = decoded.at(index - 2) + coordinate / 1e6;
+        }
+        decoded.append(coordinate);
+    }
+    for (int index = 0; index < decoded.size(); index += 2) {
+        const GeoPoint point{decoded.at(index), decoded.at(index + 1)};
         if (!point.isValid()) {
-            // 解出的坐标超出合法范围说明编码假设被破坏，直接失败而不是绘制错线。
             return {};
         }
         points.append(point);
@@ -82,9 +64,12 @@ QString stripHtmlTags(const QString &text)
     return plain.trimmed();
 }
 
-QJsonObject firstRouteObject(const QJsonDocument &document, bool &ok)
+QJsonObject firstRouteObject(const QJsonDocument &document,
+                             bool &hasRoutesField,
+                             bool &hasRoute)
 {
-    ok = false;
+    hasRoutesField = false;
+    hasRoute = false;
     if (!document.isObject()) {
         return {};
     }
@@ -97,10 +82,14 @@ QJsonObject firstRouteObject(const QJsonDocument &document, bool &ok)
         return {};
     }
     const QJsonArray routes = routesValue.toArray();
-    ok = true; // 数组存在但可能为空：空表示"暂无可用路线"，属于成功应答。
+    hasRoutesField = true; // 数组存在但可能为空：空表示"暂无可用路线"。
     if (routes.isEmpty()) {
         return {};
     }
+    if (!routes.first().isObject()) {
+        return {};
+    }
+    hasRoute = true;
     return routes.first().toObject();
 }
 
@@ -166,7 +155,7 @@ void TencentMapService::geocode(const RequestContext &context,
     }
     if (m_apiKey.isEmpty()) {
         failLocal(context,
-                  QStringLiteral("map-key-missing"),
+                  QStringLiteral("map-config-missing"),
                   QStringLiteral("地图服务未配置，暂时无法解析地址"));
         return;
     }
@@ -199,7 +188,7 @@ void TencentMapService::planRoute(const RequestContext &context,
     }
     if (m_apiKey.isEmpty()) {
         failLocal(context,
-                  QStringLiteral("map-key-missing"),
+                  QStringLiteral("map-config-missing"),
                   QStringLiteral("地图服务未配置，暂时无法规划路线"));
         return;
     }
@@ -396,14 +385,21 @@ void TencentMapService::handleGeocodePayload(const RequestContext &context,
         candidate.candidateId = item.value(QStringLiteral("id")).toString();
         candidate.name = item.value(QStringLiteral("title")).toString();
         candidate.fullAddress = item.value(QStringLiteral("address")).toString();
-        const QJsonObject location =
-            item.value(QStringLiteral("location")).toObject();
-        candidate.point.latitude =
-            location.value(QStringLiteral("lat")).toDouble();
-        candidate.point.longitude =
-            location.value(QStringLiteral("lng")).toDouble();
-        // 无坐标的候选不丢弃：文档要求"缺失时不绘制虚假坐标"，保留文字供用户选择。
-        if (!candidate.candidateId.isEmpty()) {
+        const QJsonValue locationValue = item.value(QStringLiteral("location"));
+        if (!locationValue.isObject()) {
+            continue;
+        }
+        const QJsonObject location = locationValue.toObject();
+        const QJsonValue latitude = location.value(QStringLiteral("lat"));
+        const QJsonValue longitude = location.value(QStringLiteral("lng"));
+        if (!latitude.isDouble() || !longitude.isDouble()) {
+            continue;
+        }
+        candidate.point.latitude = latitude.toDouble();
+        candidate.point.longitude = longitude.toDouble();
+        if (!candidate.candidateId.isEmpty() && candidate.point.isValid()
+            && qIsFinite(candidate.point.latitude)
+            && qIsFinite(candidate.point.longitude)) {
             result.candidates.append(candidate);
         }
     }
@@ -416,7 +412,8 @@ void TencentMapService::handleRoutePayload(const RequestContext &context,
 {
     const QJsonDocument document = QJsonDocument::fromJson(payload);
     bool hasRoutesField = false;
-    const QJsonObject routeObject = firstRouteObject(document, hasRoutesField);
+    bool hasRoute = false;
+    const QJsonObject routeObject = firstRouteObject(document, hasRoutesField, hasRoute);
 
     // 规范化结果：站标识与出行方式必须回填请求值，保证请求-应答强关联。
     RouteResult result;
@@ -425,9 +422,24 @@ void TencentMapService::handleRoutePayload(const RequestContext &context,
     result.origin = query.origin;
     result.destination = query.destination;
 
-    // routes 字段缺失或为空 = 无可用路线：按成功+空 polyline 上报，
-    // 由 Binder 映射为 Empty 状态（与 Mock 行为一致），而不是错误。
-    if (!hasRoutesField || routeObject.isEmpty()) {
+    if (!hasRoutesField) {
+        failLocal(context,
+                  QStringLiteral("map-parse"),
+                  QStringLiteral("地图服务返回的路线数据不完整"));
+        return;
+    }
+    // routes 数组明确为空才表示供应商成功响应但没有可用路线。
+    if (!hasRoute) {
+        // 只有明确的空数组是业务空结果；非空数组中的非法元素属于协议解析失败。
+        const QJsonArray routes = document.object()
+                                      .value(QStringLiteral("result")).toObject()
+                                      .value(QStringLiteral("routes")).toArray();
+        if (!routes.isEmpty()) {
+            failLocal(context,
+                      QStringLiteral("map-parse"),
+                      QStringLiteral("地图服务返回的路线数据不完整"));
+            return;
+        }
         emit routeReady(context, result);
         return;
     }
@@ -444,7 +456,13 @@ void TencentMapService::handleRoutePayload(const RequestContext &context,
         routeObject.value(QStringLiteral("duration")).toInt(0) * 60;
 
     result.polyline =
-        decodeTencentPolyline(routeObject.value(QStringLiteral("polyline")).toString());
+        decodeTencentPolyline(routeObject.value(QStringLiteral("polyline")));
+    if (result.polyline.isEmpty()) {
+        failLocal(context,
+                  QStringLiteral("map-parse"),
+                  QStringLiteral("地图服务返回的路线坐标无效"));
+        return;
+    }
 
     const QJsonValue stepsValue = routeObject.value(QStringLiteral("steps"));
     if (stepsValue.isArray()) {

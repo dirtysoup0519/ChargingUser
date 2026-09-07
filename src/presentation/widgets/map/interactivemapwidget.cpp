@@ -4,6 +4,7 @@
 #include <QMouseEvent>
 #include <QPainter>
 #include <QPushButton>
+#include <QTimer>
 
 InteractiveMapWidget::InteractiveMapWidget(QWidget *parent)
     : QLabel(parent), m_locateButton(new QPushButton(tr("⌖"), this)),
@@ -19,7 +20,8 @@ InteractiveMapWidget::InteractiveMapWidget(QWidget *parent)
     connect(m_locateButton, &QPushButton::clicked, this, &InteractiveMapWidget::locateRequested);
     connect(m_searchAreaButton, &QPushButton::clicked, this, [this] {
         m_searchAreaButton->hide();
-        emit searchAreaRequested();
+        if (m_viewportBounds && m_viewportBounds->isValid())
+            emit searchAreaRequested(*m_viewportBounds);
     });
 }
 
@@ -54,6 +56,19 @@ void InteractiveMapWidget::fitStations(const QStringList &stationIds)
 void InteractiveMapWidget::setLocateEnabled(bool enabled)
 { m_locateButton->setEnabled(enabled); }
 
+void InteractiveMapWidget::setViewportBounds(const std::optional<GeoBounds> &bounds)
+{
+    m_viewportBounds = bounds && bounds->isValid() ? bounds : std::nullopt;
+    if (!m_viewportBounds)
+        m_searchAreaButton->hide();
+}
+
+void InteractiveMapWidget::reload()
+{
+    update();
+    QTimer::singleShot(0, this, [this] { emit mapReady(); });
+}
+
 void InteractiveMapWidget::mousePressEvent(QMouseEvent *event)
 {
     if (event->button() != Qt::LeftButton) return QLabel::mousePressEvent(event);
@@ -67,7 +82,8 @@ void InteractiveMapWidget::mousePressEvent(QMouseEvent *event)
             emit markerSelected(marker.stationId); return;
         }
     }
-    m_dragStart = event->pos(); m_dragging = true; m_userMoved = false;
+    m_dragStart = event->pos(); m_dragOriginOffset = m_offset;
+    m_dragging = true; m_userMoved = false;
     setCursor(Qt::ClosedHandCursor);
 }
 
@@ -84,7 +100,25 @@ void InteractiveMapWidget::mouseReleaseEvent(QMouseEvent *event)
     Q_UNUSED(event)
     if (!m_dragging) return;
     m_dragging = false; setCursor(Qt::OpenHandCursor);
-    if (m_userMoved) m_searchAreaButton->show();
+    if (!m_userMoved || !m_viewportBounds)
+        return;
+
+    const QPointF delta = m_offset - m_dragOriginOffset;
+    const double latitudeSpan = m_viewportBounds->northEast.latitude
+                                - m_viewportBounds->southWest.latitude;
+    const double longitudeSpan = m_viewportBounds->northEast.longitude
+                                 - m_viewportBounds->southWest.longitude;
+    const double latitudeShift = delta.y() / qMax(1, height()) * latitudeSpan;
+    const double longitudeShift = -delta.x() / qMax(1, width()) * longitudeSpan;
+    GeoBounds shifted = *m_viewportBounds;
+    shifted.southWest.latitude += latitudeShift;
+    shifted.northEast.latitude += latitudeShift;
+    shifted.southWest.longitude += longitudeShift;
+    shifted.northEast.longitude += longitudeShift;
+    if (shifted.isValid()) {
+        m_viewportBounds = shifted;
+        m_searchAreaButton->show();
+    }
 }
 
 void InteractiveMapWidget::paintEvent(QPaintEvent *event)

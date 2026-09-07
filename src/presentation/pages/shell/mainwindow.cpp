@@ -9,6 +9,7 @@
 #include <QScrollArea>
 #include <QStackedWidget>
 #include <QStyle>
+#include <QStringList>
 #include <QToolButton>
 #include <QVBoxLayout>
 
@@ -41,10 +42,9 @@ MainWindow::MainWindow(QWidget *parent) : QWidget(parent), ui(new Ui::MainWindow
     connect(ui->mapView, &InteractiveMapWidget::locateRequested,
             this, &MainWindow::locateRequested);
     connect(ui->mapView, &InteractiveMapWidget::searchAreaRequested,
-            this, [this] {
-        if (m_viewportBounds && m_viewportBounds->isValid())
-            emit searchAreaRequested(*m_viewportBounds);
-    });
+            this, &MainWindow::searchAreaRequested);
+    connect(ui->mapView, &InteractiveMapWidget::mapReady,
+            this, &MainWindow::mapReady);
     connect(ui->btnStationSearch, &QPushButton::clicked, this, [this] {
         const QString keyword = ui->searchBox->text().trimmed();
         if (keyword.isEmpty())
@@ -63,6 +63,10 @@ MainWindow::MainWindow(QWidget *parent) : QWidget(parent), ui(new Ui::MainWindow
     });
     connect(ui->searchRetryButton, &QPushButton::clicked,
             this, &MainWindow::stationSearchRetryRequested);
+    connect(ui->locationRetryButton, &QPushButton::clicked,
+            this, &MainWindow::locateRequested);
+    connect(ui->mapRetryButton, &QPushButton::clicked,
+            ui->mapView, &InteractiveMapWidget::reload);
 
     connect(ui->homeNav, &QToolButton::clicked, this, [this] {
         emit primaryPageRequested(PrimaryPage::Home);
@@ -91,12 +95,26 @@ void MainWindow::renderHome(const HomeMapViewState &state)
     const bool searching = state.searchStatus == MapLoadStatus::Loading;
     ui->btnStationSearch->setEnabled(state.canSearch && !searching);
     ui->btnStationSearch->setText(searching ? tr("搜索中…") : tr("搜索"));
-    ui->searchErrorLabel->setText(state.searchMessage);
-    ui->searchErrorLabel->setVisible(!state.searchMessage.isEmpty());
-    ui->searchRetryButton->setVisible(!state.searchMessage.isEmpty()
-                                      && state.canRetrySearch);
+    QStringList statusMessages;
+    const auto appendMessage = [&statusMessages](const QString &message) {
+        if (!message.isEmpty() && !statusMessages.contains(message))
+            statusMessages.append(message);
+    };
+    appendMessage(state.mapMessage);
+    appendMessage(state.locationMessage);
+    appendMessage(state.stationsMessage);
+    appendMessage(state.searchMessage);
+    ui->searchErrorLabel->setText(statusMessages.join(QLatin1Char('\n')));
+    ui->searchErrorLabel->setVisible(!statusMessages.isEmpty());
+    ui->mapRetryButton->setVisible(state.mapStatus == MapLoadStatus::Error
+                                   && state.canRetryMap);
+    ui->locationRetryButton->setVisible(state.locationStatus == MapLoadStatus::Error
+                                        && state.canRetryLocation);
+    ui->searchRetryButton->setVisible(
+        (state.searchStatus == MapLoadStatus::Error && state.canRetrySearch)
+        || (state.stationsStatus == MapLoadStatus::Error && state.canRetryStations));
     ui->mapView->setLocateEnabled(state.locationStatus != MapLoadStatus::Loading);
-    m_viewportBounds = state.camera.bounds;
+    ui->mapView->setViewportBounds(state.camera.bounds);
 
     rebuildStationRows(state.stations);
 
