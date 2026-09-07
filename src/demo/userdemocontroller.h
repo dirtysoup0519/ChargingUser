@@ -1,5 +1,6 @@
 #pragma once
 
+#include "app/imapuibinder.h"
 #include "flow/userflowtypes.h"
 
 #include <QObject>
@@ -7,6 +8,7 @@
 #include <QSet>
 
 class IUserUiBinder;
+class IMapUiBinder;
 class LoginWindow;
 class MainWindow;
 class MockUserNetworkApi;
@@ -33,6 +35,7 @@ class UserDemoController final : public QObject
 public:
     UserDemoController(MockUserNetworkApi *network,
                        IUserUiBinder *binder,
+                       IMapUiBinder *mapBinder,
                        LoginWindow *login,
                        ProfileEditWindow *profileEdit,
                        MainWindow *mainWindow,
@@ -46,10 +49,12 @@ private:
     void rememberConfirmedLogin(const LoginResult &result);
     void rememberConfirmedNickname(const UserProfileResult &result);
     void handleNavigation(NavigationTarget target);
+    void handleMapPage(MapPageTarget target, const QString &stationId);
     void showOnly(QWidget *target);
 
     MockUserNetworkApi *m_network;
     IUserUiBinder *m_binder;
+    IMapUiBinder *m_mapBinder;
     LoginWindow *m_login;
     ProfileEditWindow *m_profileEdit;
     MainWindow *m_mainWindow;

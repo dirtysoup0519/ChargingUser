@@ -1,6 +1,7 @@
 #include "demo/userdemocontroller.h"
 
 #include "app/iuseruibinder.h"
+#include "app/imapuibinder.h"
 #include "modules/user/mockusernetworkapi.h"
 #include "presentation/pages/auth/loginwindow.h"
 #include "presentation/pages/shell/mainwindow.h"
@@ -79,6 +80,7 @@ UserProfileResult makeProfileResult(const LoginResult &login)
 
 UserDemoController::UserDemoController(MockUserNetworkApi *network,
                                        IUserUiBinder *binder,
+                                       IMapUiBinder *mapBinder,
                                        LoginWindow *login,
                                        ProfileEditWindow *profileEdit,
                                        MainWindow *mainWindow,
@@ -86,6 +88,7 @@ UserDemoController::UserDemoController(MockUserNetworkApi *network,
     : QObject(parent)
     , m_network(network)
     , m_binder(binder)
+    , m_mapBinder(mapBinder)
     , m_login(login)
     , m_profileEdit(profileEdit)
     , m_mainWindow(mainWindow)
@@ -96,6 +99,7 @@ UserDemoController::UserDemoController(MockUserNetworkApi *network,
 {
     Q_ASSERT(m_network);
     Q_ASSERT(m_binder);
+    Q_ASSERT(m_mapBinder);
     Q_ASSERT(m_login);
     Q_ASSERT(m_profileEdit);
     Q_ASSERT(m_mainWindow);
@@ -158,22 +162,47 @@ UserDemoController::UserDemoController(MockUserNetworkApi *network,
         }
     });
 
+    connect(m_mainWindow, &MainWindow::locateRequested,
+            m_mapBinder, &IMapUiBinder::locateRequested);
+    connect(m_mainWindow, &MainWindow::stationSearchRequested,
+            m_mapBinder, &IMapUiBinder::stationSearchRequested);
+    connect(m_mainWindow, &MainWindow::stationSearchRetryRequested,
+            m_mapBinder, &IMapUiBinder::stationSearchRetryRequested);
+    connect(m_mainWindow, &MainWindow::stationSearchCleared,
+            m_mapBinder, &IMapUiBinder::stationSearchCleared);
+    connect(m_mainWindow, &MainWindow::searchAreaRequested,
+            m_mapBinder, &IMapUiBinder::searchAreaRequested);
+    connect(m_mainWindow, &MainWindow::stationSelected,
+            m_mapBinder, &IMapUiBinder::stationSelected);
     connect(m_mainWindow, &MainWindow::stationDetailsRequested,
-            this, [this](const QString &) {
-        m_mainWindow->renderSecondaryPage(m_stationDetail);
-    });
+            m_mapBinder, &IMapUiBinder::stationDetailsRequested);
     connect(m_stationDetail, &StationDetailWindow::backRequested,
-            this, [this] {
-        m_mainWindow->renderPrimaryPage(MainWindow::PrimaryPage::Home);
-    });
-    connect(m_stationDetail, &StationDetailWindow::navigationRequested,
-            this, [this] {
-        m_mainWindow->renderSecondaryPage(m_navigation);
-    });
+            m_mapBinder, &IMapUiBinder::backRequested);
+    connect(m_stationDetail, &StationDetailWindow::stationRefreshRequested,
+            m_mapBinder, &IMapUiBinder::stationRefreshRequested);
+    connect(m_stationDetail, &StationDetailWindow::routePreviewRequested,
+            m_mapBinder, &IMapUiBinder::routePreviewRequested);
     connect(m_navigation, &NavigationWindow::backRequested,
-            this, [this] {
-        m_mainWindow->renderSecondaryPage(m_stationDetail);
-    });
+            m_mapBinder, &IMapUiBinder::backRequested);
+    connect(m_navigation, &NavigationWindow::routeModeRequested,
+            m_mapBinder, &IMapUiBinder::routeModeRequested);
+    connect(m_navigation, &NavigationWindow::manualOriginRequested,
+            m_mapBinder, &IMapUiBinder::manualOriginRequested);
+    connect(m_navigation, &NavigationWindow::originCandidateSelected,
+            m_mapBinder, &IMapUiBinder::originCandidateSelected);
+    connect(m_navigation, &NavigationWindow::routeRetryRequested,
+            m_mapBinder, &IMapUiBinder::routeRetryRequested);
+
+    connect(m_mapBinder, &IMapUiBinder::homeStateChanged,
+            m_mainWindow, &MainWindow::renderHome);
+    connect(m_mapBinder, &IMapUiBinder::stationDetailStateChanged,
+            m_stationDetail, &StationDetailWindow::render);
+    connect(m_mapBinder, &IMapUiBinder::navigationStateChanged,
+            m_navigation, &NavigationWindow::render);
+    connect(m_mapBinder, &IMapUiBinder::pageRequested,
+            this, &UserDemoController::handleMapPage);
+    // 当前 InteractiveMapWidget 是离线展示桥，构造完成即可视为 ready。
+    m_mapBinder->mapReady();
     connect(m_mainWindow, &MainWindow::rechargePageRequested,
             this, [this] {
         m_walletRecharge->renderBalance(
@@ -279,6 +308,26 @@ void UserDemoController::handleNavigation(NavigationTarget target)
         m_mainWindow->renderProfile(m_binder->currentProfileViewState());
         m_mainWindow->renderPrimaryPage(MainWindow::PrimaryPage::Home);
         showOnly(m_mainWindow);
+        m_mapBinder->activateHome();
+        break;
+    }
+}
+
+void UserDemoController::handleMapPage(MapPageTarget target,
+                                      const QString &stationId)
+{
+    Q_UNUSED(stationId)
+    switch (target) {
+    case MapPageTarget::Home:
+        m_mainWindow->renderPrimaryPage(MainWindow::PrimaryPage::Home);
+        break;
+    case MapPageTarget::StationDetail:
+        m_stationDetail->render(m_mapBinder->currentStationDetailState());
+        m_mainWindow->renderSecondaryPage(m_stationDetail);
+        break;
+    case MapPageTarget::Navigation:
+        m_navigation->render(m_mapBinder->currentNavigationState());
+        m_mainWindow->renderSecondaryPage(m_navigation);
         break;
     }
 }

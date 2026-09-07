@@ -13,6 +13,8 @@ INCLUDEPATH += \
     $$PROJECT_ROOT/src
 
 include($$PROJECT_ROOT/src/presentation/presentation.pri)
+include($$PROJECT_ROOT/src/modules/map/map.pri)
+include($$PROJECT_ROOT/src/modules/charger/charger.pri)
 include($$PROJECT_ROOT/src/modules/user/user.pri)
 include($$PROJECT_ROOT/src/flow/flow.pri)
 include($$PROJECT_ROOT/src/app/app.pri)

@@ -3,10 +3,13 @@
 HEADERS += \
     $$PWD/../presentation/contracts/userviewstates.h \
     $$PWD/../presentation/contracts/profileviewstate.h \
+    $$PWD/imapuibinder.h \
+    $$PWD/mapuibinder.h \
     $$PWD/iuseruibinder.h \
     $$PWD/useruibinder.h \
     $$PWD/application.h
 
 SOURCES += \
+    $$PWD/mapuibinder.cpp \
     $$PWD/useruibinder.cpp \
     $$PWD/application.cpp
