@@ -23,10 +23,13 @@ signals:
     void routeRetryRequested();
 
 private:
+    void setOriginEditorOpen(bool open);
     void submitManualOrigin();
     void rebuildOriginCandidates(const QVector<GeocodeCandidateView> &candidates);
     void rebuildRouteSteps(const QVector<RouteStepView> &steps);
 
     Ui::NavigationWindow *ui;
     NavigationViewState m_state;
+    bool m_originEditorOpen = false;
+    bool m_originSubmissionPending = false;
 };

@@ -1,4 +1,5 @@
 #include "profileeditwindow.h"
+#include "dragscrollhelper.h"
 #include "ui_profileeditwindow.h"
 #include <QLineEdit>
 #include <QPushButton>
@@ -33,6 +34,7 @@ ProfileEditWindow::ProfileEditWindow(QWidget *parent)
     : QWidget(parent), ui(new Ui::ProfileEditWindow)
 {
     ui->setupUi(this);
+    DragScrollHelper::enableFor(this);
     connect(ui->backButton, &QPushButton::clicked,
             this, &ProfileEditWindow::backRequested);
     connect(ui->saveButton, &QPushButton::clicked,

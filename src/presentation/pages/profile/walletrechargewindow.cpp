@@ -1,4 +1,5 @@
 #include "walletrechargewindow.h"
+#include "dragscrollhelper.h"
 #include "ui_walletrechargewindow.h"
 
 #include <QButtonGroup>
@@ -11,6 +12,7 @@ WalletRechargeWindow::WalletRechargeWindow(QWidget *parent)
     : QWidget(parent), ui(new Ui::WalletRechargeWindow)
 {
     ui->setupUi(this);
+    DragScrollHelper::enableFor(this);
 
     auto *amountGroup = new QButtonGroup(this);
     amountGroup->setExclusive(true);

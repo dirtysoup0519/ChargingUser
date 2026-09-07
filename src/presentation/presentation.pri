@@ -6,6 +6,7 @@ HEADERS += \
     $$PWD/contracts/profileeditviewstate.h \
     $$PWD/contracts/profileviewstate.h
 
+include($$PWD/widgets/common/common.pri)
 include($$PWD/pages/shell/shell.pri)
 include($$PWD/pages/auth/auth.pri)
 include($$PWD/pages/home/home.pri)

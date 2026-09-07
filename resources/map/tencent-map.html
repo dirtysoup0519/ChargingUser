@@ -57,6 +57,42 @@
       }
     }
 
+    function mercatorY(latitude) {
+      const limited = Math.max(-85, Math.min(85, latitude));
+      const radians = limited * Math.PI / 180;
+      return (1 - Math.log(Math.tan(radians) + 1 / Math.cos(radians))
+                  / Math.PI) / 2;
+    }
+
+    function fitRouteFromOrigin(points, preferredOrigin) {
+      if (!map || points.length < 2)
+        return;
+      const origin = preferredOrigin || points[0];
+      const originX = (origin.longitude + 180) / 360;
+      const originY = mercatorY(origin.latitude);
+      let maxDeltaX = 0;
+      let maxDeltaY = 0;
+      points.forEach(point => {
+        const pointX = (point.longitude + 180) / 360;
+        const directDeltaX = Math.abs(pointX - originX);
+        maxDeltaX = Math.max(maxDeltaX,
+                             Math.min(directDeltaX, 1 - directDeltaX));
+        maxDeltaY = Math.max(maxDeltaY,
+                             Math.abs(mercatorY(point.latitude) - originY));
+      });
+
+      const container = document.getElementById("map");
+      const halfWidth = Math.max(48, (container.clientWidth || 390) / 2 - 34);
+      const halfHeight = Math.max(48, (container.clientHeight || 230) / 2 - 30);
+      const zoomX = maxDeltaX > 0
+        ? Math.log2(halfWidth / (256 * maxDeltaX)) : 19;
+      const zoomY = maxDeltaY > 0
+        ? Math.log2(halfHeight / (256 * maxDeltaY)) : 19;
+      const zoom = Math.max(3, Math.min(19, Math.floor(Math.min(zoomX, zoomY))));
+      map.setCenter(new TMap.LatLng(origin.latitude, origin.longitude));
+      map.setZoom(zoom);
+    }
+
     function render(snapshot) {
       if (!map || !snapshot)
         return;
@@ -87,15 +123,17 @@
           routeLine.setMap(null);
           routeLine = null;
         }
-        const path = (snapshot.routePolyline || [])
+        const routePoints = (snapshot.routePolyline || [])
           .filter(point => Number.isFinite(point.latitude)
-                           && Number.isFinite(point.longitude))
-          .map(point => new TMap.LatLng(point.latitude, point.longitude));
+                           && Number.isFinite(point.longitude));
+        const path = routePoints.map(point =>
+          new TMap.LatLng(point.latitude, point.longitude));
         if (path.length > 1) {
           routeLine = new TMap.MultiPolyline({
             map,
             geometries: [{ id: "route", paths: path }]
           });
+          fitRouteFromOrigin(routePoints, selected);
         }
       } catch (error) {
         fail(error);

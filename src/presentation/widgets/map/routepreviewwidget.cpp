@@ -1,10 +1,13 @@
 #include "routepreviewwidget.h"
 #include "tencentmapbridge.h"
 
+#include <QIcon>
 #include <QPainter>
 #include <QPainterPath>
+#include <QPushButton>
 #include <QTimer>
 #include <algorithm>
+#include <cmath>
 #ifdef CHARGINGUSER_ENABLE_TENCENT_WEBMAP
 #include <QFile>
 #include <QJsonArray>
@@ -16,9 +19,18 @@
 #endif
 
 RoutePreviewWidget::RoutePreviewWidget(QWidget *parent)
-    : QLabel(parent)
+    : QLabel(parent), m_recenterButton(new QPushButton(this))
 {
     setScaledContents(false);
+    m_recenterButton->setObjectName(QStringLiteral("btnLocateMap"));
+    m_recenterButton->setFixedSize(42, 42);
+    m_recenterButton->setIcon(QIcon(QStringLiteral(":/icons/map_locate.png")));
+    m_recenterButton->setIconSize(QSize(26, 26));
+    m_recenterButton->setToolTip(tr("回到路线起点并显示完整路线"));
+    m_recenterButton->setAccessibleName(tr("回到路线中心"));
+    m_recenterButton->hide();
+    connect(m_recenterButton, &QPushButton::clicked,
+            this, &RoutePreviewWidget::recenterRoute);
 }
 
 void RoutePreviewWidget::initializeTencentMap()
@@ -37,43 +49,36 @@ void RoutePreviewWidget::initializeTencentMap()
     auto *channel = new QWebChannel(m_webView);
     channel->registerObject(QStringLiteral("tencentMapBridge"), m_mapBridge);
     m_webView->page()->setWebChannel(channel);
-    connect(m_mapBridge, &TencentMapBridge::mapReady,
-            m_webView, &QWebEngineView::show);
+    connect(m_mapBridge, &TencentMapBridge::mapReady, this, [this] {
+        m_webView->show();
+        m_recenterButton->raise();
+    });
     connect(m_mapBridge, &TencentMapBridge::mapLoadFailed,
             m_webView, &QWebEngineView::hide);
     QFile file(QStringLiteral(":/map/tencent-map.html"));
     if (!file.open(QIODevice::ReadOnly)) return;
     QString html = QString::fromUtf8(file.readAll());
     html.replace(QStringLiteral("__TENCENT_KEY__"), QString::fromUtf8(QUrl::toPercentEncoding(key)));
+    publishSnapshot();
     m_webView->show();
     m_webView->setHtml(html, QUrl(QStringLiteral("https://localhost/")));
+    m_recenterButton->raise();
 #endif
 }
 
 void RoutePreviewWidget::setRoutePolyline(const QVector<GeoPoint> &polyline)
 {
     m_polyline = polyline;
-#ifdef CHARGINGUSER_ENABLE_TENCENT_WEBMAP
-    if (m_mapBridge) {
-        QJsonArray points;
-        for (const GeoPoint &point : polyline) {
-            if (!point.isValid()) continue;
-            QJsonObject item;
-            item.insert(QStringLiteral("latitude"), point.latitude);
-            item.insert(QStringLiteral("longitude"), point.longitude);
-            points.append(item);
-        }
-        QJsonObject snapshot;
-        snapshot.insert(QStringLiteral("routePolyline"), points);
-        m_mapBridge->setSnapshot(snapshot);
-    }
-#endif
+    publishSnapshot();
+    updateRecenterButton();
     update();
 }
 
 void RoutePreviewWidget::setOrigin(const std::optional<GeoPoint> &origin)
 {
     m_origin = origin;
+    publishSnapshot();
+    updateRecenterButton();
     update();
 }
 
@@ -81,6 +86,8 @@ void RoutePreviewWidget::setDestination(
     const std::optional<GeoPoint> &destination)
 {
     m_destination = destination;
+    publishSnapshot();
+    updateRecenterButton();
     update();
 }
 
@@ -89,7 +96,70 @@ void RoutePreviewWidget::clearRoute()
     m_polyline.clear();
     m_origin.reset();
     m_destination.reset();
+    publishSnapshot();
+    updateRecenterButton();
     update();
+}
+
+void RoutePreviewWidget::publishSnapshot()
+{
+#ifdef CHARGINGUSER_ENABLE_TENCENT_WEBMAP
+    if (!m_mapBridge)
+        return;
+
+    QJsonArray points;
+    for (const GeoPoint &point : m_polyline) {
+        if (!point.isValid())
+            continue;
+        points.append(QJsonObject{
+            {QStringLiteral("latitude"), point.latitude},
+            {QStringLiteral("longitude"), point.longitude}});
+    }
+
+    QJsonArray markers;
+    const auto appendEndpoint = [&markers](const QString &id,
+                                            const std::optional<GeoPoint> &point) {
+        if (!point || !point->isValid())
+            return;
+        markers.append(QJsonObject{
+            {QStringLiteral("stationId"), id},
+            {QStringLiteral("latitude"), point->latitude},
+            {QStringLiteral("longitude"), point->longitude},
+            {QStringLiteral("available"), true}});
+    };
+    appendEndpoint(QStringLiteral("route-origin"), m_origin);
+    appendEndpoint(QStringLiteral("route-destination"), m_destination);
+
+    QJsonObject snapshot;
+    snapshot.insert(QStringLiteral("markers"), markers);
+    snapshot.insert(QStringLiteral("routePolyline"), points);
+    snapshot.insert(QStringLiteral("selectedStationId"),
+                    QStringLiteral("route-origin"));
+    m_mapBridge->setSnapshot(snapshot);
+#endif
+}
+
+void RoutePreviewWidget::updateRecenterButton()
+{
+    const int validPointCount = std::count_if(
+        m_polyline.cbegin(), m_polyline.cend(),
+        [](const GeoPoint &point) { return point.isValid(); });
+    const bool canRecenter = m_origin && m_origin->isValid()
+                             && validPointCount > 1;
+    m_recenterButton->setVisible(canRecenter);
+    m_recenterButton->move(qMax(8, width() - m_recenterButton->width() - 10),
+                           qMax(8, height() - m_recenterButton->height() - 10));
+    if (canRecenter)
+        m_recenterButton->raise();
+}
+
+void RoutePreviewWidget::recenterRoute()
+{
+    // Republishing the current route makes the Web map reapply the same
+    // origin-centred camera calculation without issuing a route request.
+    publishSnapshot();
+    update();
+    m_recenterButton->raise();
 }
 
 void RoutePreviewWidget::resizeEvent(QResizeEvent *event)
@@ -98,6 +168,7 @@ void RoutePreviewWidget::resizeEvent(QResizeEvent *event)
 #ifdef CHARGINGUSER_ENABLE_TENCENT_WEBMAP
     if (m_webView) m_webView->setGeometry(rect());
 #endif
+    updateRecenterButton();
 }
 
 void RoutePreviewWidget::showEvent(QShowEvent *event)
@@ -150,6 +221,21 @@ void RoutePreviewWidget::paintEvent(QPaintEvent *event)
         maxLatitude = std::max(maxLatitude, point.latitude);
         minLongitude = std::min(minLongitude, point.longitude);
         maxLongitude = std::max(maxLongitude, point.longitude);
+    }
+
+    // Keep the origin in the visual center while expanding the bounds just
+    // enough to include the complete route in every direction.
+    if (m_origin && m_origin->isValid()) {
+        const double latitudeRadius = std::max(
+            std::abs(maxLatitude - m_origin->latitude),
+            std::abs(m_origin->latitude - minLatitude));
+        const double longitudeRadius = std::max(
+            std::abs(maxLongitude - m_origin->longitude),
+            std::abs(m_origin->longitude - minLongitude));
+        minLatitude = m_origin->latitude - latitudeRadius;
+        maxLatitude = m_origin->latitude + latitudeRadius;
+        minLongitude = m_origin->longitude - longitudeRadius;
+        maxLongitude = m_origin->longitude + longitudeRadius;
     }
 
     const QRectF drawArea = rect().adjusted(32, 28, -32, -28);

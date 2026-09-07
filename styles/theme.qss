@@ -54,6 +54,7 @@ QLabel#loadingIndicator { color: #1677FF; font-size: 11px; }
 QLabel#errorLabel[feedbackKind="neutral"] { color: #687386; }
 QLabel#errorLabel[feedbackKind="success"] { color: #13966B; }
 QLabel#errorLabel[feedbackKind="error"] { color: #D14343; }
+QCheckBox#agreementCheck[validationError="true"] { color: #D14343; }
 QLabel#errorLabel[feedbackKind="unknown"] {
     color: #9A6700; background: #FFF7D6;
     border: 1px solid #F1D179; border-radius: 8px; padding: 7px;
@@ -246,6 +247,47 @@ QFrame#chargerRow[available="false"] QLabel#chargerIdLabel {
     color: #8A94A3; background: #F5F6F8; border-color: #DDE2E8;
 }
 QLabel#availabilityLabel { color: #12AFA5; font-size: 13px; font-weight: 700; }
+QScrollArea#detailScroll, QScrollArea#detailScroll > QWidget > QWidget {
+    background: #F6F8FC; border: none;
+}
+QFrame#summaryCard { background: #FFFFFF; border-color: #E2E8F0; }
+QLabel#stationName { color: #17243A; font-size: 19px; font-weight: 800; }
+QLabel#addressLabel { color: #748196; font-size: 11px; }
+QLabel#addressIcon { background: transparent; }
+QFrame#availabilityCard {
+    background: #F8FAFD; border: 1px solid #E8EDF4; border-radius: 10px;
+}
+QWidget#availableMetric, QWidget#unavailableMetric, QWidget#totalMetric,
+QLabel#availableCountValue, QLabel#unavailableCountValue,
+QLabel#totalCountValue, QLabel#availableCountCaption,
+QLabel#unavailableCountCaption, QLabel#totalCountCaption { background: transparent; }
+QLabel#availableCountValue { color: #10AFA4; font-size: 20px; font-weight: 800; }
+QLabel#unavailableCountValue { color: #F28A20; font-size: 20px; font-weight: 800; }
+QLabel#totalCountValue { color: #526174; font-size: 20px; font-weight: 800; }
+QLabel#availableCountCaption, QLabel#unavailableCountCaption,
+QLabel#totalCountCaption { color: #8490A1; font-size: 9px; }
+QFrame#metricDivider1, QFrame#metricDivider2 { color: #E1E7EF; }
+QFrame#feeCard { background: #FFFFFF; border-color: #E2E8F0; }
+QLabel#feeIcon, QLabel#feeTitleLabel, QLabel#priceLabel { background: transparent; }
+QLabel#feeTitleLabel { color: #263449; font-size: 13px; font-weight: 600; }
+QLabel#priceLabel { color: #1677FF; font-size: 18px; font-weight: 800; }
+QFrame#chargerListCard {
+    background: #FFFFFF; border: 1px solid #E2E8F0; border-radius: 13px;
+}
+QFrame#chargerListCard > QLabel#sectionTitle {
+    background: transparent; padding-left: 14px; font-size: 14px; font-weight: 700;
+}
+QWidget#chargerListHost { background: transparent; }
+QFrame#chargerRow { border-bottom-color: #E8EDF3; }
+QLabel#chargerActionIcon { background: #F4FBFA; border: 1px solid #B8E9E4; border-radius: 16px; }
+QFrame#chargerRow[available="false"] QLabel#chargerActionIcon {
+    background: #F4F6F8; border-color: #DFE4EA;
+}
+QWidget#footer { background: #FFFFFF; border-top: 1px solid #E4E9F0; }
+QPushButton#navigationButton { border: 1px solid #1677FF; background: #FFFFFF; }
+QPushButton#chargeButton:disabled {
+    background: #AFCBF4; color: #F7FAFF;
+}
 QLabel#detailStateLabel[state="loading"], QLabel#routeStateLabel[state="loading"] {
     color: #687386; background: #F3F7FC; border-radius: 8px; padding: 7px;
 }
@@ -257,7 +299,7 @@ QLabel#detailStateLabel[state="neutral"], QLabel#routeStateLabel[state="neutral"
     color: #687386; background: #F6F8FC; border-radius: 8px; padding: 7px;
 }
 QPushButton#detailRetryButton, QPushButton#routeRetryButton,
-QPushButton#manualOriginButton {
+QPushButton#manualOriginButton, QPushButton#modifyOriginButton {
     background: #EAF3FF; color: #1677FF; border: 1px solid #A9CBFF;
     border-radius: 8px; font-weight: 700;
 }
@@ -276,8 +318,39 @@ QPushButton#originCandidateButton {
     border-radius: 7px; padding: 5px 8px; text-align: left;
 }
 QPushButton#originCandidateButton:hover { border-color: #73AAFF; color: #1677FF; }
-QLabel#routeStepLabel {
-    color: #4E596A; background: #F8FAFD; border-radius: 5px; padding: 4px 6px;
+QFrame#originEditorPanel {
+    background: #FFFFFF; border: 1px solid #DCE5F0; border-radius: 14px;
+}
+QLabel#originEditorTitle {
+    color: #17243A; background: transparent; font-size: 15px; font-weight: 700;
+}
+QPushButton#originEditorBackButton {
+    background: transparent; color: #17243A; border: none;
+    font-size: 24px; font-weight: 500;
+}
+QLabel#relatedPlacesTitle {
+    color: #536174; background: transparent; font-size: 12px; font-weight: 700;
+}
+QLabel#originCandidatesEmptyLabel {
+    color: #8994A3; background: #F7F9FC; border-radius: 8px; padding: 12px;
+}
+QScrollArea#originCandidatesScroll, QWidget#originCandidatesHost {
+    background: transparent; border: none;
+}
+QFrame#routeStepRow {
+    background: #F8FAFD; border: 1px solid #E8EDF4; border-radius: 9px;
+}
+QLabel#routeStepNumber {
+    color: #FFFFFF; background: #1677FF; border-radius: 13px;
+    font-size: 11px; font-weight: 700;
+}
+QFrame#routeStepRow[endpoint="start"] QLabel#routeStepNumber { background: #18B8AC; }
+QFrame#routeStepRow[endpoint="end"] QLabel#routeStepNumber { background: #F0445E; }
+QLabel#routeStepInstruction {
+    color: #334155; background: transparent; font-size: 11px; font-weight: 600;
+}
+QLabel#routeStepDistance {
+    color: #8490A1; background: transparent; font-size: 10px;
 }
 RoutePreviewWidget#routeMap { background: #EEF4F8; border: none; }
 QScrollArea { border: none; background: transparent; }
@@ -285,3 +358,36 @@ QScrollBar:vertical { width: 3px; background: transparent; }
 QScrollBar::handle:vertical { background: #CFD7E2; min-height: 24px; }
 QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical { height: 0; }
 QCheckBox { color: #8994A3; font-size: 10px; spacing: 6px; }
+
+
+/* Station detail and route preview layout */
+QWidget#navigationBackground { background: #F6F8FC; }
+QFrame#endpointCard, QFrame#modeCard, QFrame#routeCard {
+    background: #FFFFFF; border: 1px solid #E2E8F0; border-radius: 13px; margin: 0;
+}
+QLabel#originDot { color: #18B8AC; font-size: 17px; background: transparent; }
+QLabel#destinationDot { color: #F0445E; font-size: 17px; background: transparent; }
+QLabel#originLabel, QLabel#destinationLabel {
+    color: #17243A; background: transparent; font-size: 13px; font-weight: 600;
+}
+QFrame#endpointDivider { color: #E8EDF3; }
+QPushButton#driveButton, QPushButton#walkButton {
+    min-height: 36px; background: transparent; border: none; border-radius: 9px;
+    color: #778397; font-size: 13px; font-weight: 600;
+}
+QPushButton#driveButton:checked, QPushButton#walkButton:checked {
+    background: #EAF3FF; color: #1677FF; border-bottom: 2px solid #1677FF;
+}
+QFrame#mapArea { background: #EEF4F8; border: 1px solid #DEE6EF; border-radius: 13px; }
+QWidget#distanceMetric, QWidget#durationMetric,
+QLabel#routeInfo, QLabel#routeTime, QLabel#distanceCaption, QLabel#durationCaption {
+    background: transparent;
+}
+QLabel#routeInfo, QLabel#routeTime { color: #17243A; font-size: 22px; font-weight: 800; }
+QLabel#distanceCaption, QLabel#durationCaption { color: #8490A1; font-size: 10px; }
+QFrame#routeMetricDivider { color: #E1E7EF; }
+QPushButton#startButton {
+    background: #1677FF; color: #FFFFFF; border: none; border-radius: 10px;
+    font-size: 14px; font-weight: 700;
+}
+QPushButton#startButton:hover { background: #0D6BE8; }

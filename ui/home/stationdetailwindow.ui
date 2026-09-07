@@ -1,46 +1,692 @@
-<?xml version="1.0" encoding="UTF-8"?>
+<?xml version='1.0' encoding='UTF-8'?>
 <ui version="4.0">
- <class>StationDetailWindow</class>
- <widget class="QWidget" name="StationDetailWindow">
-  <property name="minimumSize"><size><width>390</width><height>760</height></size></property>
-  <property name="maximumSize"><size><width>390</width><height>760</height></size></property>
-  <property name="windowTitle"><string>充电站详情</string></property>
-  <layout class="QVBoxLayout" name="rootLayout">
-   <property name="spacing"><number>0</number></property><property name="leftMargin"><number>0</number></property><property name="topMargin"><number>0</number></property><property name="rightMargin"><number>0</number></property><property name="bottomMargin"><number>0</number></property>
-   <item><widget class="QWidget" name="headerBar"><property name="minimumSize"><size><width>0</width><height>52</height></size></property><property name="maximumSize"><size><width>16777215</width><height>52</height></size></property>
-    <layout class="QHBoxLayout" name="headerLayout"><property name="leftMargin"><number>8</number></property><property name="rightMargin"><number>16</number></property>
-     <item><widget class="QPushButton" name="backButton"><property name="minimumSize"><size><width>36</width><height>42</height></size></property><property name="maximumSize"><size><width>36</width><height>42</height></size></property><property name="text"><string>‹</string></property></widget></item>
-     <item><spacer name="headerLeftSpace"><property name="orientation"><enum>Qt::Horizontal</enum></property><property name="sizeHint"><size><width>40</width><height>1</height></size></property></spacer></item>
-     <item><widget class="QLabel" name="pageTitle"><property name="text"><string>充电站详情</string></property></widget></item>
-     <item><spacer name="headerRightSpace"><property name="orientation"><enum>Qt::Horizontal</enum></property><property name="sizeHint"><size><width>76</width><height>1</height></size></property></spacer></item>
+  <class>StationDetailWindow</class>
+  <widget class="QWidget" name="StationDetailWindow">
+    <property name="minimumSize">
+      <size>
+        <width>390</width>
+        <height>760</height>
+      </size>
+    </property>
+    <property name="maximumSize">
+      <size>
+        <width>390</width>
+        <height>760</height>
+      </size>
+    </property>
+    <property name="windowTitle">
+      <string>充电站详情</string>
+    </property>
+    <layout class="QVBoxLayout" name="rootLayout">
+      <property name="spacing">
+        <number>0</number>
+      </property>
+      <property name="leftMargin">
+        <number>0</number>
+      </property>
+      <property name="topMargin">
+        <number>0</number>
+      </property>
+      <property name="rightMargin">
+        <number>0</number>
+      </property>
+      <property name="bottomMargin">
+        <number>0</number>
+      </property>
+      <item>
+        <widget class="QWidget" name="headerBar">
+          <property name="minimumSize">
+            <size>
+              <width>0</width>
+              <height>54</height>
+            </size>
+          </property>
+          <property name="maximumSize">
+            <size>
+              <width>16777215</width>
+              <height>54</height>
+            </size>
+          </property>
+          <layout class="QHBoxLayout" name="headerLayout">
+            <property name="leftMargin">
+              <number>10</number>
+            </property>
+            <property name="topMargin">
+              <number>4</number>
+            </property>
+            <property name="rightMargin">
+              <number>10</number>
+            </property>
+            <property name="bottomMargin">
+              <number>4</number>
+            </property>
+            <item>
+              <widget class="QPushButton" name="backButton">
+                <property name="minimumSize">
+                  <size>
+                    <width>42</width>
+                    <height>42</height>
+                  </size>
+                </property>
+                <property name="maximumSize">
+                  <size>
+                    <width>42</width>
+                    <height>42</height>
+                  </size>
+                </property>
+                <property name="text">
+                  <string>‹</string>
+                </property>
+              </widget>
+            </item>
+            <item>
+              <widget class="QLabel" name="pageTitle">
+                <property name="sizePolicy">
+                  <sizepolicy hsizetype="Expanding" vsizetype="Preferred">
+                    <horstretch>1</horstretch>
+                    <verstretch>0</verstretch>
+                  </sizepolicy>
+                </property>
+                <property name="text">
+                  <string>充电站详情</string>
+                </property>
+                <property name="alignment">
+                  <set>Qt::AlignCenter</set>
+                </property>
+              </widget>
+            </item>
+            <item>
+              <widget class="QWidget" name="headerRightPlaceholder" native="true">
+                <property name="minimumSize">
+                  <size>
+                    <width>42</width>
+                    <height>42</height>
+                  </size>
+                </property>
+                <property name="maximumSize">
+                  <size>
+                    <width>42</width>
+                    <height>42</height>
+                  </size>
+                </property>
+              </widget>
+            </item>
+          </layout>
+        </widget>
+      </item>
+      <item>
+        <widget class="QScrollArea" name="detailScroll">
+          <property name="frameShape">
+            <enum>QFrame::NoFrame</enum>
+          </property>
+          <property name="widgetResizable">
+            <bool>true</bool>
+          </property>
+          <property name="horizontalScrollBarPolicy">
+            <enum>Qt::ScrollBarAlwaysOff</enum>
+          </property>
+          <widget class="QWidget" name="pageBackground">
+            <property name="geometry">
+              <rect>
+                <x>0</x>
+                <y>0</y>
+                <width>388</width>
+                <height>660</height>
+              </rect>
+            </property>
+            <layout class="QVBoxLayout" name="contentLayout">
+              <property name="leftMargin">
+                <number>12</number>
+              </property>
+              <property name="topMargin">
+                <number>10</number>
+              </property>
+              <property name="rightMargin">
+                <number>12</number>
+              </property>
+              <property name="bottomMargin">
+                <number>12</number>
+              </property>
+              <property name="spacing">
+                <number>10</number>
+              </property>
+              <item>
+                <widget class="QFrame" name="summaryCard">
+                  <layout class="QVBoxLayout" name="summaryLayout">
+                    <property name="leftMargin">
+                      <number>16</number>
+                    </property>
+                    <property name="topMargin">
+                      <number>14</number>
+                    </property>
+                    <property name="rightMargin">
+                      <number>16</number>
+                    </property>
+                    <property name="bottomMargin">
+                      <number>14</number>
+                    </property>
+                    <property name="spacing">
+                      <number>9</number>
+                    </property>
+                    <item>
+                      <layout class="QHBoxLayout" name="nameLayout">
+                        <item>
+                          <widget class="QLabel" name="stationName">
+                            <property name="text">
+                              <string>充电站详情</string>
+                            </property>
+                            <property name="wordWrap">
+                              <bool>true</bool>
+                            </property>
+                          </widget>
+                        </item>
+                        <item>
+                          <spacer name="nameSpace">
+                            <property name="orientation">
+                              <enum>Qt::Horizontal</enum>
+                            </property>
+                            <property name="sizeHint">
+                              <size>
+                                <width>20</width>
+                                <height>1</height>
+                              </size>
+                            </property>
+                          </spacer>
+                        </item>
+                        <item>
+                          <widget class="QLabel" name="openBadge">
+                            <property name="visible">
+                              <bool>false</bool>
+                            </property>
+                            <property name="text">
+                              <string />
+                            </property>
+                          </widget>
+                        </item>
+                      </layout>
+                    </item>
+                    <item>
+                      <layout class="QHBoxLayout" name="addressLayout">
+                        <property name="spacing">
+                          <number>7</number>
+                        </property>
+                        <item>
+                          <widget class="QLabel" name="addressIcon">
+                            <property name="minimumSize">
+                              <size>
+                                <width>18</width>
+                                <height>18</height>
+                              </size>
+                            </property>
+                            <property name="maximumSize">
+                              <size>
+                                <width>18</width>
+                                <height>18</height>
+                              </size>
+                            </property>
+                            <property name="pixmap">
+                              <pixmap resource="../../resources/resources.qrc">:/icons/pin.png</pixmap>
+                            </property>
+                            <property name="scaledContents">
+                              <bool>true</bool>
+                            </property>
+                          </widget>
+                        </item>
+                        <item>
+                          <widget class="QLabel" name="addressLabel">
+                            <property name="text">
+                              <string>地址待加载</string>
+                            </property>
+                            <property name="wordWrap">
+                              <bool>true</bool>
+                            </property>
+                          </widget>
+                        </item>
+                      </layout>
+                    </item>
+                    <item>
+                      <widget class="QLabel" name="availabilityLabel">
+                        <property name="text">
+                          <string>可用情况待加载</string>
+                        </property>
+                        <property name="wordWrap">
+                          <bool>true</bool>
+                        </property>
+                      </widget>
+                    </item>
+                    <item>
+                      <widget class="QFrame" name="availabilityCard">
+                        <layout class="QHBoxLayout" name="availabilityMetrics">
+                          <property name="leftMargin">
+                            <number>8</number>
+                          </property>
+                          <property name="topMargin">
+                            <number>9</number>
+                          </property>
+                          <property name="rightMargin">
+                            <number>8</number>
+                          </property>
+                          <property name="bottomMargin">
+                            <number>9</number>
+                          </property>
+                          <property name="spacing">
+                            <number>0</number>
+                          </property>
+                          <item>
+                            <widget class="QWidget" name="availableMetric">
+                              <layout class="QVBoxLayout" name="availableMetricLayout">
+                                <property name="spacing">
+                                  <number>2</number>
+                                </property>
+                                <property name="leftMargin">
+                                  <number>0</number>
+                                </property>
+                                <property name="topMargin">
+                                  <number>0</number>
+                                </property>
+                                <property name="rightMargin">
+                                  <number>0</number>
+                                </property>
+                                <property name="bottomMargin">
+                                  <number>0</number>
+                                </property>
+                                <item>
+                                  <widget class="QLabel" name="availableCountValue">
+                                    <property name="text">
+                                      <string>--</string>
+                                    </property>
+                                    <property name="alignment">
+                                      <set>Qt::AlignCenter</set>
+                                    </property>
+                                  </widget>
+                                </item>
+                                <item>
+                                  <widget class="QLabel" name="availableCountCaption">
+                                    <property name="text">
+                                      <string>空闲</string>
+                                    </property>
+                                    <property name="alignment">
+                                      <set>Qt::AlignCenter</set>
+                                    </property>
+                                  </widget>
+                                </item>
+                              </layout>
+                            </widget>
+                          </item>
+                          <item>
+                            <widget class="QFrame" name="metricDivider1">
+                              <property name="frameShape">
+                                <enum>QFrame::VLine</enum>
+                              </property>
+                              <property name="frameShadow">
+                                <enum>QFrame::Plain</enum>
+                              </property>
+                            </widget>
+                          </item>
+                          <item>
+                            <widget class="QWidget" name="unavailableMetric">
+                              <layout class="QVBoxLayout" name="unavailableMetricLayout">
+                                <property name="spacing">
+                                  <number>2</number>
+                                </property>
+                                <property name="leftMargin">
+                                  <number>0</number>
+                                </property>
+                                <property name="topMargin">
+                                  <number>0</number>
+                                </property>
+                                <property name="rightMargin">
+                                  <number>0</number>
+                                </property>
+                                <property name="bottomMargin">
+                                  <number>0</number>
+                                </property>
+                                <item>
+                                  <widget class="QLabel" name="unavailableCountValue">
+                                    <property name="text">
+                                      <string>--</string>
+                                    </property>
+                                    <property name="alignment">
+                                      <set>Qt::AlignCenter</set>
+                                    </property>
+                                  </widget>
+                                </item>
+                                <item>
+                                  <widget class="QLabel" name="unavailableCountCaption">
+                                    <property name="text">
+                                      <string>不可用</string>
+                                    </property>
+                                    <property name="alignment">
+                                      <set>Qt::AlignCenter</set>
+                                    </property>
+                                  </widget>
+                                </item>
+                              </layout>
+                            </widget>
+                          </item>
+                          <item>
+                            <widget class="QFrame" name="metricDivider2">
+                              <property name="frameShape">
+                                <enum>QFrame::VLine</enum>
+                              </property>
+                              <property name="frameShadow">
+                                <enum>QFrame::Plain</enum>
+                              </property>
+                            </widget>
+                          </item>
+                          <item>
+                            <widget class="QWidget" name="totalMetric">
+                              <layout class="QVBoxLayout" name="totalMetricLayout">
+                                <property name="spacing">
+                                  <number>2</number>
+                                </property>
+                                <property name="leftMargin">
+                                  <number>0</number>
+                                </property>
+                                <property name="topMargin">
+                                  <number>0</number>
+                                </property>
+                                <property name="rightMargin">
+                                  <number>0</number>
+                                </property>
+                                <property name="bottomMargin">
+                                  <number>0</number>
+                                </property>
+                                <item>
+                                  <widget class="QLabel" name="totalCountValue">
+                                    <property name="text">
+                                      <string>--</string>
+                                    </property>
+                                    <property name="alignment">
+                                      <set>Qt::AlignCenter</set>
+                                    </property>
+                                  </widget>
+                                </item>
+                                <item>
+                                  <widget class="QLabel" name="totalCountCaption">
+                                    <property name="text">
+                                      <string>充电桩总数</string>
+                                    </property>
+                                    <property name="alignment">
+                                      <set>Qt::AlignCenter</set>
+                                    </property>
+                                  </widget>
+                                </item>
+                              </layout>
+                            </widget>
+                          </item>
+                        </layout>
+                      </widget>
+                    </item>
+                  </layout>
+                </widget>
+              </item>
+              <item>
+                <widget class="QFrame" name="feeCard">
+                  <property name="minimumSize">
+                    <size>
+                      <width>0</width>
+                      <height>58</height>
+                    </size>
+                  </property>
+                  <layout class="QHBoxLayout" name="feeLayout">
+                    <property name="leftMargin">
+                      <number>16</number>
+                    </property>
+                    <property name="rightMargin">
+                      <number>16</number>
+                    </property>
+                    <property name="spacing">
+                      <number>10</number>
+                    </property>
+                    <item>
+                      <widget class="QLabel" name="feeIcon">
+                        <property name="minimumSize">
+                          <size>
+                            <width>24</width>
+                            <height>24</height>
+                          </size>
+                        </property>
+                        <property name="maximumSize">
+                          <size>
+                            <width>24</width>
+                            <height>24</height>
+                          </size>
+                        </property>
+                        <property name="pixmap">
+                          <pixmap resource="../../resources/resources.qrc">:/icons/station_charge.png</pixmap>
+                        </property>
+                        <property name="scaledContents">
+                          <bool>true</bool>
+                        </property>
+                      </widget>
+                    </item>
+                    <item>
+                      <widget class="QLabel" name="feeTitleLabel">
+                        <property name="text">
+                          <string>当前电价</string>
+                        </property>
+                      </widget>
+                    </item>
+                    <item>
+                      <spacer name="feeSpace">
+                        <property name="orientation">
+                          <enum>Qt::Horizontal</enum>
+                        </property>
+                        <property name="sizeHint">
+                          <size>
+                            <width>40</width>
+                            <height>1</height>
+                          </size>
+                        </property>
+                      </spacer>
+                    </item>
+                    <item>
+                      <widget class="QLabel" name="priceLabel">
+                        <property name="text">
+                          <string>--</string>
+                        </property>
+                        <property name="alignment">
+                          <set>Qt::AlignRight|Qt::AlignVCenter</set>
+                        </property>
+                      </widget>
+                    </item>
+                    <item>
+                      <widget class="QLabel" name="feeNote">
+                        <property name="visible">
+                          <bool>false</bool>
+                        </property>
+                        <property name="text">
+                          <string />
+                        </property>
+                      </widget>
+                    </item>
+                  </layout>
+                </widget>
+              </item>
+              <item>
+                <widget class="QLabel" name="detailStateLabel">
+                  <property name="visible">
+                    <bool>false</bool>
+                  </property>
+                  <property name="text">
+                    <string />
+                  </property>
+                  <property name="wordWrap">
+                    <bool>true</bool>
+                  </property>
+                  <property name="alignment">
+                    <set>Qt::AlignCenter</set>
+                  </property>
+                </widget>
+              </item>
+              <item>
+                <widget class="QPushButton" name="detailRetryButton">
+                  <property name="visible">
+                    <bool>false</bool>
+                  </property>
+                  <property name="minimumSize">
+                    <size>
+                      <width>0</width>
+                      <height>38</height>
+                    </size>
+                  </property>
+                  <property name="text">
+                    <string>重新加载</string>
+                  </property>
+                </widget>
+              </item>
+              <item>
+                <widget class="QFrame" name="chargerListCard">
+                  <layout class="QVBoxLayout" name="chargerCardLayout">
+                    <property name="leftMargin">
+                      <number>0</number>
+                    </property>
+                    <property name="topMargin">
+                      <number>0</number>
+                    </property>
+                    <property name="rightMargin">
+                      <number>0</number>
+                    </property>
+                    <property name="bottomMargin">
+                      <number>0</number>
+                    </property>
+                    <property name="spacing">
+                      <number>0</number>
+                    </property>
+                    <item>
+                      <widget class="QLabel" name="sectionTitle">
+                        <property name="minimumSize">
+                          <size>
+                            <width>0</width>
+                            <height>44</height>
+                          </size>
+                        </property>
+                        <property name="text">
+                          <string>选择充电桩</string>
+                        </property>
+                      </widget>
+                    </item>
+                    <item>
+                      <widget class="QWidget" name="chargerListHost">
+                        <layout class="QVBoxLayout" name="chargerListLayout">
+                          <property name="leftMargin">
+                            <number>0</number>
+                          </property>
+                          <property name="topMargin">
+                            <number>0</number>
+                          </property>
+                          <property name="rightMargin">
+                            <number>0</number>
+                          </property>
+                          <property name="bottomMargin">
+                            <number>0</number>
+                          </property>
+                          <property name="spacing">
+                            <number>0</number>
+                          </property>
+                        </layout>
+                      </widget>
+                    </item>
+                  </layout>
+                </widget>
+              </item>
+              <item>
+                <spacer name="contentBottomSpace">
+                  <property name="orientation">
+                    <enum>Qt::Vertical</enum>
+                  </property>
+                  <property name="sizeHint">
+                    <size>
+                      <width>1</width>
+                      <height>8</height>
+                    </size>
+                  </property>
+                </spacer>
+              </item>
+            </layout>
+          </widget>
+        </widget>
+      </item>
+      <item>
+        <widget class="QWidget" name="footer">
+          <property name="minimumSize">
+            <size>
+              <width>0</width>
+              <height>72</height>
+            </size>
+          </property>
+          <property name="maximumSize">
+            <size>
+              <width>16777215</width>
+              <height>72</height>
+            </size>
+          </property>
+          <layout class="QHBoxLayout" name="footerLayout">
+            <property name="leftMargin">
+              <number>12</number>
+            </property>
+            <property name="topMargin">
+              <number>10</number>
+            </property>
+            <property name="rightMargin">
+              <number>12</number>
+            </property>
+            <property name="bottomMargin">
+              <number>10</number>
+            </property>
+            <property name="spacing">
+              <number>10</number>
+            </property>
+            <item>
+              <widget class="QPushButton" name="navigationButton">
+                <property name="minimumSize">
+                  <size>
+                    <width>120</width>
+                    <height>50</height>
+                  </size>
+                </property>
+                <property name="maximumSize">
+                  <size>
+                    <width>120</width>
+                    <height>50</height>
+                  </size>
+                </property>
+                <property name="icon">
+                  <iconset resource="../../resources/resources.qrc">
+                    <normaloff>:/icons/pin.png</normaloff>:/icons/pin.png</iconset>
+                </property>
+                <property name="iconSize">
+                  <size>
+                    <width>18</width>
+                    <height>18</height>
+                  </size>
+                </property>
+                <property name="text">
+                  <string>路线导航</string>
+                </property>
+              </widget>
+            </item>
+            <item>
+              <widget class="QPushButton" name="chargeButton">
+                <property name="minimumSize">
+                  <size>
+                    <width>0</width>
+                    <height>50</height>
+                  </size>
+                </property>
+                <property name="text">
+                  <string>选择充电桩并充电</string>
+                </property>
+              </widget>
+            </item>
+          </layout>
+        </widget>
+      </item>
     </layout>
-   </widget></item>
-   <item><widget class="QScrollArea" name="detailScroll"><property name="widgetResizable"><bool>true</bool></property>
-    <widget class="QWidget" name="pageBackground"><property name="geometry"><rect><x>0</x><y>0</y><width>388</width><height>640</height></rect></property>
-     <layout class="QVBoxLayout" name="contentLayout"><property name="leftMargin"><number>12</number></property><property name="topMargin"><number>0</number></property><property name="rightMargin"><number>12</number></property><property name="bottomMargin"><number>14</number></property><property name="spacing"><number>10</number></property>
-      <item><widget class="QLabel" name="heroImage"><property name="minimumSize"><size><width>366</width><height>145</height></size></property><property name="maximumSize"><size><width>366</width><height>145</height></size></property><property name="pixmap"><pixmap resource="../../resources/resources.qrc">:/images/station_hero.png</pixmap></property><property name="scaledContents"><bool>true</bool></property></widget></item>
-      <item><widget class="QFrame" name="summaryCard"><layout class="QVBoxLayout" name="summaryLayout"><property name="leftMargin"><number>14</number></property><property name="topMargin"><number>12</number></property><property name="rightMargin"><number>14</number></property><property name="bottomMargin"><number>13</number></property><property name="spacing"><number>7</number></property>
-       <item><layout class="QHBoxLayout" name="nameLayout"><item><widget class="QLabel" name="stationName"><property name="text"><string>充电站详情</string></property><property name="styleSheet"><string notr="true">font-size:17px;font-weight:700;</string></property></widget></item><item><spacer name="nameSpace"><property name="orientation"><enum>Qt::Horizontal</enum></property><property name="sizeHint"><size><width>20</width><height>1</height></size></property></spacer></item><item><widget class="QLabel" name="openBadge"><property name="visible"><bool>false</bool></property><property name="text"><string/></property></widget></item></layout></item>
-       <item><widget class="QLabel" name="addressLabel"><property name="text"><string>地址待加载</string></property><property name="styleSheet"><string notr="true">color:#8B96A6;font-size:10px;</string></property></widget></item>
-       <item><widget class="QLabel" name="availabilityLabel"><property name="text"><string>可用情况待加载</string></property><property name="wordWrap"><bool>true</bool></property></widget></item>
-      </layout></widget></item>
-      <item><widget class="QFrame" name="feeCard"><layout class="QHBoxLayout" name="feeLayout"><property name="leftMargin"><number>14</number></property><property name="rightMargin"><number>14</number></property><item><widget class="QLabel" name="priceLabel"><property name="text"><string>当前电价
---</string></property><property name="styleSheet"><string notr="true">color:#1677FF;font-size:15px;font-weight:700;</string></property></widget></item><item><spacer name="feeSpace"><property name="orientation"><enum>Qt::Horizontal</enum></property><property name="sizeHint"><size><width>40</width><height>1</height></size></property></spacer></item><item><widget class="QLabel" name="feeNote"><property name="visible"><bool>false</bool></property><property name="text"><string/></property><property name="alignment"><set>Qt::AlignRight|Qt::AlignVCenter</set></property></widget></item></layout></widget></item>
-      <item><widget class="QLabel" name="sectionTitle"><property name="text"><string>选择充电桩</string></property></widget></item>
-      <item><widget class="QLabel" name="detailStateLabel"><property name="visible"><bool>false</bool></property><property name="text"><string/></property><property name="wordWrap"><bool>true</bool></property><property name="alignment"><set>Qt::AlignCenter</set></property></widget></item>
-      <item><widget class="QPushButton" name="detailRetryButton"><property name="visible"><bool>false</bool></property><property name="minimumSize"><size><width>0</width><height>38</height></size></property><property name="text"><string>重新加载</string></property></widget></item>
-      <item><widget class="QWidget" name="chargerListHost"><layout class="QVBoxLayout" name="chargerListLayout"><property name="leftMargin"><number>0</number></property><property name="topMargin"><number>0</number></property><property name="rightMargin"><number>0</number></property><property name="bottomMargin"><number>0</number></property><property name="spacing"><number>8</number></property></layout></widget></item>
-     </layout>
-    </widget>
-   </widget></item>
-   <item><widget class="QWidget" name="footer"><property name="minimumSize"><size><width>0</width><height>68</height></size></property><property name="maximumSize"><size><width>16777215</width><height>68</height></size></property>
-    <layout class="QHBoxLayout" name="footerLayout"><property name="leftMargin"><number>14</number></property><property name="topMargin"><number>9</number></property><property name="rightMargin"><number>14</number></property><property name="bottomMargin"><number>11</number></property><property name="spacing"><number>9</number></property>
-     <item><widget class="QPushButton" name="navigationButton"><property name="minimumSize"><size><width>104</width><height>48</height></size></property><property name="maximumSize"><size><width>104</width><height>48</height></size></property><property name="text"><string>路线导航</string></property></widget></item>
-     <item><widget class="QPushButton" name="chargeButton"><property name="minimumSize"><size><width>0</width><height>48</height></size></property><property name="text"><string>选择充电桩并充电</string></property></widget></item>
-    </layout>
-   </widget></item>
-  </layout>
- </widget>
- <resources><include location="../../resources/resources.qrc"/></resources>
- <connections/>
+  </widget>
+  <resources>
+    <include location="../../resources/resources.qrc" />
+  </resources>
+  <connections />
 </ui>

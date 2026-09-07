@@ -150,16 +150,19 @@ UserDemoController::UserDemoController(MockUserNetworkApi *network,
             m_mainWindow, &MainWindow::renderPrimaryPage);
     connect(m_mainWindow, &MainWindow::profileEditRequested,
             this, [this] {
+        m_profileEditOpenedFromMain = true;
         m_profileEdit->render(m_binder->currentProfileEditViewState());
         showOnly(m_profileEdit);
     });
     connect(m_profileEdit, &ProfileEditWindow::backRequested,
             this, [this] {
-        // ProfileRequired 时禁止绕过资料完善；普通资料编辑完成后才允许返回。
-        if (m_binder->currentProfileEditViewState().submitState
-            == SubmitState::Success) {
+        if (m_profileEditOpenedFromMain) {
             showOnly(m_mainWindow);
+            return;
         }
+        // 新用户资料尚未完善时不能绕过该步骤进入首页；返回即放弃本次
+        // 已认证会话，由既有流程统一清理状态并导航回登录页。
+        m_binder->logoutRequested();
     });
 
     connect(m_mainWindow, &MainWindow::locateRequested,
@@ -302,6 +305,7 @@ void UserDemoController::handleNavigation(NavigationTarget target)
         showOnly(m_login);
         break;
     case NavigationTarget::ProfileEdit:
+        m_profileEditOpenedFromMain = false;
         m_profileEdit->render(m_binder->currentProfileEditViewState());
         showOnly(m_profileEdit);
         break;

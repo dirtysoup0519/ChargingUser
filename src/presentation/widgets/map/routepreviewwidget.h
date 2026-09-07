@@ -7,6 +7,7 @@
 #include <optional>
 
 class QWebEngineView;
+class QPushButton;
 class QShowEvent;
 class TencentMapBridge;
 
@@ -30,6 +31,9 @@ protected:
 
 private:
     void initializeTencentMap();
+    void publishSnapshot();
+    void updateRecenterButton();
+    void recenterRoute();
     QPointF mapPoint(const GeoPoint &point, const QRectF &area,
                      double minLatitude, double maxLatitude,
                      double minLongitude, double maxLongitude) const;
@@ -39,4 +43,5 @@ private:
     std::optional<GeoPoint> m_destination;
     QWebEngineView *m_webView = nullptr;
     TencentMapBridge *m_mapBridge = nullptr;
+    QPushButton *m_recenterButton;
 };

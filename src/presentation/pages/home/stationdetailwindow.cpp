@@ -1,9 +1,13 @@
 #include "stationdetailwindow.h"
+#include "dragscrollhelper.h"
 #include "ui_stationdetailwindow.h"
 #include "presentation/widgets/map/interactivemapwidget.h"
+
+#include <algorithm>
 #include <QFrame>
 #include <QHBoxLayout>
 #include <QLabel>
+#include <QPixmap>
 #include <QPushButton>
 #include <QSignalBlocker>
 #include <QStyle>
@@ -13,11 +17,13 @@ StationDetailWindow::StationDetailWindow(QWidget *parent)
     : QWidget(parent), ui(new Ui::StationDetailWindow)
 {
     ui->setupUi(this);
+    DragScrollHelper::enableFor(this);
     m_map = new InteractiveMapWidget(this);
     m_map->setMapKey(qEnvironmentVariable("TENCENT_MAP_KEY"));
-    m_map->setMinimumSize(366, 180);
+    m_map->setMinimumHeight(180);
     m_map->setMaximumHeight(180);
-    ui->contentLayout->insertWidget(1, m_map);
+    ui->contentLayout->insertWidget(0, m_map);
+    DragScrollHelper::prioritizeInteractiveWidget(m_map, ui->detailScroll);
     // 详情页没有独立的定位业务上下文；点击地图定位按钮时，
     // 将当前站点重新置于视野中心，避免按钮看起来无响应。
     connect(m_map, &InteractiveMapWidget::locateRequested, this, [this] {
@@ -52,14 +58,32 @@ void StationDetailWindow::render(const StationDetailViewState &state)
         m_map->setSelectedStation(state.stationId);
         m_map->renderMapStatus(state.status, state.message, state.canRetry);
     }
-    ui->stationName->setText(state.name.isEmpty() ? tr("充电站详情") : state.name);
+    const QString stationName = state.name.isEmpty() ? tr("充电站详情") : state.name;
+    const QString availability = state.availabilityText.isEmpty()
+                                     ? tr("可用情况待加载")
+                                     : state.availabilityText;
+    const QString price = state.priceText.isEmpty() ? tr("--") : state.priceText;
+    ui->stationName->setText(stationName);
+
     ui->addressLabel->setText(state.address.isEmpty() ? tr("地址待加载") : state.address);
-    ui->availabilityLabel->setText(state.availabilityText.isEmpty()
-                                       ? tr("可用情况待加载")
-                                       : state.availabilityText);
-    ui->priceLabel->setText(state.priceText.isEmpty()
-                                ? tr("当前电价\n--")
-                                : tr("当前电价\n%1").arg(state.priceText));
+    ui->availabilityLabel->setText(availability);
+    ui->priceLabel->setText(price);
+
+    const int totalCount = state.chargers.size();
+    const int availableCount = std::count_if(
+        state.chargers.cbegin(), state.chargers.cend(),
+        [](const ChargerListItemView &charger) { return charger.canCharge; });
+    const int unavailableCount = totalCount - availableCount;
+    const bool hasChargerData = totalCount > 0;
+    ui->availableCountValue->setText(hasChargerData
+                                         ? QString::number(availableCount)
+                                         : tr("--"));
+    ui->unavailableCountValue->setText(hasChargerData
+                                           ? QString::number(unavailableCount)
+                                           : tr("--"));
+    ui->totalCountValue->setText(hasChargerData
+                                     ? QString::number(totalCount)
+                                     : tr("--"));
 
     const bool loading = state.status == MapLoadStatus::Loading;
     const bool ready = state.status == MapLoadStatus::Ready;
@@ -119,15 +143,19 @@ void StationDetailWindow::rebuildChargers(
         row->setObjectName(QStringLiteral("chargerRow"));
         row->setProperty("chargerId", charger.chargerId);
         row->setProperty("available", charger.canCharge);
-        row->setMinimumHeight(68);
+        row->setMinimumHeight(82);
 
         auto *layout = new QHBoxLayout(row);
-        layout->setContentsMargins(12, 8, 12, 8);
-        layout->setSpacing(10);
+        layout->setContentsMargins(12, 9, 10, 9);
+        layout->setSpacing(11);
 
-        auto *idLabel = new QLabel(charger.chargerId, row);
+        QString displayId = charger.chargerId;
+        if (displayId.size() > 8)
+            displayId = displayId.section(QLatin1Char('-'), -1).toUpper();
+        auto *idLabel = new QLabel(displayId, row);
         idLabel->setObjectName(QStringLiteral("chargerIdLabel"));
-        idLabel->setMinimumWidth(62);
+        idLabel->setToolTip(charger.chargerId);
+        idLabel->setFixedSize(58, 56);
         idLabel->setAlignment(Qt::AlignCenter);
         layout->addWidget(idLabel);
 
@@ -149,6 +177,20 @@ void StationDetailWindow::rebuildChargers(
                                   : QStringLiteral("busyBadge"));
         status->setToolTip(charger.disabledReason);
         layout->addWidget(status);
+
+        auto *actionIcon = new QLabel(row);
+        actionIcon->setObjectName(QStringLiteral("chargerActionIcon"));
+        actionIcon->setFixedSize(32, 32);
+        const QString iconPath = charger.canCharge
+                                     ? QStringLiteral(":/icons/station_charge.png")
+                                     : QStringLiteral(":/icons/station_charge_active.png");
+        actionIcon->setPixmap(QPixmap(iconPath).scaled(
+            28, 28, Qt::KeepAspectRatio, Qt::SmoothTransformation));
+        actionIcon->setAlignment(Qt::AlignCenter);
+        actionIcon->setToolTip(charger.canCharge
+                                   ? tr("当前充电桩可用")
+                                   : charger.disabledReason);
+        layout->addWidget(actionIcon);
         ui->chargerListLayout->addWidget(row);
     }
 }

@@ -61,6 +61,7 @@ private:
     StationDetailWindow *m_stationDetail;
     NavigationWindow *m_navigation;
     WalletRechargeWindow *m_walletRecharge;
+    bool m_profileEditOpenedFromMain = false;
     QString m_newUserNicknamePattern;
     QHash<QString, DemoUserData> m_demoUsers;
     QSet<QString> m_failedOnce;

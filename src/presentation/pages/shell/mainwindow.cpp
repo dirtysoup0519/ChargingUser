@@ -1,4 +1,5 @@
 #include "mainwindow.h"
+#include "dragscrollhelper.h"
 #include "ui_mainwindow.h"
 #include "interactivemapwidget.h"
 #include <algorithm>
@@ -21,6 +22,7 @@
 MainWindow::MainWindow(QWidget *parent) : QWidget(parent), ui(new Ui::MainWindow)
 {
     ui->setupUi(this);
+    DragScrollHelper::enableFor(this);
 
     connect(ui->mapView, &InteractiveMapWidget::markerSelected,
             this, [this](const QString &stationId) { selectStation(stationId, true); });
