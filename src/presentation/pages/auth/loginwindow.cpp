@@ -32,7 +32,6 @@ void refreshStyle(QWidget *widget)
 LoginWindow::LoginWindow(QWidget *parent) : QWidget(parent), ui(new Ui::LoginWindow)
 {
     ui->setupUi(this);
-    setWindowFlag(Qt::FramelessWindowHint);
     connect(ui->btnLogin, &QPushButton::clicked,
             this, &LoginWindow::submitCurrentInput);
     connect(ui->editPhoneNumber, &QLineEdit::returnPressed,

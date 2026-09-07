@@ -33,7 +33,6 @@ ProfileEditWindow::ProfileEditWindow(QWidget *parent)
     : QWidget(parent), ui(new Ui::ProfileEditWindow)
 {
     ui->setupUi(this);
-    setWindowFlag(Qt::FramelessWindowHint);
     connect(ui->backButton, &QPushButton::clicked,
             this, &ProfileEditWindow::backRequested);
     connect(ui->saveButton, &QPushButton::clicked,

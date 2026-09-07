@@ -11,7 +11,6 @@ WalletRechargeWindow::WalletRechargeWindow(QWidget *parent)
     : QWidget(parent), ui(new Ui::WalletRechargeWindow)
 {
     ui->setupUi(this);
-    setWindowFlag(Qt::FramelessWindowHint);
 
     auto *amountGroup = new QButtonGroup(this);
     amountGroup->setExclusive(true);
