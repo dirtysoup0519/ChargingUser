@@ -61,9 +61,10 @@ void StationDetailWindow::render(const StationDetailViewState &state)
     ui->detailRetryButton->setVisible(state.canRetry && !loading);
     ui->detailRetryButton->setEnabled(state.canRetry && !loading);
 
-    rebuildChargers(ready ? state.chargers : QVector<ChargerListItemView>{});
-    ui->chargerListHost->setVisible(ready && !state.chargers.isEmpty());
-    ui->sectionTitle->setVisible(ready);
+    // 刷新期间和刷新失败后保留上一次成功内容，只通过状态文案标明新鲜度。
+    rebuildChargers(state.chargers);
+    ui->chargerListHost->setVisible(!state.chargers.isEmpty());
+    ui->sectionTitle->setVisible(ready || !state.chargers.isEmpty());
 
     ui->navigationButton->setEnabled(ready && state.canNavigate
                                      && !state.stationId.isEmpty());
@@ -82,8 +83,14 @@ void StationDetailWindow::rebuildChargers(
     const QVector<ChargerListItemView> &chargers)
 {
     while (QLayoutItem *item = ui->chargerListLayout->takeAt(0)) {
-        if (QWidget *widget = item->widget())
+        if (QWidget *widget = item->widget()) {
+            // deleteLater 在事件循环处理前，旧行仍是 chargerListHost 的子对象，
+            // 会被 findChildren 统计、也会短暂叠加显示。先脱离父对象再延迟销毁：
+            // 既避免在子控件自己的信号槽调用栈里同步 delete 的崩溃风险，
+            // 又保证重建立刻生效（修复 detailRefreshKeepsLastSuccessfulChargers）。
+            widget->setParent(nullptr);
             widget->deleteLater();
+        }
         delete item;
     }
 

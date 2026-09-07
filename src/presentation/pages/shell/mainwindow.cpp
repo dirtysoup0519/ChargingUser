@@ -26,13 +26,10 @@ MainWindow::MainWindow(QWidget *parent) : QWidget(parent), ui(new Ui::MainWindow
             this, [this](const QString &stationId) { selectStation(stationId, true); });
     connect(ui->mapView, &InteractiveMapWidget::locateRequested,
             this, &MainWindow::locateRequested);
-    connect(ui->mapView, &InteractiveMapWidget::mapReloadRequested,
-            this, &MainWindow::mapReloadRequested);
     connect(ui->mapView, &InteractiveMapWidget::searchAreaRequested,
-            this, [this] {
-        if (m_viewportBounds && m_viewportBounds->isValid())
-            emit searchAreaRequested(*m_viewportBounds);
-    });
+            this, &MainWindow::searchAreaRequested);
+    connect(ui->mapView, &InteractiveMapWidget::mapReady,
+            this, &MainWindow::mapReady);
     connect(ui->btnStationSearch, &QPushButton::clicked, this, [this] {
         const QString keyword = ui->searchBox->text().trimmed();
         if (keyword.isEmpty())
@@ -102,7 +99,7 @@ void MainWindow::renderHome(const HomeMapViewState &state)
     ui->mapView->renderLocationStatus(state.locationStatus,
                                       state.locationMessage,
                                       state.canRetryLocation);
-    m_viewportBounds = state.camera.bounds;
+    ui->mapView->setViewportBounds(state.camera.bounds);
 
     QString stationStateMessage;
     QString stationStateKind;
@@ -121,9 +118,9 @@ void MainWindow::renderHome(const HomeMapViewState &state)
         stationStateKind = QStringLiteral("empty");
         showStationState = true;
     } else if (state.stationsStatus == MapLoadStatus::Error && !keywordSearch) {
-        stationStateMessage = state.searchMessage.isEmpty()
+        stationStateMessage = state.stationsMessage.isEmpty()
                                   ? tr("附近充电站加载失败。")
-                                  : state.searchMessage;
+                                  : state.stationsMessage;
         stationStateKind = QStringLiteral("error");
         showStationState = true;
         showStationRetry = state.canRetryStations;

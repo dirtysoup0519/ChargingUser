@@ -110,6 +110,29 @@ private slots:
         QCOMPARE(state.stations.size(), 2);
         QCOMPARE(state.markers.size(), 2);
         QVERIFY(state.currentLocation.has_value());
+        QVERIFY(state.camera.bounds.has_value());
+        QVERIFY(state.camera.bounds->isValid());
+    }
+
+    void locationFailureFallsBackToDefaultStationCatalog()
+    {
+        Fixture fixture;
+        MockMapService::Behavior behavior;
+        behavior.outcome = MockMapService::Outcome::Failure;
+        behavior.error.code = QStringLiteral("map-locate-unsupported");
+        behavior.error.displayMessage = QStringLiteral("定位不可用");
+        fixture.map.setLocateBehavior(behavior);
+
+        fixture.binder.activateHome();
+
+        QTRY_COMPARE(fixture.binder.currentHomeState().stationsStatus,
+                     MapLoadStatus::Ready);
+        const HomeMapViewState state = fixture.binder.currentHomeState();
+        QCOMPARE(state.locationStatus, MapLoadStatus::Error);
+        QCOMPARE(state.locationMessage, QStringLiteral("定位不可用"));
+        QCOMPARE(state.stations.size(), 2);
+        QVERIFY(!state.currentLocation.has_value());
+        QCOMPARE(fixture.charger.stationsRequestCount(), 1);
     }
 
     void latestStationDetailWinsDuringRapidSwitch()

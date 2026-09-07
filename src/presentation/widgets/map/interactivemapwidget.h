@@ -30,12 +30,14 @@ public:
     void renderLocationStatus(MapLoadStatus status,
                               const QString &message,
                               bool canRetry);
+    void setViewportBounds(const std::optional<GeoBounds> &bounds);
+    void reload();
 
 signals:
+    void mapReady();
     void markerSelected(const QString &stationId);
     void locateRequested();
-    void searchAreaRequested();
-    void mapReloadRequested();
+    void searchAreaRequested(const GeoBounds &bounds);
 
 protected:
     void mousePressEvent(QMouseEvent *event) override;

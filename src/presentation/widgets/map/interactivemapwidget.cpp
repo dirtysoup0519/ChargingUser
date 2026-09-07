@@ -7,6 +7,7 @@
 #include <QPainter>
 #include <QPushButton>
 #include <QStyle>
+#include <QTimer>
 #include <QVBoxLayout>
 
 InteractiveMapWidget::InteractiveMapWidget(QWidget *parent)
@@ -61,10 +62,11 @@ InteractiveMapWidget::InteractiveMapWidget(QWidget *parent)
     connect(m_locateButton, &QPushButton::clicked, this, &InteractiveMapWidget::locateRequested);
     connect(m_searchAreaButton, &QPushButton::clicked, this, [this] {
         m_searchAreaButton->hide();
-        emit searchAreaRequested();
+        if (m_viewportBounds && m_viewportBounds->isValid())
+            emit searchAreaRequested(*m_viewportBounds);
     });
     connect(m_mapRetryButton, &QPushButton::clicked,
-            this, &InteractiveMapWidget::mapReloadRequested);
+            this, &InteractiveMapWidget::reload);
     connect(m_locationRetryButton, &QPushButton::clicked,
             this, &InteractiveMapWidget::locateRequested);
 }
@@ -143,6 +145,20 @@ void InteractiveMapWidget::renderLocationStatus(MapLoadStatus status,
     m_locationStatePanel->style()->polish(m_locationStatePanel);
     m_locationStatePanel->adjustSize();
     positionOverlayButtons();
+}
+
+void InteractiveMapWidget::setViewportBounds(
+    const std::optional<GeoBounds> &bounds)
+{
+    m_viewportBounds = bounds && bounds->isValid() ? bounds : std::nullopt;
+    if (!m_viewportBounds)
+        m_searchAreaButton->hide();
+}
+
+void InteractiveMapWidget::reload()
+{
+    update();
+    QTimer::singleShot(0, this, [this] { emit mapReady(); });
 }
 
 void InteractiveMapWidget::mousePressEvent(QMouseEvent *event)

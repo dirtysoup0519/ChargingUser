@@ -8,15 +8,20 @@
 #include "modules/map/mockmapservice.h"
 #include "modules/user/mockusernetworkapi.h"
 #include "presentation/pages/auth/loginwindow.h"
+#include "presentation/pages/home/stationdetailwindow.h"
 #include "presentation/pages/shell/mainwindow.h"
 #include "presentation/pages/profile/profileeditwindow.h"
+#include "presentation/widgets/map/interactivemapwidget.h"
 
+#include <QApplication>
 #include <QLabel>
 #include <QFile>
+#include <QFrame>
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QLineEdit>
+#include <QMouseEvent>
 #include <QPushButton>
 #include <QStackedWidget>
 #include <QToolButton>
@@ -60,6 +65,9 @@ private slots:
     void oldUserReachesHomeAndProfileSummary();
     void primaryNavigationMatchesRequestedPages();
     void stationAndRechargeNavigationMatchesPages();
+    void homeRendersMapLocationAndStationStates();
+    void draggingFallbackMapProducesSearchableBounds();
+    void detailRefreshKeepsLastSuccessfulChargers();
     void oldUserReloginKeepsConfiguredNickname();
     void newUserCompletesNicknameAndReachesHome();
     void newUserReloginUsesExistingUserAndSavedNickname();
@@ -86,6 +94,7 @@ private:
 
 void UserDemoTests::init()
 {
+    qRegisterMetaType<GeoBounds>();
     m_network = new MockUserNetworkApi(this);
     m_assembly = new UserApplicationAssembly(m_network, this);
     m_chargerService = new MockChargerService(this);
@@ -313,6 +322,102 @@ void UserDemoTests::stationAndRechargeNavigationMatchesPages()
     QVERIFY(rechargeBack);
     QTest::mouseClick(rechargeBack, Qt::LeftButton);
     QCOMPARE(currentMainPageName(), QStringLiteral("profilePage"));
+}
+
+void UserDemoTests::homeRendersMapLocationAndStationStates()
+{
+    HomeMapViewState state;
+    state.mapStatus = MapLoadStatus::Error;
+    state.mapMessage = QStringLiteral("地图加载失败");
+    state.canRetryMap = true;
+    state.locationStatus = MapLoadStatus::Error;
+    state.locationMessage = QStringLiteral("定位不可用");
+    state.canRetryLocation = true;
+    state.stationsStatus = MapLoadStatus::Error;
+    state.stationsMessage = QStringLiteral("站点加载失败");
+    state.canRetryStations = true;
+    m_mainWindow->renderHome(state);
+
+    QLabel *mapMessage = m_mainWindow->findChild<QLabel *>(QStringLiteral("mapStateLabel"));
+    QLabel *locationMessage = m_mainWindow->findChild<QLabel *>(QStringLiteral("locationStateLabel"));
+    QLabel *stationMessage = m_mainWindow->findChild<QLabel *>(QStringLiteral("stationStateLabel"));
+    QPushButton *mapRetry = m_mainWindow->findChild<QPushButton *>(QStringLiteral("mapRetryButton"));
+    QPushButton *locationRetry = m_mainWindow->findChild<QPushButton *>(QStringLiteral("locationRetryButton"));
+    QPushButton *stationRetry = m_mainWindow->findChild<QPushButton *>(QStringLiteral("stationRetryButton"));
+    QVERIFY(mapMessage);
+    QVERIFY(locationMessage);
+    QVERIFY(stationMessage);
+    QVERIFY(mapRetry);
+    QVERIFY(locationRetry);
+    QVERIFY(stationRetry);
+    QVERIFY(mapMessage->text().contains(QStringLiteral("地图加载失败")));
+    QVERIFY(locationMessage->text().contains(QStringLiteral("定位不可用")));
+    QVERIFY(stationMessage->text().contains(QStringLiteral("站点加载失败")));
+    QVERIFY(!mapRetry->isHidden());
+    QVERIFY(!locationRetry->isHidden());
+    QVERIFY(!stationRetry->isHidden());
+}
+
+void UserDemoTests::draggingFallbackMapProducesSearchableBounds()
+{
+    submitPhone(userForScenario(QStringLiteral("normal"))
+                    .value(QStringLiteral("phone")).toString());
+    waitForMainWindow();
+    QTRY_VERIFY(m_mapBinder->currentHomeState().camera.bounds.has_value());
+    const GeoBounds original = *m_mapBinder->currentHomeState().camera.bounds;
+
+    InteractiveMapWidget *map = m_mainWindow->findChild<InteractiveMapWidget *>(
+        QStringLiteral("mapView"));
+    QVERIFY(map);
+    QSignalSpy searchSpy(m_mainWindow, &MainWindow::searchAreaRequested);
+    const QPoint start(100, 100);
+    const QPoint end(135, 115);
+    QTest::mousePress(map, Qt::LeftButton, Qt::NoModifier, start);
+    QMouseEvent move(QEvent::MouseMove, QPointF(end), Qt::NoButton,
+                     Qt::LeftButton, Qt::NoModifier);
+    QApplication::sendEvent(map, &move);
+    QTest::mouseRelease(map, Qt::LeftButton, Qt::NoModifier, end);
+
+    QPushButton *searchArea = map->findChild<QPushButton *>(
+        QStringLiteral("btnSearchArea"));
+    QVERIFY(searchArea);
+    QVERIFY(!searchArea->isHidden());
+    QTest::mouseClick(searchArea, Qt::LeftButton);
+    QCOMPARE(searchSpy.count(), 1);
+    const GeoBounds shifted = searchSpy.first().at(0).value<GeoBounds>();
+    QVERIFY(shifted.isValid());
+    QVERIFY(shifted.southWest.latitude != original.southWest.latitude
+            || shifted.southWest.longitude != original.southWest.longitude);
+}
+
+void UserDemoTests::detailRefreshKeepsLastSuccessfulChargers()
+{
+    submitPhone(userForScenario(QStringLiteral("normal"))
+                    .value(QStringLiteral("phone")).toString());
+    waitForMainWindow();
+    QTRY_VERIFY_WITH_TIMEOUT(
+        m_mainWindow->findChild<QPushButton *>(QStringLiteral("stationDetailsButton")), 1000);
+    QTest::mouseClick(m_mainWindow->findChild<QPushButton *>(
+                          QStringLiteral("stationDetailsButton")),
+                      Qt::LeftButton);
+
+    StationDetailWindow *detail = m_mainWindow->findChild<StationDetailWindow *>();
+    QVERIFY(detail);
+    QTRY_COMPARE_WITH_TIMEOUT(detail->findChildren<QFrame *>(
+                                  QStringLiteral("chargerRow")).size(), 1, 1000);
+
+    MockChargerService::Behavior behavior;
+    behavior.responseDelayMs = 100;
+    behavior.timeoutMs = 500;
+    m_chargerService->setStationDetailBehavior(behavior);
+    QPushButton *retry = detail->findChild<QPushButton *>(
+        QStringLiteral("detailRetryButton"));
+    QVERIFY(retry);
+    emit detail->stationRefreshRequested();
+
+    QCOMPARE(m_mapBinder->currentStationDetailState().status,
+             MapLoadStatus::Loading);
+    QCOMPARE(detail->findChildren<QFrame *>(QStringLiteral("chargerRow")).size(), 1);
 }
 
 void UserDemoTests::oldUserReloginKeepsConfiguredNickname()

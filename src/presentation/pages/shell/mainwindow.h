@@ -39,7 +39,6 @@ signals:
     void stationSearchRequested(const QString &keyword);
     void stationSearchRetryRequested();
     void stationSearchCleared();
-    void mapReloadRequested();
     void searchAreaRequested(const GeoBounds &bounds);
     void stationSelected(const QString &stationId);
     void profileEditRequested();
@@ -61,6 +60,5 @@ private:
     QVector<StationListItemView> m_stationItems;
     QString m_selectedStationId;
     StationSortMode m_stationSortMode = StationSortMode::Distance;
-    std::optional<GeoBounds> m_viewportBounds;
     quint64 m_cameraRevision = 0;
 };

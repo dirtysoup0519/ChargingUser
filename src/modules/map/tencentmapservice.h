@@ -41,7 +41,7 @@ public:
 
     /**
      * 注入腾讯控制台申请的 WebService Key。允许运行时替换（例如登录后下发），
-     * 但不允许为空调用发起请求；缺失 Key 时请求直接以 map-key-missing 失败。
+     * 但不允许为空调用发起请求；缺失 Key 时请求直接以 map-config-missing 失败。
      */
     void setApiKey(const QString &key);
 

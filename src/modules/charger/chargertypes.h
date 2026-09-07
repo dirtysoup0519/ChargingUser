@@ -43,6 +43,11 @@ struct StationQuery
     {
         return center.has_value() != bounds.has_value();
     }
+
+    bool hasAtMostOneArea() const
+    {
+        return !(center.has_value() && bounds.has_value());
+    }
 };
 
 struct StationSummary

@@ -1,6 +1,6 @@
 # 地图与导航最终合同
 
-日期：2026-09-05；最近决策更新：2026-09-07；代码核对基线：`56a5614`。状态：**客户端公共合同已冻结并生效，冻结提交为 `34a4094`。第 10.2 节外部接缝允许在实现阶段逐项确认，但只能通过独立 `contract:` 变更更新。**
+日期：2026-09-05；最近决策更新：2026-09-07；代码核对基线：`map-navigation-ui`。状态：**客户端公共合同已冻结并生效，冻结提交为 `34a4094`。第 10.2 节外部接缝允许在实现阶段逐项确认，但只能通过独立 `contract:` 变更更新。**
 
 本文是首页地图、站点详情与路线导航的唯一权威合同，合并原协作约定与接口审核稿。合同同时约束 UI、逻辑、网络和集成负责人；接口冻结前新增声明不能被当作已接入实现调用。其他文档与本文冲突时，以本文为准并同步修订旧文档。
 
@@ -29,12 +29,12 @@
 
 | 项目 | 现状 |
 |---|---|
-| 首页 | 位于 `ui/shell/mainwindow.ui` 与 `pages/shell/mainwindow.*`；站点已按 ViewState 动态渲染，地图仍为图片背景和自绘标记，不能返回真实视野 |
+| 首页 | 位于 `ui/shell/mainwindow.ui` 与 `pages/shell/mainwindow.*`；站点已按 ViewState 动态渲染；降级地图可按已有真实 bounds 推算拖动后的查询范围，但仍不是腾讯道路底图 |
 | 站点详情 | 已按 `StationDetailViewState` 动态渲染详情、充电桩、加载/错误和路线能力 |
 | 地图导航 | 已按 `NavigationViewState` 展示驾车/步行、手动起点、候选地址、路线摘要和步骤；路线仍为无道路底图的自绘预览 |
 | 页面容器 | `MainWindow::renderSecondaryPage(QWidget*)`，二级页进入同一 pageStack |
-| Demo | 已使用 `MapUiBinder + MockMapService + MockChargerService` 贯通动态站点、指定 stationId 详情、路线和返回 |
-| 业务与地图 | `IMapService`、`IChargerService`、Mock、坐标转换和 `MapUiBinder` 已实现；真实站点协议和腾讯适配器未实现 |
+| Demo | 已使用 `MapUiBinder + MockChargerService` 贯通流程；默认 Mock，可用环境变量切换腾讯 WebService 适配器 |
+| 业务与地图 | `IMapService`、`IChargerService`、Mock、坐标转换、`MapUiBinder` 和腾讯 WebService 适配器已实现；真实站点网络协议仍未实现 |
 | Qt 模块 | 正式工程当前为 widgets、network；BitDev Qt 6.2.4 尚缺 WebEngineWidgets/WebChannel 开发组件 |
 
 现有信号必须兼容迁移：
@@ -79,7 +79,7 @@ void backRequested();
 | GeoBounds | `southWest, northEast`；纬度 [-90,90]、经度 [-180,180]，有限数；跨日期变更线范围首轮拒绝并提示，不静默翻转 |
 | LocationResult | `point, accuracyMeters, capturedAtUtc, source`；source 区分设备/手动；无精度使用 optional |
 | GeocodeResult | `candidates`；每项包含稳定候选 ID、名称、完整地址和 point；零项为空结果，多项由用户选择后再规划路线 |
-| StationQuery | `optional center, optional bounds, keyword, cursor, pageSize`；center/bounds 二选一；半径如使用以米表示，范围/分页上限由服务验证 |
+| StationQuery | `optional center, optional bounds, keyword, cursor, pageSize`；center/bounds 最多一个；两者都没有时表示按后端默认城市/目录浏览，不代表当前位置；范围/分页上限由服务验证 |
 | StationSummary | `stationId, name, address, optional point, optional distanceMeters, availableCount, totalCount`；价格来源与单位单独明确，展示文案不参与计算 |
 | StationDetail | `stationId, summary, chargers, updatedAtUtc`；Charger 含稳定 chargerId、状态、可操作标记及原因 |
 | TravelMode | `Driving, Walking`；供应商不支持时返回明确错误，不暗中切换方式 |
@@ -423,7 +423,7 @@ src/demo/map-demo-data.tmp
 
 `map-demo-data.tmp` 可调整当前位置、任意数量站点、每站任意数量充电桩及响应场景。`scenario.canvasState` 控制画布 ready/loading/error；定位和站点场景支持 success/failure/no-response、延迟、超时和错误文案。生产页面不得直接读取 tmp，未来接入真实数据库或网络时只替换服务实现，保留 Binder、ViewState 和页面渲染链路。该文件受全局 `*.tmp` 忽略规则影响，提交 Demo 时必须显式纳入版本管理，否则资源清单会引用缺失文件。
 
-`MainWindow::mapReloadRequested()` 是展示画布的重载意图。Demo 可将它接到 `IMapUiBinder::mapReady()` 来恢复场景；正式集成应由地图画布适配器重新初始化真实底图，并根据结果回报 `mapReady()` 或 `mapLoadFailed()`，不得把重载按钮直接解释为站点查询。
+地图错误面板的重试按钮调用画布的 `reload()`；画布重新初始化成功后通过 `MainWindow::mapReady()` 转发给 Binder。正式腾讯地图适配器应在真实底图完成初始化后回报 `mapReady()`，失败时回报 `mapLoadFailed()`，不得在按钮点击瞬间伪造成功，也不得把重载解释为站点查询。当前降级画布只重绘本地图片，并在下一事件循环报告 ready。
 
 推荐按两个小提交交接：
 

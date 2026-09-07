@@ -164,14 +164,14 @@ UserDemoController::UserDemoController(MockUserNetworkApi *network,
 
     connect(m_mainWindow, &MainWindow::locateRequested,
             m_mapBinder, &IMapUiBinder::locateRequested);
+    connect(m_mainWindow, &MainWindow::mapReady,
+            m_mapBinder, &IMapUiBinder::mapReady);
     connect(m_mainWindow, &MainWindow::stationSearchRequested,
             m_mapBinder, &IMapUiBinder::stationSearchRequested);
     connect(m_mainWindow, &MainWindow::stationSearchRetryRequested,
             m_mapBinder, &IMapUiBinder::stationSearchRetryRequested);
     connect(m_mainWindow, &MainWindow::stationSearchCleared,
             m_mapBinder, &IMapUiBinder::stationSearchCleared);
-    connect(m_mainWindow, &MainWindow::mapReloadRequested,
-            m_mapBinder, &IMapUiBinder::mapReady);
     connect(m_mainWindow, &MainWindow::searchAreaRequested,
             m_mapBinder, &IMapUiBinder::searchAreaRequested);
     connect(m_mainWindow, &MainWindow::stationSelected,

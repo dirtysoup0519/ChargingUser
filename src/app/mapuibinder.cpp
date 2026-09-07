@@ -7,6 +7,7 @@
 #include <QUuid>
 
 #include <algorithm>
+#include <limits>
 
 namespace {
 
@@ -128,7 +129,8 @@ void MapUiBinder::activateHome()
     m_currentPage = MapPageTarget::Home;
     emit pageRequested(MapPageTarget::Home, m_home.selectedStationId);
     publishHome();
-    if (!m_home.currentLocation && m_locationRequestId.isEmpty()) {
+    if (!m_home.currentLocation && m_locationRequestId.isEmpty()
+        && m_home.locationStatus == MapLoadStatus::Idle) {
         locateRequested();
     } else if (m_home.stationsStatus == MapLoadStatus::Idle) {
         StationQuery query;
@@ -591,6 +593,10 @@ void MapUiBinder::handleMapRequestFailed(const ClientError &error)
                                                QStringLiteral("无法获取当前位置。"));
         m_home.canRetryLocation = error.retryable;
         publishHome();
+        // 定位不可用不应阻断站点浏览。无区域查询由后端默认城市（Demo 为深圳目录）处理。
+        if (m_home.stationsStatus == MapLoadStatus::Idle) {
+            startStationQuery(StationQuery{});
+        }
         return;
     }
     if (error.requestId == m_geocodeRequestId) {
@@ -649,9 +655,9 @@ bool MapUiBinder::makeAreaQuery(StationQuery *query) const
     }
     if (m_home.currentLocation && m_home.currentLocation->isValid()) {
         query->center = m_home.currentLocation;
-        return true;
     }
-    return false;
+    // 无定位、无视野时仍允许默认城市目录查询，绝不伪造当前位置或边界。
+    return true;
 }
 
 void MapUiBinder::startStationQuery(const StationQuery &query)
@@ -772,6 +778,30 @@ void MapUiBinder::rebuildHomeResults(const StationPage &page)
         m_home.cameraCommand.stationIds = validMarkerIds;
         m_home.cameraCommand.stationId.clear();
         m_home.cameraCommand.revision = ++m_cameraRevision;
+    }
+
+    // 降级地图也必须拥有可计算的真实经纬度视野，拖动后才能提交 GeoBounds。
+    if (!m_home.camera.bounds && !m_home.markers.isEmpty()) {
+        double minLatitude = std::numeric_limits<double>::max();
+        double maxLatitude = std::numeric_limits<double>::lowest();
+        double minLongitude = std::numeric_limits<double>::max();
+        double maxLongitude = std::numeric_limits<double>::lowest();
+        for (const MapMarkerView &marker : m_home.markers) {
+            minLatitude = std::min(minLatitude, marker.point.latitude);
+            maxLatitude = std::max(maxLatitude, marker.point.latitude);
+            minLongitude = std::min(minLongitude, marker.point.longitude);
+            maxLongitude = std::max(maxLongitude, marker.point.longitude);
+        }
+        const double latitudePadding = std::max(0.005, (maxLatitude - minLatitude) * 0.15);
+        const double longitudePadding = std::max(0.005, (maxLongitude - minLongitude) * 0.15);
+        GeoBounds bounds;
+        bounds.southWest = {std::max(-90.0, minLatitude - latitudePadding),
+                            std::max(-180.0, minLongitude - longitudePadding)};
+        bounds.northEast = {std::min(90.0, maxLatitude + latitudePadding),
+                            std::min(180.0, maxLongitude + longitudePadding)};
+        if (bounds.isValid()) {
+            m_home.camera.bounds = bounds;
+        }
     }
 }
 

@@ -8,6 +8,7 @@
 #include "demo/userdemocontroller.h"
 #include "modules/charger/mockchargerservice.h"
 #include "modules/map/mockmapservice.h"
+#include "modules/map/tencentmapservice.h"
 #include "modules/user/mockusernetworkapi.h"
 #include "presentation/pages/auth/loginwindow.h"
 #include "presentation/pages/shell/mainwindow.h"
@@ -120,9 +121,18 @@ int main(int argc, char *argv[])
     MockUserNetworkApi network;
     UserApplicationAssembly assembly(&network);
     MockChargerService chargerService;
-    MockMapService mapService;
-    const MapDemoFixture mapFixture = configureMapDemo(&chargerService, &mapService);
-    MapUiBinder mapBinder(&chargerService, &mapService);
+    MockMapService mockMapService;
+    TencentMapService tencentMapService;
+    const MapDemoFixture mapFixture = configureMapDemo(&chargerService,
+                                                       &mockMapService);
+
+    IMapService *mapService = &mockMapService;
+    if (qEnvironmentVariable("CHARGING_MAP_PROVIDER").compare(
+            QStringLiteral("tencent"), Qt::CaseInsensitive) == 0) {
+        tencentMapService.setApiKey(qEnvironmentVariable("TENCENT_MAP_KEY"));
+        mapService = &tencentMapService;
+    }
+    MapUiBinder mapBinder(&chargerService, mapService);
 
     LoginWindow login;
     ProfileEditWindow profileEdit;
