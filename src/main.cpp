@@ -1,5 +1,6 @@
 #include "app/application.h"
 #include "app/charginguibinder.h"
+#include "app/chargingsessionuibinder.h"
 #include "app/mapuibinder.h"
 #include "app/iuseruibinder.h"
 #include "modules/charging/placeholderchargingnetworkapi.h"
@@ -7,6 +8,7 @@
 #include "network/backendclient.h"
 #include "network/qtnetworktransport.h"
 #include "network/realchargerservice.h"
+#include "network/realorderservice.h"
 #include "network/realusernetworkapi.h"
 #include "modules/map/tencentmapservice.h"
 #include "presentation/contracts/reservationviewstates.h"
@@ -35,6 +37,7 @@
 #include <QJsonParseError>
 #include <QRegularExpression>
 #include <QStringList>
+#include <QUuid>
 
 namespace
 {
@@ -179,6 +182,11 @@ int main(int argc, char *argv[])
     // 阶段 F 的 RealChargingNetworkApi 就绪后替换，页面与 Binder 不需要改动。
     PlaceholderChargingNetworkApi placeholderChargingApi;
     ChargingService chargingService(&placeholderChargingApi);
+
+    // 阶段 D：真实订单查询。登录成功后自动恢复活动订单（106/214）；
+    // 会话页 UI 待交付，Binder 先行承接状态（currentState 可查询）。
+    RealOrderService orderService(&backend);
+    ChargingSessionUiBinder sessionBinder(&orderService);
 
     const QJsonObject mapConfig = loadTencentMapConfig();
     QString mapKey = qEnvironmentVariable("TENCENT_MAP_KEY").trimmed();
@@ -334,6 +342,30 @@ int main(int argc, char *argv[])
     QObject::connect(&walletRecharge, &WalletRechargeWindow::backRequested,
                      &app, [&] {
         mainWindow.renderSecondaryPage(&chargeConfirmation);
+    });
+    // 阶段 E 前的诚实占位：充值请求暂无真实服务承接，回显提示避免死按钮；
+    // RealWalletNetworkApi（113/216）接入后替换为真实调用。
+    QObject::connect(&walletRecharge, &WalletRechargeWindow::rechargeRequested,
+                     &app, [&] {
+        walletRecharge.renderBalance(QStringLiteral("充值服务接入中，敬请期待"));
+    });
+
+    // 阶段 D：登录成功 → 注入身份并自动恢复活动订单（充电中/待结算）。
+    QObject::connect(&network, &RealUserNetworkApi::loginSucceeded,
+                     &app, [&](const LoginResult &result) {
+        orderService.setIdentity(result.session.profile.userId);
+        RequestContext recoveryContext{
+            QUuid::createUuid().toString(QUuid::WithoutBraces), {}};
+        orderService.queryActiveOrder(recoveryContext);
+    });
+    // 活动订单存在时交由会话 Binder 拉取详情（会话页 UI 待交付，
+    // 状态可通过 sessionBinder.currentState() 获取，不丢恢复结果）。
+    QObject::connect(&orderService, &IOrderService::activeOrderReady,
+                     &app, [&](const RequestContext &,
+                               const std::optional<ChargingOrder> &active) {
+        if (active.has_value()) {
+            sessionBinder.sessionRequested(active->orderId);
+        }
     });
 
     // ===== 阶段 B：预约/扫码页可达（业务 Binder 属阶段 J，渲染诚实失败态）=====
