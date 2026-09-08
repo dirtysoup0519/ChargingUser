@@ -1,15 +1,23 @@
 #include "app/application.h"
+#include "app/charginguibinder.h"
 #include "app/mapuibinder.h"
 #include "app/iuseruibinder.h"
+#include "modules/charging/placeholderchargingnetworkapi.h"
+#include "modules/charging/chargingservice.h"
 #include "network/backendclient.h"
 #include "network/qtnetworktransport.h"
 #include "network/realchargerservice.h"
 #include "network/realusernetworkapi.h"
 #include "modules/map/tencentmapservice.h"
+#include "presentation/contracts/reservationviewstates.h"
 #include "presentation/pages/auth/loginwindow.h"
+#include "presentation/pages/charging/chargeconfirmationwindow.h"
+#include "presentation/pages/charging/qrcodescannerwindow.h"
+#include "presentation/pages/charging/reservationconfirmationwindow.h"
 #include "presentation/pages/home/navigationwindow.h"
 #include "presentation/pages/home/stationdetailwindow.h"
 #include "presentation/pages/profile/profileeditwindow.h"
+#include "presentation/pages/profile/walletrechargewindow.h"
 #include "presentation/pages/shell/mainwindow.h"
 #include "protocol.h"
 
@@ -167,6 +175,11 @@ int main(int argc, char *argv[])
     RealChargerService chargerService(&backend);
     TencentMapService mapService;
 
+    // 阶段 B：充电链路页面可达。网络适配器为占位实现（显式失败、不产伪数据），
+    // 阶段 F 的 RealChargingNetworkApi 就绪后替换，页面与 Binder 不需要改动。
+    PlaceholderChargingNetworkApi placeholderChargingApi;
+    ChargingService chargingService(&placeholderChargingApi);
+
     const QJsonObject mapConfig = loadTencentMapConfig();
     QString mapKey = qEnvironmentVariable("TENCENT_MAP_KEY").trimmed();
     if (mapKey.isEmpty()) {
@@ -204,6 +217,18 @@ int main(int argc, char *argv[])
     NavigationWindow navigation(&mainWindow);
     mainWindow.registerSecondaryPage(&stationDetail);
     mainWindow.registerSecondaryPage(&navigation);
+
+    // 阶段 B：充电确认/钱包/预约/扫码页面接入真实对象图。
+    // 预约与扫码的业务 Binder 属于阶段 J，当前页面可达并渲染诚实的失败态。
+    ChargingUiBinder chargeBinder(&chargingService);
+    ChargeConfirmationWindow chargeConfirmation(&mainWindow);
+    WalletRechargeWindow walletRecharge(&mainWindow);
+    ReservationConfirmationWindow reservationConfirmation(&mainWindow);
+    QrCodeScannerWindow qrScanner(&mainWindow);
+    mainWindow.registerSecondaryPage(&chargeConfirmation);
+    mainWindow.registerSecondaryPage(&walletRecharge);
+    mainWindow.registerSecondaryPage(&reservationConfirmation);
+    mainWindow.registerSecondaryPage(&qrScanner);
     if (!mapKey.isEmpty()) {
         mainWindow.setMapKey(mapKey);
     }
@@ -268,6 +293,71 @@ int main(int argc, char *argv[])
                      &mapBinder, &IMapUiBinder::originCandidateSelected);
     QObject::connect(&navigation, &NavigationWindow::routeRetryRequested,
                      &mapBinder, &IMapUiBinder::routeRetryRequested);
+
+    // ===== 阶段 B：充电确认链路（详情 → 确认 → 钱包/会话）=====
+    QObject::connect(&stationDetail, &StationDetailWindow::chargeConfirmationRequested,
+                     &chargeBinder, &IChargingUiBinder::chargeConfirmationRequested);
+    QObject::connect(&chargeBinder, &IChargingUiBinder::confirmationStateChanged,
+                     &chargeConfirmation, &ChargeConfirmationWindow::render);
+    QObject::connect(&chargeBinder, &IChargingUiBinder::confirmationPageRequested,
+                     &app, [&] {
+        chargeConfirmation.render(chargeBinder.currentState());
+        mainWindow.renderSecondaryPage(&chargeConfirmation);
+    });
+    QObject::connect(&chargeBinder, &IChargingUiBinder::stationDetailPageRequested,
+                     &app, [&] {
+        stationDetail.render(mapBinder.currentStationDetailState());
+        mainWindow.renderSecondaryPage(&stationDetail);
+    });
+    QObject::connect(&chargeConfirmation, &ChargeConfirmationWindow::backRequested,
+                     &chargeBinder, &IChargingUiBinder::backRequested);
+    QObject::connect(&chargeConfirmation,
+                     &ChargeConfirmationWindow::confirmationRefreshRequested,
+                     &chargeBinder, &IChargingUiBinder::confirmationRefreshRequested);
+    QObject::connect(&chargeConfirmation,
+                     &ChargeConfirmationWindow::startChargingRequested,
+                     &chargeBinder, &IChargingUiBinder::startChargingRequested);
+    // 充电会话页依赖订单 Binder（阶段 D），到达逻辑暂缓，避免死按钮误导。
+    // 钱包页可达：余额来自确认页快照，充值动作属阶段 E。
+    QObject::connect(&chargeBinder, &IChargingUiBinder::rechargePageRequested,
+                     &app, [&] {
+        walletRecharge.renderBalance(chargeBinder.currentState().walletBalanceText);
+        mainWindow.renderSecondaryPage(&walletRecharge);
+    });
+    QObject::connect(&chargeConfirmation, &ChargeConfirmationWindow::rechargePageRequested,
+                     &app, [&] {
+        walletRecharge.renderBalance(chargeBinder.currentState().walletBalanceText);
+        mainWindow.renderSecondaryPage(&walletRecharge);
+    });
+    QObject::connect(&walletRecharge, &WalletRechargeWindow::backRequested,
+                     &app, [&] {
+        mainWindow.renderSecondaryPage(&chargeConfirmation);
+    });
+
+    // ===== 阶段 B：预约/扫码页可达（业务 Binder 属阶段 J，渲染诚实失败态）=====
+    QObject::connect(&stationDetail,
+                     &StationDetailWindow::reservationConfirmationRequested,
+                     &app, [&](const QString &stationId, const QString &chargerId) {
+        ReservationConfirmationViewState state;
+        state.stationId = stationId;
+        state.chargerId = chargerId;
+        state.status = ReservationConfirmationStatus::Error;
+        state.canRetry = true;
+        state.message = QStringLiteral("预约服务适配器尚未接入，功能开发中");
+        reservationConfirmation.render(state);
+        mainWindow.renderSecondaryPage(&reservationConfirmation);
+    });
+    QObject::connect(&reservationConfirmation,
+                     &ReservationConfirmationWindow::backRequested,
+                     &app, [&] {
+        stationDetail.render(mapBinder.currentStationDetailState());
+        mainWindow.renderSecondaryPage(&stationDetail);
+    });
+    QObject::connect(&qrScanner, &QrCodeScannerWindow::backRequested,
+                     &app, [&] {
+        mainWindow.renderSecondaryPage(&stationDetail);
+    });
+
     QObject::connect(&mapBinder, &IMapUiBinder::homeStateChanged,
                      &mainWindow, &MainWindow::renderHome);
     QObject::connect(&mapBinder, &IMapUiBinder::stationDetailStateChanged,
