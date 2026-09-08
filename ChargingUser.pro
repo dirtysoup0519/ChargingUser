@@ -1,5 +1,10 @@
 QT += widgets network
 
+qtHaveModule(multimedia):qtHaveModule(multimediawidgets) {
+    QT += multimedia multimediawidgets
+    DEFINES += CHARGINGUSER_ENABLE_QT_MULTIMEDIA
+}
+
 packagesExist(zxing) {
     CONFIG += link_pkgconfig
     PKGCONFIG += zxing

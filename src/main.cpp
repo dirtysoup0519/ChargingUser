@@ -674,9 +674,11 @@ int main(int argc, char *argv[])
     const auto openScanner = [&](ScanEntryPoint entryPoint) {
         scanEntryPoint = entryPoint;
         ScanViewState scanState;
-        scanState.status = ScanStatus::Error;
-        scanState.message = QStringLiteral("当前版本尚未接入摄像头扫码，请从相册选择二维码。\n若设备无摄像头，可使用服务端下发的电桩编号联调。");
-        scanState.cameraAvailable = false;
+        scanState.status = qrScanner.cameraAvailable() ? ScanStatus::RequestingPermission : ScanStatus::Error;
+        scanState.message = qrScanner.cameraAvailable()
+            ? QStringLiteral("点击允许摄像头后开始实时扫码")
+            : QStringLiteral("当前设备没有可用摄像头，请从相册选择二维码。");
+        scanState.cameraAvailable = qrScanner.cameraAvailable();
         scanState.cameraPermissionGranted = false;
         scanState.canImportImage = true;
         scanState.canRetry = false;
@@ -690,8 +692,11 @@ int main(int argc, char *argv[])
     QObject::connect(&qrScanner, &QrCodeScannerWindow::cameraPermissionRequested,
                      &app, [&] {
         ScanViewState state;
-        state.status = ScanStatus::Error;
-        state.message = QStringLiteral("摄像头能力尚未接入，请从相册选择二维码。");
+        state.status = qrScanner.cameraAvailable() ? ScanStatus::Scanning : ScanStatus::Error;
+        state.cameraAvailable = qrScanner.cameraAvailable();
+        state.cameraPermissionGranted = state.cameraAvailable;
+        state.message = state.cameraAvailable ? QStringLiteral("对准二维码后将自动识别")
+                                               : QStringLiteral("当前设备没有可用摄像头，请从相册选择二维码。");
         state.canImportImage = true;
         qrScanner.render(state);
     });

@@ -464,12 +464,14 @@ UserDemoController::UserDemoController(MockUserNetworkApi *network,
         m_scanState.expectedChargerId = chargerId;
         m_scanState.chargerDisplayText = tr("充电桩 %1").arg(
             chargerId.section(QLatin1Char('-'), -1).toUpper());
-        m_scanState.status = ScanStatus::Error;
-        m_scanState.cameraAvailable = false;
+        m_scanState.status = m_qrScanner->cameraAvailable() ? ScanStatus::RequestingPermission : ScanStatus::Error;
+        m_scanState.cameraAvailable = m_qrScanner->cameraAvailable();
         m_scanState.cameraPermissionGranted = false;
         m_scanState.canRetry = false;
         m_scanState.canImportImage = true;
-        m_scanState.message = tr("Demo 尚未接入摄像头，可从相册选择二维码进行流程测试");
+        m_scanState.message = m_scanState.cameraAvailable
+            ? tr("点击允许摄像头后开始实时扫码")
+            : tr("Demo 没有可用摄像头，可从相册选择二维码进行流程测试");
         m_qrScanner->render(m_scanState);
         m_mainWindow->renderSecondaryPage(m_qrScanner);
     });
@@ -486,6 +488,14 @@ UserDemoController::UserDemoController(MockUserNetworkApi *network,
             m_mainWindow->renderPrimaryPage(MainWindow::PrimaryPage::Charging);
         else
             m_mainWindow->renderSecondaryPage(m_stationDetail);
+    });
+    connect(m_qrScanner, &QrCodeScannerWindow::cameraPermissionRequested,
+            this, [this] {
+        m_scanState.status = m_qrScanner->cameraAvailable() ? ScanStatus::Scanning : ScanStatus::Error;
+        m_scanState.cameraPermissionGranted = m_qrScanner->cameraAvailable();
+        m_scanState.message = m_scanState.cameraPermissionGranted
+            ? tr("对准二维码后将自动识别") : tr("当前设备没有可用摄像头");
+        m_qrScanner->render(m_scanState);
     });
     connect(m_chargingSession, &ChargingSessionWindow::scanChargingRequested,
             this, [this] {
@@ -504,13 +514,15 @@ UserDemoController::UserDemoController(MockUserNetworkApi *network,
             if (!m_scanState.expectedChargerId.isEmpty()) break;
         }
         m_scanState.chargerDisplayText = tr("等待识别充电桩二维码");
-        m_scanState.status = ScanStatus::Error;
-        m_scanState.cameraAvailable = false;
+        m_scanState.status = m_qrScanner->cameraAvailable() ? ScanStatus::RequestingPermission : ScanStatus::Error;
+        m_scanState.cameraAvailable = m_qrScanner->cameraAvailable();
         m_scanState.cameraPermissionGranted = false;
         m_scanState.canRetry = false;
         m_scanState.canImportImage = !m_scanState.expectedChargerId.isEmpty();
-        m_scanState.message = m_scanState.canImportImage
-            ? tr("Demo 尚未接入摄像头，可从相册选择二维码进行流程测试")
+        m_scanState.message = m_scanState.cameraAvailable
+            ? tr("点击允许摄像头后开始实时扫码")
+            : m_scanState.canImportImage
+            ? tr("Demo 没有可用摄像头，可从相册选择二维码进行流程测试")
             : tr("现有站点数据中没有可启动的充电桩");
         m_qrScanner->render(m_scanState);
         m_mainWindow->renderSecondaryPage(m_qrScanner);

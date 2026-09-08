@@ -4,6 +4,13 @@
 #include <QPushButton>
 #include <QStyle>
 
+#ifdef CHARGINGUSER_ENABLE_QT_MULTIMEDIA
+#include <QCamera>
+#include <QMediaDevices>
+#include <QMediaCaptureSession>
+#include <QVideoWidget>
+#endif
+
 QrCodeScannerWindow::QrCodeScannerWindow(QWidget *parent)
     : QWidget(parent), ui(new Ui::QrCodeScannerWindow)
 {
@@ -18,10 +25,35 @@ QrCodeScannerWindow::QrCodeScannerWindow(QWidget *parent)
     connect(ui->torchButton, &QPushButton::clicked, this, [this] {
         emit torchToggleRequested(!m_state.torchEnabled);
     });
+#ifdef CHARGINGUSER_ENABLE_QT_MULTIMEDIA
+    const auto cameras = QMediaDevices::videoInputs();
+    if (!cameras.isEmpty()) {
+        m_camera = new QCamera(cameras.front(), this);
+        m_captureSession = new QMediaCaptureSession(this);
+        m_videoWidget = new QVideoWidget(ui->previewPlaceholder->parentWidget());
+        m_videoWidget->setGeometry(ui->previewPlaceholder->geometry());
+        m_videoWidget->setVisible(false);
+        m_captureSession->setCamera(m_camera);
+        m_captureSession->setVideoOutput(m_videoWidget);
+        connect(m_camera, &QCamera::errorOccurred, this,
+                [this](QCamera::Error, const QString &) {
+            emit cameraStatusChanged(false, false);
+        });
+    }
+#endif
     render(ScanViewState{});
 }
 
 QrCodeScannerWindow::~QrCodeScannerWindow() { delete ui; }
+
+bool QrCodeScannerWindow::cameraAvailable() const
+{
+#ifdef CHARGINGUSER_ENABLE_QT_MULTIMEDIA
+    return m_camera != nullptr;
+#else
+    return false;
+#endif
+}
 
 void QrCodeScannerWindow::render(const ScanViewState &state)
 {
@@ -48,6 +80,17 @@ void QrCodeScannerWindow::render(const ScanViewState &state)
     ui->previewPlaceholder->setText(state.cameraAvailable
                                          ? tr("摄像头画面接入区域")
                                          : tr("未检测到摄像头\n可从相册选择二维码"));
+#ifdef CHARGINGUSER_ENABLE_QT_MULTIMEDIA
+    if (m_videoWidget) {
+        const bool showPreview = state.cameraPermissionGranted
+            && (state.status == ScanStatus::OpeningCamera || state.status == ScanStatus::Scanning);
+        m_videoWidget->setVisible(showPreview);
+        if (showPreview && !m_camera->isActive())
+            m_camera->start();
+        if (!showPreview && m_camera->isActive())
+            m_camera->stop();
+    }
+#endif
     ui->permissionButton->setVisible(!state.cameraPermissionGranted
                                      && state.cameraAvailable);
     ui->retryButton->setVisible(state.canRetry);
