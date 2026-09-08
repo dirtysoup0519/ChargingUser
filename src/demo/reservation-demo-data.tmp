@@ -1,0 +1,18 @@
+{
+  "reservationDemo": {
+    "depositText": "¥20.00",
+    "durationText": "30秒",
+    "depositPolicyText": "超过预约时限仍未开始充电，将按规则扣除预约押金",
+    "durationSeconds": 30,
+    "responseDelayMs": 450,
+    "cancellationCooldownSeconds": 3,
+    "cancellation": {
+      "responseDelayMs": 450,
+      "outcome": "success",
+      "retryOutcome": "success",
+      "failureMessage": "取消预约失败，请重试",
+      "resultUnknownMessage": "取消结果正在确认，请勿重复操作"
+    },
+    "outcome": "success"
+  }
+}

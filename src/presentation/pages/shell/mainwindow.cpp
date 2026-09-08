@@ -5,10 +5,15 @@
 #include <algorithm>
 #include <limits>
 #include <QComboBox>
+#include <QDateTime>
+#include <QEvent>
+#include <QFrame>
 #include <QHBoxLayout>
 #include <QLabel>
 #include <QList>
 #include <QLineEdit>
+#include <QMessageBox>
+#include <QMouseEvent>
 #include <QPixmap>
 #include <QPushButton>
 #include <QScrollArea>
@@ -17,12 +22,50 @@
 #include <QStackedWidget>
 #include <QStyle>
 #include <QToolButton>
+#include <QTimer>
 #include <QVBoxLayout>
 
 MainWindow::MainWindow(QWidget *parent) : QWidget(parent), ui(new Ui::MainWindow)
 {
     ui->setupUi(this);
     DragScrollHelper::enableFor(this);
+
+    m_homeReservationCard = new QFrame(ui->homePage);
+    m_homeReservationCard->setObjectName(QStringLiteral("homeReservationCard"));
+    m_homeReservationCard->setCursor(Qt::PointingHandCursor);
+    m_homeReservationCard->installEventFilter(this);
+    auto *reservationLayout = new QHBoxLayout(m_homeReservationCard);
+    reservationLayout->setContentsMargins(14, 8, 14, 8);
+    reservationLayout->setSpacing(10);
+    auto *reservationText = new QWidget(m_homeReservationCard);
+    reservationText->setObjectName(QStringLiteral("homeReservationText"));
+    reservationText->setAttribute(Qt::WA_TransparentForMouseEvents);
+    auto *reservationTextLayout = new QVBoxLayout(reservationText);
+    reservationTextLayout->setContentsMargins(0, 0, 0, 0);
+    reservationTextLayout->setSpacing(2);
+    m_homeReservationTitle = new QLabel(reservationText);
+    m_homeReservationTitle->setObjectName(QStringLiteral("homeReservationTitle"));
+    m_homeReservationStation = new QLabel(reservationText);
+    m_homeReservationStation->setObjectName(QStringLiteral("homeReservationStation"));
+    m_homeReservationStation->setTextInteractionFlags(Qt::NoTextInteraction);
+    reservationTextLayout->addWidget(m_homeReservationTitle);
+    reservationTextLayout->addWidget(m_homeReservationStation);
+    reservationLayout->addWidget(reservationText, 1);
+    m_homeReservationCountdown = new QLabel(m_homeReservationCard);
+    m_homeReservationCountdown->setObjectName(QStringLiteral("homeReservationCountdown"));
+    m_homeReservationCountdown->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
+    m_homeReservationCountdown->setAttribute(Qt::WA_TransparentForMouseEvents);
+    reservationLayout->addWidget(m_homeReservationCountdown);
+    auto *chevron = new QLabel(QStringLiteral("›"), m_homeReservationCard);
+    chevron->setObjectName(QStringLiteral("homeReservationChevron"));
+    chevron->setAttribute(Qt::WA_TransparentForMouseEvents);
+    reservationLayout->addWidget(chevron);
+    ui->homeLayout->insertWidget(1, m_homeReservationCard);
+    m_homeReservationCard->hide();
+    m_homeReservationTimer = new QTimer(this);
+    m_homeReservationTimer->setInterval(1000);
+    connect(m_homeReservationTimer, &QTimer::timeout,
+            this, &MainWindow::updateHomeReservationCountdown);
 
     connect(ui->mapView, &InteractiveMapWidget::markerSelected,
             this, [this](const QString &stationId) { selectStation(stationId, true); });
@@ -101,6 +144,28 @@ MainWindow::~MainWindow() { delete ui; }
 
 void MainWindow::renderHome(const HomeMapViewState &state)
 {
+    m_homeActiveReservation = state.activeReservation;
+    const bool hasReservation = m_homeActiveReservation.has_value();
+    m_homeReservationCard->setVisible(hasReservation);
+    ui->mapView->setFixedHeight(hasReservation ? 296 : 354);
+    if (hasReservation) {
+        const QString chargerCode = m_homeActiveReservation->chargerId
+                                        .section(QLatin1Char('-'), -1).toUpper();
+        m_homeReservationTitle->setText(tr("已预约 · %1号桩").arg(chargerCode));
+        QString stationName;
+        for (const StationListItemView &station : state.stations) {
+            if (station.stationId == m_homeActiveReservation->stationId) {
+                stationName = station.name;
+                break;
+            }
+        }
+        m_homeReservationStation->setText(
+            stationName.isEmpty() ? tr("点击查看预约所属站点") : stationName);
+        updateHomeReservationCountdown();
+        m_homeReservationTimer->start();
+    } else {
+        m_homeReservationTimer->stop();
+    }
     if (!state.queryInput.isNull() && !ui->searchBox->hasFocus())
         ui->searchBox->setText(state.queryInput);
 
@@ -199,6 +264,42 @@ void MainWindow::renderHome(const HomeMapViewState &state)
             ui->mapView->fitStations(stationIds);
         }
     }
+}
+
+bool MainWindow::eventFilter(QObject *watched, QEvent *event)
+{
+    if (watched == m_homeReservationCard && event->type() == QEvent::MouseButtonRelease
+        && m_homeActiveReservation) {
+        auto *mouseEvent = static_cast<QMouseEvent *>(event);
+        if (mouseEvent->button() != Qt::LeftButton) return true;
+        const QString chargerCode = m_homeActiveReservation->chargerId
+                                        .section(QLatin1Char('-'), -1).toUpper();
+        if (QMessageBox::question(
+                this, tr("查看已有预约"),
+                tr("是否前往预约所属站点并查看充电桩 %1？").arg(chargerCode),
+                QMessageBox::Yes | QMessageBox::No, QMessageBox::Yes)
+            == QMessageBox::Yes) {
+            emit activeReservationRequested(m_homeActiveReservation->reservationId,
+                                            m_homeActiveReservation->stationId,
+                                            m_homeActiveReservation->chargerId);
+        }
+        return true;
+    }
+    return QWidget::eventFilter(watched, event);
+}
+
+void MainWindow::updateHomeReservationCountdown()
+{
+    if (!m_homeActiveReservation || !m_homeReservationCard->isVisible()) {
+        m_homeReservationTimer->stop();
+        return;
+    }
+    qint64 seconds = QDateTime::currentDateTimeUtc().secsTo(
+        m_homeActiveReservation->expiresAtUtc);
+    seconds = qMax<qint64>(0, seconds);
+    m_homeReservationCountdown->setText(
+        tr("剩余 %1:%2").arg(seconds / 60, 2, 10, QLatin1Char('0'))
+                           .arg(seconds % 60, 2, 10, QLatin1Char('0')));
 }
 
 void MainWindow::registerSecondaryPage(QWidget *page)

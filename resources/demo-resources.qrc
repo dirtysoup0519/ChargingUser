@@ -3,5 +3,7 @@
   <!-- Explicit CONFIG+=user_demo builds only; never bundled into the real client. -->
   <file alias="demo/user-demo-data.tmp">../src/demo/user-demo-data.tmp</file>
   <file alias="demo/map-demo-data.tmp">../src/demo/map-demo-data.tmp</file>
+  <file alias="demo/charge-demo-data.tmp">../src/demo/charge-demo-data.tmp</file>
+  <file alias="demo/reservation-demo-data.tmp">../src/demo/reservation-demo-data.tmp</file>
  </qresource>
 </RCC>

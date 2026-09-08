@@ -1,0 +1,7 @@
+{
+  "chargeConfirmationDemo": {
+    "serviceFeeText": "¥0.30/度",
+    "walletBalanceText": "¥128.00",
+    "canRecharge": true
+  }
+}
