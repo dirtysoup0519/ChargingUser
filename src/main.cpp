@@ -4,11 +4,11 @@
 #include "app/mapuibinder.h"
 #include "app/iuseruibinder.h"
 #include "app/walletuibinder.h"
-#include "modules/charging/placeholderchargingnetworkapi.h"
 #include "modules/charging/chargingservice.h"
 #include "network/backendclient.h"
 #include "network/qtnetworktransport.h"
 #include "network/realchargerservice.h"
+#include "network/realchargingnetworkapi.h"
 #include "network/realorderservice.h"
 #include "network/realwalletnetworkapi.h"
 #include "network/realusernetworkapi.h"
@@ -182,10 +182,9 @@ int main(int argc, char *argv[])
     RealChargerService chargerService(&backend);
     TencentMapService mapService;
 
-    // 阶段 B：充电链路页面可达。网络适配器为占位实现（显式失败、不产伪数据），
-    // 阶段 F 的 RealChargingNetworkApi 就绪后替换，页面与 Binder 不需要改动。
-    PlaceholderChargingNetworkApi placeholderChargingApi;
-    ChargingService chargingService(&placeholderChargingApi);
+    // 阶段 F：真实站点/电桩确认已接入；启动变更仍受幂等与结果查询能力闸门保护。
+    RealChargingNetworkApi chargingNetwork(&backend);
+    ChargingService chargingService(&chargingNetwork);
 
     // 阶段 D：真实订单查询。登录成功后自动恢复活动订单（106/214）；
     // 会话页 UI 待交付，Binder 先行承接状态（currentState 可查询）。
@@ -369,6 +368,7 @@ int main(int argc, char *argv[])
                      &app, [&](const LoginResult &result) {
         orderService.setIdentity(result.session.profile.userId);
         walletNetwork.setIdentity(result.session.profile.userId);
+        chargingNetwork.setIdentity(result.session.profile.userId);
         walletBinder.setAccountId(result.session.profile.userId);
         walletBinder.activate();
         RequestContext recoveryContext{
