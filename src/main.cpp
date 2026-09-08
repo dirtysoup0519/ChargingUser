@@ -3,13 +3,17 @@
 #include "app/chargingsessionuibinder.h"
 #include "app/mapuibinder.h"
 #include "app/iuseruibinder.h"
+#include "app/walletuibinder.h"
 #include "modules/charging/placeholderchargingnetworkapi.h"
 #include "modules/charging/chargingservice.h"
 #include "network/backendclient.h"
 #include "network/qtnetworktransport.h"
 #include "network/realchargerservice.h"
 #include "network/realorderservice.h"
+#include "network/realwalletnetworkapi.h"
 #include "network/realusernetworkapi.h"
+#include "modules/wallet/walletservice.h"
+#include "modules/user/iuserservice.h"
 #include "modules/map/tencentmapservice.h"
 #include "presentation/contracts/reservationviewstates.h"
 #include "presentation/pages/auth/loginwindow.h"
@@ -187,6 +191,9 @@ int main(int argc, char *argv[])
     // 会话页 UI 待交付，Binder 先行承接状态（currentState 可查询）。
     RealOrderService orderService(&backend);
     ChargingSessionUiBinder sessionBinder(&orderService);
+    RealWalletNetworkApi walletNetwork(&backend);
+    WalletService walletService(&walletNetwork);
+    WalletUiBinder walletBinder(&walletService);
 
     const QJsonObject mapConfig = loadTencentMapConfig();
     QString mapKey = qEnvironmentVariable("TENCENT_MAP_KEY").trimmed();
@@ -241,6 +248,7 @@ int main(int argc, char *argv[])
         mainWindow.setMapKey(mapKey);
     }
     IUserUiBinder *binder = assembly.userUiBinder();
+    IUserService *userService = assembly.userService();
     bool profileEditOpenedFromMain = false;
 
     const auto showOnly = [&login, &profileEdit, &mainWindow](QWidget *target) {
@@ -329,31 +337,35 @@ int main(int argc, char *argv[])
     // 钱包页可达：余额来自确认页快照，充值动作属阶段 E。
     QObject::connect(&chargeBinder, &IChargingUiBinder::rechargePageRequested,
                      &app, [&] {
-        walletRecharge.renderBalance(chargeBinder.currentState().walletBalanceText);
+        walletBinder.activate();
         mainWindow.renderSecondaryPage(&walletRecharge);
     });
     // 修复来源：eb31164 误用不存在的 rechargePageRequested 信号，导致真实入口
     // 无法编译；ChargeConfirmationWindow 实际声明的信号是 rechargeRequested()。
     QObject::connect(&chargeConfirmation, &ChargeConfirmationWindow::rechargeRequested,
                      &app, [&] {
-        walletRecharge.renderBalance(chargeBinder.currentState().walletBalanceText);
+        walletBinder.activate();
         mainWindow.renderSecondaryPage(&walletRecharge);
     });
     QObject::connect(&walletRecharge, &WalletRechargeWindow::backRequested,
                      &app, [&] {
         mainWindow.renderSecondaryPage(&chargeConfirmation);
     });
-    // 阶段 E 前的诚实占位：充值请求暂无真实服务承接，回显提示避免死按钮；
-    // RealWalletNetworkApi（113/216）接入后替换为真实调用。
+    // 阶段 E：钱包页面使用服务端余额与流水；充值结果未知时由 Binder 锁定重试。
+    QObject::connect(&walletBinder, &WalletUiBinder::stateChanged,
+                     &walletRecharge, &WalletRechargeWindow::render);
     QObject::connect(&walletRecharge, &WalletRechargeWindow::rechargeRequested,
-                     &app, [&] {
-        walletRecharge.renderBalance(QStringLiteral("充值服务接入中，敬请期待"));
-    });
+                     &walletBinder, &WalletUiBinder::rechargeRequested);
+    QObject::connect(&walletBinder, &WalletUiBinder::profileRefreshRequested,
+                     userService, &IUserService::refreshCurrentUser);
 
     // 阶段 D：登录成功 → 注入身份并自动恢复活动订单（充电中/待结算）。
     QObject::connect(&network, &RealUserNetworkApi::loginSucceeded,
                      &app, [&](const LoginResult &result) {
         orderService.setIdentity(result.session.profile.userId);
+        walletNetwork.setIdentity(result.session.profile.userId);
+        walletBinder.setAccountId(result.session.profile.userId);
+        walletBinder.activate();
         RequestContext recoveryContext{
             QUuid::createUuid().toString(QUuid::WithoutBraces), {}};
         orderService.queryActiveOrder(recoveryContext);
@@ -465,6 +477,7 @@ int main(int argc, char *argv[])
     profileEdit.render(binder->currentProfileEditViewState());
     mainWindow.renderProfile(binder->currentProfileViewState());
     mainWindow.renderHome(mapBinder.currentHomeState());
+    walletRecharge.render(walletBinder.currentState());
     if (mapKey.isEmpty()) {
         mapBinder.mapLoadFailed();
     }

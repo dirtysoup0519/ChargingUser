@@ -38,9 +38,13 @@ void WalletService::recharge(const RequestContext &context, qint64 amountCents)
              QStringLiteral("充值请求参数无效。"));
         return;
     }
-    if (!m_network->capabilities().canRechargeSafely()) {
-        fail(context, QStringLiteral("wallet-idempotency-contract-required"),
-             QStringLiteral("服务端尚未提供幂等充值与结果查询能力。"));
+    // Stage E test integration: the current server exposes the one-shot
+    // 113 -> 216 recharge contract, but not idempotent operation lookup.
+    // The network adapter marks timeout/disconnect outcomes as unknown and
+    // the UI locks retry, so do not silently retry this mutation.
+    if (!m_network->capabilities().rechargeMessage) {
+        fail(context, QStringLiteral("wallet-recharge-unsupported"),
+             QStringLiteral("服务端尚未提供充值接口。"));
         return;
     }
     m_network->recharge(context, amountCents);

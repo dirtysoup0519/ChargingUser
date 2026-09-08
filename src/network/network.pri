@@ -10,7 +10,8 @@ SOURCES += \
     $$PROJECT_ROOT/src/network/clientsocketthreadmanager.cpp \
     $$PROJECT_ROOT/src/network/realusernetworkapi.cpp \
     $$PROJECT_ROOT/src/network/realchargerservice.cpp \
-    $$PROJECT_ROOT/src/network/realorderservice.cpp
+    $$PROJECT_ROOT/src/network/realorderservice.cpp \
+    $$PROJECT_ROOT/src/network/realwalletnetworkapi.cpp
 
 HEADERS += \
     $$PROJECT_ROOT/massagehandler.h \
@@ -23,4 +24,5 @@ HEADERS += \
     $$PROJECT_ROOT/src/network/clientsocketthreadmanager.h \
     $$PROJECT_ROOT/src/network/realusernetworkapi.h \
     $$PROJECT_ROOT/src/network/realchargerservice.h \
-    $$PROJECT_ROOT/src/network/realorderservice.h
+    $$PROJECT_ROOT/src/network/realorderservice.h \
+    $$PROJECT_ROOT/src/network/realwalletnetworkapi.h
