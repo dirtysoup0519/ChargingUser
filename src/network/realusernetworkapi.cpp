@@ -107,11 +107,6 @@ void RealUserNetworkApi::loginByPhone(const QString &phone,
     QJsonObject payload;
     payload.insert(QStringLiteral("phone"), phone);
     payload.insert(QStringLiteral("requestId"), context.requestId);
-    // 联调约定（2026-09-08）：服务端自动注册的 INSERT 对 user.password 有
-    // NOT NULL 约束，而 116 免密协议本身不携带密码。随载荷附带 password=手机号
-    // 作为服务端默认密码；协议未定义该字段，服务端忽略它也不影响登录语义。
-    // 服务端若正式修复（可空/独立默认值），此字段保留无害，暂不删除。
-    payload.insert(QStringLiteral("password"), phone);
     startRequest(PendingKind::Login, payload, context, QString());
 }
 
