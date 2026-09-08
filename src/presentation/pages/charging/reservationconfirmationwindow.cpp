@@ -64,7 +64,7 @@ void ReservationConfirmationWindow::render(const ReservationConfirmationViewStat
     ui->reserveButton->setEnabled(state.status == ReservationConfirmationStatus::Ready
                                   && state.canReserve && state.durationSeconds > 0);
     ui->reserveButton->setText(state.status == ReservationConfirmationStatus::Submitting
-                                   ? tr("正在预约…") : tr("确认预约"));
+                                   ? tr("正在预约…") : tr("确认预约并支付"));
     ui->reserveButton->setToolTip(ui->reserveButton->isEnabled()
                                       ? QString() : state.disabledReason);
 }

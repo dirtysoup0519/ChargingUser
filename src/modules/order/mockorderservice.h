@@ -13,6 +13,7 @@ public:
     void setOrders(const QVector<ChargingOrder> &orders);
 public slots:
     void queryActiveOrder(const RequestContext &context) override;
+    void queryActiveOrders(const RequestContext &context) override;
     void queryOrderDetail(const RequestContext &context,
                           const QString &orderId) override;
     void stopCharging(const RequestContext &context,

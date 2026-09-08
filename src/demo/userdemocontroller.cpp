@@ -1,6 +1,7 @@
 #include "demo/userdemocontroller.h"
 #include "demo/chargedemofixtureloader.h"
 #include "demo/reservationdemofixtureloader.h"
+#include "demo/mapdemofixtureloader.h"
 
 #include "app/iuseruibinder.h"
 #include "app/imapuibinder.h"
@@ -12,8 +13,12 @@
 #include "presentation/pages/home/stationdetailwindow.h"
 #include "presentation/pages/profile/walletrechargewindow.h"
 #include "presentation/pages/charging/chargeconfirmationwindow.h"
+#include "presentation/pages/charging/chargingsessionwindow.h"
 #include "presentation/pages/charging/reservationconfirmationwindow.h"
 #include "presentation/pages/charging/qrcodescannerwindow.h"
+#include "presentation/pages/charging/settlementwindow.h"
+#include "presentation/pages/charging/paymentwindow.h"
+#include "presentation/pages/profile/orderlistwindow.h"
 
 #include <QFile>
 #include <QJsonDocument>
@@ -27,6 +32,16 @@ namespace
 {
 
 constexpr int DemoDelayMs = 450;
+
+qint64 moneyTextToCents(QString text)
+{
+    text.remove(QChar(0x00A5));
+    text.remove(QStringLiteral("元"));
+    text.remove(QLatin1Char(','));
+    bool ok = false;
+    const double amount = text.trimmed().toDouble(&ok);
+    return ok ? qRound64(amount * 100.0) : -1;
+}
 
 QHash<QString, DemoUserData> loadDemoUsers(QString *newUserNicknamePattern)
 {
@@ -106,6 +121,9 @@ UserDemoController::UserDemoController(MockUserNetworkApi *network,
     , m_chargeConfirmation(new ChargeConfirmationWindow(mainWindow))
     , m_reservationConfirmation(new ReservationConfirmationWindow(mainWindow))
     , m_qrScanner(new QrCodeScannerWindow(mainWindow))
+    , m_settlement(new SettlementWindow(mainWindow))
+    , m_payment(new PaymentWindow(mainWindow))
+    , m_orderList(new OrderListWindow(mainWindow))
     , m_demoUsers(loadDemoUsers(&m_newUserNicknamePattern))
 {
     Q_ASSERT(m_network);
@@ -114,6 +132,10 @@ UserDemoController::UserDemoController(MockUserNetworkApi *network,
     Q_ASSERT(m_login);
     Q_ASSERT(m_profileEdit);
     Q_ASSERT(m_mainWindow);
+
+    m_chargingSession = m_mainWindow->findChild<ChargingSessionWindow *>(
+        QStringLiteral("chargingSessionWidget"));
+    Q_ASSERT(m_chargingSession);
 
     // These widgets are constructed with MainWindow as their parent. Register
     // them before MainWindow is ever shown, otherwise Qt auto-shows ordinary
@@ -124,6 +146,52 @@ UserDemoController::UserDemoController(MockUserNetworkApi *network,
     m_mainWindow->registerSecondaryPage(m_chargeConfirmation);
     m_mainWindow->registerSecondaryPage(m_reservationConfirmation);
     m_mainWindow->registerSecondaryPage(m_qrScanner);
+    m_mainWindow->registerSecondaryPage(m_settlement);
+    m_mainWindow->registerSecondaryPage(m_payment);
+    m_mainWindow->registerSecondaryPage(m_orderList);
+
+    QFile paymentFile(QStringLiteral(":/demo/payment-demo-data.tmp"));
+    if (paymentFile.open(QIODevice::ReadOnly)) {
+        const QJsonObject payment = QJsonDocument::fromJson(paymentFile.readAll()).object()
+                                        .value(QStringLiteral("paymentDemo")).toObject();
+        m_paymentBalanceText = payment.value(QStringLiteral("walletBalanceText")).toString(QStringLiteral("--"));
+        m_paymentBalanceCents = moneyTextToCents(m_paymentBalanceText);
+        m_paymentDelayMs = payment.value(QStringLiteral("paymentDelayMs")).toInt(450);
+        m_paymentOutcome = payment.value(QStringLiteral("outcome")).toString(QStringLiteral("success"));
+        const QJsonObject settlement = payment.value(QStringLiteral("settlement")).toObject();
+        m_settlementState.payableText = settlement.value(QStringLiteral("payableText")).toString();
+    }
+    QFile orderListFile(QStringLiteral(":/demo/order-list-demo-data.tmp"));
+    if (orderListFile.open(QIODevice::ReadOnly)) {
+        const QJsonArray orders = QJsonDocument::fromJson(orderListFile.readAll()).object()
+                                      .value(QStringLiteral("orders")).toArray();
+        for (const QJsonValue &value : orders) {
+            const QJsonObject object = value.toObject();
+            OrderListItemView item;
+            item.businessId = object.value(QStringLiteral("businessId")).toString();
+            item.relatedBusinessId = object.value(QStringLiteral("relatedBusinessId")).toString();
+            item.stationId = object.value(QStringLiteral("stationId")).toString();
+            item.chargerId = object.value(QStringLiteral("chargerId")).toString();
+            item.type = object.value(QStringLiteral("type")).toString() == QStringLiteral("reservation")
+                            ? OrderBusinessType::Reservation : OrderBusinessType::Charging;
+            item.stationName = object.value(QStringLiteral("stationName")).toString();
+            item.chargerCode = object.value(QStringLiteral("chargerCode")).toString();
+            item.createdAtText = object.value(QStringLiteral("createdAtText")).toString();
+            item.summaryText = object.value(QStringLiteral("summaryText")).toString();
+            item.durationText = object.value(QStringLiteral("durationText")).toString();
+            item.energyText = object.value(QStringLiteral("energyText")).toString();
+            item.amountText = object.value(QStringLiteral("amountText")).toString();
+            item.statusText = object.value(QStringLiteral("statusText")).toString();
+            item.statusTone = object.value(QStringLiteral("statusTone")).toString();
+            item.actionText = object.value(QStringLiteral("actionText")).toString();
+            const QString action = object.value(QStringLiteral("action")).toString();
+            if (action == QStringLiteral("continue_payment")) item.action = OrderListAction::ContinuePayment;
+            else if (action == QStringLiteral("view_charging")) item.action = OrderListAction::ViewCharging;
+            else if (action == QStringLiteral("start_reserved_charging")) item.action = OrderListAction::StartReservedCharging;
+            else item.action = OrderListAction::ViewDetails;
+            m_orderListState.orders.append(item);
+        }
+    }
 
     QString chargeFixtureError;
     if (!loadChargeConfirmationDemo(QStringLiteral(":/demo/charge-demo-data.tmp"),
@@ -133,6 +201,111 @@ UserDemoController::UserDemoController(MockUserNetworkApi *network,
         m_chargeConfirmationState.message = chargeFixtureError;
         m_chargeConfirmationState.canRetry = true;
     }
+
+    QString chargingSessionFixtureError;
+    if (loadChargingSessionDemo(QStringLiteral(":/demo/charging-session-demo-data.tmp"),
+                                &m_chargingSessionDemoTemplates,
+                                &chargingSessionFixtureError)) {
+        // Fixture entries are templates created only after a successful scan/start.
+        // Logging in must never fabricate an already-running charging order.
+        renderChargingSessions();
+    } else {
+        ChargingSessionViewState errorState;
+        errorState.status = ChargingSessionStatus::Error;
+        errorState.message = chargingSessionFixtureError;
+        errorState.canRefresh = true;
+        m_chargingSession->render(errorState);
+    }
+
+    MapDemoFixture mapFixture;
+    QString mapFixtureError;
+    if (loadMapDemoFixture(QStringLiteral(":/demo/map-demo-data.tmp"),
+                           &mapFixture, &mapFixtureError)) {
+        m_demoStations = mapFixture.stations;
+    }
+
+    connect(m_chargingSession, &ChargingSessionWindow::activeSessionSelected,
+            this, [this](const QString &orderId) {
+        for (const ChargingSessionViewState &state : m_chargingSessionStates) {
+            if (state.orderId != orderId) continue;
+            renderChargingSessions(orderId);
+            break;
+        }
+    });
+    connect(m_chargingSession, &ChargingSessionWindow::stopChargingRequested,
+            this, [this] {
+        QString selectedId = m_selectedChargingOrderId;
+        if (selectedId.isEmpty() && !m_chargingSessionStates.isEmpty())
+            selectedId = m_chargingSessionStates.first().orderId;
+        for (int index = 0; index < m_chargingSessionStates.size(); ++index) {
+            const ChargingSessionViewState session = m_chargingSessionStates.at(index);
+            if (session.orderId != selectedId) continue;
+            m_settlementState.orderId = session.orderId;
+            m_settlementState.stationName = session.stationName;
+            m_settlementState.chargerCode = session.chargerCode;
+            m_settlementState.durationText = session.durationText;
+            m_settlementState.chargingTimeText = session.durationText;
+            m_settlementState.energyText = session.energyText;
+            m_settlementState.paymentMethodText = tr("钱包支付");
+            m_settlementState.chargerInfoText = tr("%1 · %2号桩")
+                                                    .arg(session.stationName,
+                                                         session.chargerCode);
+            m_settlementState.payableText = session.amountText;
+            m_settlementState.canPay = true;
+            m_settlementState.message.clear();
+            OrderListItemView pendingOrder;
+            pendingOrder.businessId = session.orderId;
+            pendingOrder.type = OrderBusinessType::Charging;
+            pendingOrder.stationName = session.stationName;
+            pendingOrder.chargerCode = session.chargerCode;
+            pendingOrder.createdAtText = tr("刚刚");
+            pendingOrder.summaryText = tr("充电 %1 · %2").arg(session.durationText, session.energyText);
+            pendingOrder.durationText = session.durationText;
+            pendingOrder.energyText = session.energyText;
+            pendingOrder.amountText = m_settlementState.payableText;
+            pendingOrder.statusText = tr("待支付");
+            pendingOrder.statusTone = QStringLiteral("warning");
+            pendingOrder.actionText = tr("继续支付");
+            pendingOrder.action = OrderListAction::ContinuePayment;
+            for (int row = m_orderListState.orders.size() - 1; row >= 0; --row)
+                if (m_orderListState.orders.at(row).businessId == session.orderId)
+                    m_orderListState.orders.removeAt(row);
+            m_orderListState.orders.prepend(pendingOrder);
+            for (OrderListItemView &order : m_orderListState.orders) {
+                if (order.type != OrderBusinessType::Reservation
+                    || order.relatedBusinessId != session.orderId) continue;
+                    order.statusText = tr("已使用");
+                    order.statusTone = QStringLiteral("success");
+                order.summaryText = tr("预约已使用 · 关联充电订单待结算");
+                order.actionText = tr("查看详情");
+                order.action = OrderListAction::ViewDetails;
+                break;
+            }
+            const QString chargerKey = m_orderChargerKeys.take(session.orderId);
+            if (!chargerKey.isEmpty()) {
+                m_demoChargingChargerKeys.remove(chargerKey);
+                m_demoAvailabilityConsumedKeys.remove(chargerKey);
+                const QString stationId = chargerKey.section(QLatin1Char('\n'), 0, 0);
+                const QString chargerId = chargerKey.section(QLatin1Char('\n'), 1, 1);
+                if (m_reservedDetailState.stationId == stationId) {
+                    for (ChargerListItemView &charger : m_reservedDetailState.chargers) {
+                        if (charger.chargerId != chargerId) continue;
+                        charger.statusText = tr("空闲");
+                        charger.canCharge = true;
+                        charger.disabledReason.clear();
+                        break;
+                    }
+                    renderStationDetailWithReservation(m_reservedDetailState);
+                }
+            }
+            m_chargingSessionStates.removeAt(index);
+            renderChargingSessions();
+            renderHomeWithReservation(m_mapBinder->currentHomeState());
+            m_settlement->render(m_settlementState);
+            m_mainWindow->renderSecondaryPage(m_settlement);
+            return;
+        }
+    });
 
     ReservationDemoFixture reservationFixture;
     QString reservationFixtureError;
@@ -239,6 +412,7 @@ UserDemoController::UserDemoController(MockUserNetworkApi *network,
             m_mapBinder, &IMapUiBinder::routePreviewRequested);
     connect(m_stationDetail, &StationDetailWindow::chargeConfirmationRequested,
             this, [this](const QString &stationId, const QString &chargerId) {
+        m_scannerOpenedFromCharging = false;
         m_scanState.expectedStationId = stationId;
         m_scanState.expectedChargerId = chargerId;
         m_scanState.chargerDisplayText = tr("充电桩 %1").arg(
@@ -253,7 +427,47 @@ UserDemoController::UserDemoController(MockUserNetworkApi *network,
         m_mainWindow->renderSecondaryPage(m_qrScanner);
     });
     connect(m_qrScanner, &QrCodeScannerWindow::backRequested,
-            this, [this] { m_mainWindow->renderSecondaryPage(m_stationDetail); });
+            this, [this] {
+        if (m_scannerOpenedFromOrders) {
+            m_scannerOpenedFromOrders = false;
+            m_scannerOpenedFromCharging = false;
+            m_orderList->render(m_orderListState);
+            m_mainWindow->renderSecondaryPage(m_orderList);
+            return;
+        }
+        if (m_scannerOpenedFromCharging)
+            m_mainWindow->renderPrimaryPage(MainWindow::PrimaryPage::Charging);
+        else
+            m_mainWindow->renderSecondaryPage(m_stationDetail);
+    });
+    connect(m_chargingSession, &ChargingSessionWindow::scanChargingRequested,
+            this, [this] {
+        m_scannerOpenedFromCharging = true;
+        m_scanState.expectedStationId.clear();
+        m_scanState.expectedChargerId.clear();
+        for (const StationDetail &station : m_demoStations) {
+            for (const ChargerSummary &charger : station.chargers) {
+                const QString key = station.stationId + QLatin1Char('\n') + charger.chargerId;
+                if (!charger.canStartCharging || m_demoChargingChargerKeys.contains(key))
+                    continue;
+                m_scanState.expectedStationId = station.stationId;
+                m_scanState.expectedChargerId = charger.chargerId;
+                break;
+            }
+            if (!m_scanState.expectedChargerId.isEmpty()) break;
+        }
+        m_scanState.chargerDisplayText = tr("等待识别充电桩二维码");
+        m_scanState.status = ScanStatus::Error;
+        m_scanState.cameraAvailable = false;
+        m_scanState.cameraPermissionGranted = false;
+        m_scanState.canRetry = false;
+        m_scanState.canImportImage = !m_scanState.expectedChargerId.isEmpty();
+        m_scanState.message = m_scanState.canImportImage
+            ? tr("Demo 尚未接入摄像头，可从相册选择二维码进行流程测试")
+            : tr("现有站点数据中没有可启动的充电桩");
+        m_qrScanner->render(m_scanState);
+        m_mainWindow->renderSecondaryPage(m_qrScanner);
+    });
     connect(m_qrScanner, &QrCodeScannerWindow::imageImportRequested,
             this, [this] {
         showChargeConfirmation(m_scanState.expectedStationId,
@@ -299,43 +513,26 @@ UserDemoController::UserDemoController(MockUserNetworkApi *network,
             m_reservationConfirmation->render(m_reservationState);
             return;
         }
-        ReservationConfirmationViewState submitting = m_reservationState;
-        submitting.status = ReservationConfirmationStatus::Submitting;
-        submitting.canReserve = false;
-        submitting.message = QStringLiteral("正在提交预约…");
-        m_reservationConfirmation->render(submitting);
-        QTimer::singleShot(m_reservationResponseDelayMs, this,
-                           [this, stationId, chargerId, durationSeconds] {
-            if (m_reservationOutcome != QStringLiteral("success")) {
-                m_reservationState.status = ReservationConfirmationStatus::Error;
-                m_reservationState.canReserve = false;
-                m_reservationState.canRetry = true;
-                m_reservationState.message = QStringLiteral("预约失败，请重试");
-                m_reservationConfirmation->render(m_reservationState);
-                return;
-            }
-
-            m_reservedDetailState = m_mapBinder->currentStationDetailState();
-            for (ChargerListItemView &charger : m_reservedDetailState.chargers) {
-                if (charger.chargerId != chargerId) continue;
-                charger.statusText = QStringLiteral("已预约");
-                charger.canCharge = false;
-                charger.disabledReason = QStringLiteral("该充电桩已由当前用户预约");
-                break;
-            }
-            m_reservedDetailState.selectedChargerId = chargerId;
-            m_reservedDetailState.canContinueToConfirmation = true;
-            ActiveReservationView active;
-            active.reservationId = QStringLiteral("demo-reservation-%1")
-                                       .arg(QDateTime::currentMSecsSinceEpoch());
-            active.stationId = stationId;
-            active.chargerId = chargerId;
-            active.expiresAtUtc = QDateTime::currentDateTimeUtc().addSecs(durationSeconds);
-            active.canCancel = true;
-            m_reservedDetailState.activeReservation = active;
-            renderStationDetailWithReservation(m_reservedDetailState);
-            m_mainWindow->renderSecondaryPage(m_stationDetail);
-        });
+        m_pendingReservationStationId = stationId;
+        m_pendingReservationChargerId = chargerId;
+        m_pendingReservationDurationSeconds = durationSeconds;
+        m_paymentState = PaymentViewState{};
+        m_paymentState.businessId = QStringLiteral("reservation:%1:%2").arg(stationId, chargerId);
+        m_paymentState.purpose = PaymentPurpose::Reservation;
+        m_paymentState.titleText = tr("预约支付");
+        m_paymentState.descriptionText = tr("%1 · %2号桩预约押金")
+                                             .arg(m_reservationState.stationName,
+                                                  m_reservationState.chargerCode);
+        m_paymentState.amountText = m_reservationState.depositText;
+        m_paymentState.balanceText = m_paymentBalanceText;
+        const qint64 reservationAmountCents = moneyTextToCents(m_paymentState.amountText);
+        m_paymentState.canPay = reservationAmountCents >= 0
+                                && m_paymentBalanceCents >= reservationAmountCents;
+        m_paymentState.canRecharge = true;
+        if (!m_paymentState.canPay)
+            m_paymentState.message = tr("钱包余额不足，请先充值后再支付。");
+        m_payment->render(m_paymentState);
+        m_mainWindow->renderSecondaryPage(m_payment);
     });
     connect(m_stationDetail, &StationDetailWindow::reservationExpiredRefreshRequested,
             this, [this] {
@@ -426,6 +623,16 @@ UserDemoController::UserDemoController(MockUserNetworkApi *network,
             }
             m_reservedDetailState.activeReservation.reset();
             m_reservedDetailState.selectedChargerId.clear();
+            for (OrderListItemView &order : m_orderListState.orders) {
+                if (order.businessId != reservationId
+                    || order.type != OrderBusinessType::Reservation) continue;
+                order.statusText = tr("已退回");
+                order.statusTone = QStringLiteral("neutral");
+                order.summaryText = tr("预约已取消 · 押金已退回钱包");
+                order.actionText = tr("查看详情");
+                order.action = OrderListAction::ViewDetails;
+                break;
+            }
             m_reservedDetailState.canContinueToConfirmation = false;
             m_reservedDetailState.canCreateReservation = false;
             m_reservedDetailState.reservationDisabledReason =
@@ -457,7 +664,19 @@ UserDemoController::UserDemoController(MockUserNetworkApi *network,
         submitCancellation(reservationId, false);
     });
     connect(m_chargeConfirmation, &ChargeConfirmationWindow::backRequested,
-            this, [this] { m_mainWindow->renderSecondaryPage(m_stationDetail); });
+            this, [this] {
+        if (m_scannerOpenedFromOrders) {
+            m_scannerOpenedFromOrders = false;
+            m_scannerOpenedFromCharging = false;
+            m_orderList->render(m_orderListState);
+            m_mainWindow->renderSecondaryPage(m_orderList);
+            return;
+        }
+        if (m_scannerOpenedFromCharging)
+            m_mainWindow->renderPrimaryPage(MainWindow::PrimaryPage::Charging);
+        else
+            m_mainWindow->renderSecondaryPage(m_stationDetail);
+    });
     connect(m_chargeConfirmation, &ChargeConfirmationWindow::confirmationRefreshRequested,
             this, [this] { m_chargeConfirmation->render(m_chargeConfirmationState); });
     connect(m_chargeConfirmation, &ChargeConfirmationWindow::rechargeRequested,
@@ -467,11 +686,79 @@ UserDemoController::UserDemoController(MockUserNetworkApi *network,
         m_mainWindow->renderSecondaryPage(m_walletRecharge);
     });
     connect(m_chargeConfirmation, &ChargeConfirmationWindow::startChargingRequested,
-            this, [this](const QString &, const QString &) {
+            this, [this](const QString &stationId, const QString &chargerId) {
         ChargeConfirmationViewState submitting = m_chargeConfirmationState;
         submitting.status = ChargeConfirmationStatus::Submitting;
         submitting.canStart = false;
         m_chargeConfirmation->render(submitting);
+        QTimer::singleShot(DemoDelayMs, this, [this, stationId, chargerId] {
+            if (m_chargingSessionDemoTemplates.isEmpty()) return;
+            ChargingSessionViewState session = m_chargingSessionDemoTemplates.at(
+                m_chargingSessionStates.size() % m_chargingSessionDemoTemplates.size());
+            session.orderId = QStringLiteral("demo-scan-%1")
+                                  .arg(m_chargingSessionStates.size() + 1);
+            if (!m_chargeConfirmationState.stationName.isEmpty())
+                session.stationName = m_chargeConfirmationState.stationName;
+            if (!m_chargeConfirmationState.chargerCode.isEmpty())
+                session.chargerCode = m_chargeConfirmationState.chargerCode;
+            session.chargerTypeText = m_chargeConfirmationState.chargerTypeText;
+            session.ratedPowerText = m_chargeConfirmationState.powerText;
+            m_chargingSessionStates.append(session);
+            const QString chargerKey = stationId + QLatin1Char('\n') + chargerId;
+            QString consumedReservationId;
+            if (m_reservedDetailState.activeReservation
+                && m_reservedDetailState.activeReservation->stationId == stationId
+                && m_reservedDetailState.activeReservation->chargerId == chargerId)
+                consumedReservationId = m_reservedDetailState.activeReservation->reservationId;
+            if (consumedReservationId.isEmpty()) {
+                for (const OrderListItemView &order : m_orderListState.orders) {
+                    if (order.type == OrderBusinessType::Reservation
+                        && order.stationId == stationId && order.chargerId == chargerId
+                        && order.action == OrderListAction::StartReservedCharging) {
+                        consumedReservationId = order.businessId;
+                        break;
+                    }
+                }
+            }
+            const bool consumedReservation = !consumedReservationId.isEmpty();
+            m_demoChargingChargerKeys.insert(chargerKey);
+            m_orderChargerKeys.insert(session.orderId, chargerKey);
+            if (m_reservedDetailState.stationId == stationId) {
+                for (ChargerListItemView &charger : m_reservedDetailState.chargers) {
+                    if (charger.chargerId != chargerId) continue;
+                    charger.statusText = tr("充电中");
+                    charger.canCharge = false;
+                    charger.disabledReason = tr("该充电桩正在为当前账号充电");
+                    break;
+                }
+            }
+            // Keep one occupied key across idle→charging and reserved→charging.
+            // Home rendering de-duplicates it with an active reservation.
+            m_demoAvailabilityConsumedKeys.insert(chargerKey);
+            if (consumedReservation) {
+                if (m_reservedDetailState.activeReservation
+                    && m_reservedDetailState.activeReservation->reservationId == consumedReservationId)
+                    m_reservedDetailState.activeReservation.reset();
+                for (OrderListItemView &order : m_orderListState.orders) {
+                    if (order.businessId != consumedReservationId
+                        || order.type != OrderBusinessType::Reservation) continue;
+                    order.statusText = tr("充电中");
+                    order.statusTone = QStringLiteral("success");
+                    order.summaryText = tr("预约已使用 · 正在充电");
+                    order.actionText = tr("查看充电");
+                    order.action = OrderListAction::ViewCharging;
+                    order.relatedBusinessId = session.orderId;
+                    break;
+                }
+            }
+            // Demo uses the map fixture as its server substitute. Re-render the
+            // authoritative home snapshot with the newly occupied charger so
+            // the station row changes immediately even while the page is hidden.
+            renderHomeWithReservation(m_mapBinder->currentHomeState());
+            renderChargingSessions(session.orderId);
+            m_scannerOpenedFromOrders = false;
+            m_mainWindow->renderPrimaryPage(MainWindow::PrimaryPage::Charging);
+        });
     });
     connect(m_navigation, &NavigationWindow::backRequested,
             m_mapBinder, &IMapUiBinder::backRequested);
@@ -483,6 +770,172 @@ UserDemoController::UserDemoController(MockUserNetworkApi *network,
             m_mapBinder, &IMapUiBinder::originCandidateSelected);
     connect(m_navigation, &NavigationWindow::routeRetryRequested,
             m_mapBinder, &IMapUiBinder::routeRetryRequested);
+
+    connect(m_settlement, &SettlementWindow::backRequested,
+            this, [this] { m_mainWindow->renderPrimaryPage(MainWindow::PrimaryPage::Charging); });
+    connect(m_settlement, &SettlementWindow::paymentRequested,
+            this, [this](const QString &orderId) {
+        m_paymentState = PaymentViewState{};
+        m_paymentState.businessId = orderId;
+        m_paymentState.purpose = PaymentPurpose::ChargingSettlement;
+        m_paymentState.titleText = tr("订单支付");
+        m_paymentState.descriptionText = tr("%1 · %2号桩充电订单")
+                                             .arg(m_settlementState.stationName,
+                                                  m_settlementState.chargerCode);
+        m_paymentState.amountText = m_settlementState.payableText;
+        m_paymentState.balanceText = m_paymentBalanceText;
+        const qint64 settlementAmountCents = moneyTextToCents(m_paymentState.amountText);
+        m_paymentState.canPay = settlementAmountCents >= 0
+                                && m_paymentBalanceCents >= settlementAmountCents;
+        m_paymentState.canRecharge = true;
+        if (!m_paymentState.canPay)
+            m_paymentState.message = tr("钱包余额不足，请先充值后再支付。");
+        m_payment->render(m_paymentState);
+        m_mainWindow->renderSecondaryPage(m_payment);
+    });
+    connect(m_payment, &PaymentWindow::backRequested, this, [this] {
+        if (m_paymentState.purpose == PaymentPurpose::ChargingSettlement)
+            m_mainWindow->renderSecondaryPage(m_settlement);
+        else
+            m_mainWindow->renderSecondaryPage(m_reservationConfirmation);
+    });
+    connect(m_payment, &PaymentWindow::rechargeRequested, this, [this] {
+        m_walletOpenedFromPayment = true;
+        m_walletOpenedFromConfirmation = false;
+        m_walletRecharge->renderBalance(m_paymentBalanceText);
+        m_mainWindow->renderSecondaryPage(m_walletRecharge);
+    });
+    connect(m_payment, &PaymentWindow::payRequested,
+            this, [this](const QString &businessId, PaymentPurpose purpose) {
+        if (m_paymentOperationActive) return;
+        const qint64 amountCents = moneyTextToCents(m_paymentState.amountText);
+        if (amountCents < 0 || m_paymentBalanceCents < amountCents) {
+            m_paymentState.canPay = false;
+            m_paymentState.message = tr("钱包余额不足，请先充值后再支付。");
+            m_payment->render(m_paymentState);
+            return;
+        }
+        m_paymentOperationActive = true;
+        PaymentViewState submitting = m_paymentState;
+        submitting.status = PaymentViewStatus::Submitting;
+        submitting.canPay = false;
+        submitting.message = tr("正在确认支付结果，请勿重复提交…");
+        m_payment->render(submitting);
+        QTimer::singleShot(m_paymentDelayMs, this, [this, businessId, purpose, amountCents] {
+            if (m_paymentOutcome == QStringLiteral("failure")) {
+                m_paymentOperationActive = false;
+                m_paymentState.status = PaymentViewStatus::Error;
+                m_paymentState.message = tr("支付失败，未扣除余额，请稍后重试。");
+                m_paymentState.canPay = true;
+                m_payment->render(m_paymentState);
+                return;
+            }
+            if (m_paymentOutcome == QStringLiteral("processing")) {
+                m_paymentState.status = PaymentViewStatus::Submitting;
+                m_paymentState.canPay = false;
+                m_paymentState.canRecharge = false;
+                m_paymentState.message = tr("支付处理中，请勿关闭页面或重复支付。");
+                m_payment->render(m_paymentState);
+                return;
+            }
+            if (m_paymentOutcome == QStringLiteral("result_unknown")) {
+                m_paymentState.status = PaymentViewStatus::ResultUnknown;
+                m_paymentState.canPay = false;
+                m_paymentState.canRecharge = false;
+                m_paymentState.canRecoverResult = true;
+                m_paymentState.message = tr("支付结果暂时未知，正在查询原支付操作，请勿重复支付。");
+                m_payment->render(m_paymentState);
+                return;
+            }
+            m_paymentOperationActive = false;
+            m_paymentBalanceCents -= amountCents;
+            m_paymentBalanceText = QStringLiteral("¥%1")
+                                       .arg(m_paymentBalanceCents / 100.0, 0, 'f', 2);
+            if (purpose == PaymentPurpose::Reservation) {
+                if (businessId != m_paymentState.businessId
+                    || m_pendingReservationStationId.isEmpty()
+                    || m_pendingReservationChargerId.isEmpty()) return;
+                if (m_reservationOutcome != QStringLiteral("success")) {
+                    m_paymentState.status = PaymentViewStatus::Error;
+                    m_paymentState.canPay = false;
+                    m_paymentState.message = tr("支付已成功，但预约创建失败，押金退款处理中。请勿重复支付。");
+                    m_payment->render(m_paymentState);
+                    return;
+                }
+                m_reservedDetailState = m_mapBinder->currentStationDetailState();
+                for (ChargerListItemView &charger : m_reservedDetailState.chargers) {
+                    if (charger.chargerId != m_pendingReservationChargerId) continue;
+                    charger.statusText = QStringLiteral("已预约");
+                    charger.canCharge = false;
+                    charger.disabledReason = QStringLiteral("该充电桩已由当前用户预约");
+                    break;
+                }
+                m_reservedDetailState.selectedChargerId = m_pendingReservationChargerId;
+                m_reservedDetailState.canContinueToConfirmation = true;
+                ActiveReservationView active;
+                active.reservationId = QStringLiteral("demo-reservation-%1")
+                                           .arg(QDateTime::currentMSecsSinceEpoch());
+                active.stationId = m_pendingReservationStationId;
+                active.chargerId = m_pendingReservationChargerId;
+                active.expiresAtUtc = QDateTime::currentDateTimeUtc().addSecs(
+                    m_pendingReservationDurationSeconds);
+                active.canCancel = true;
+                m_reservedDetailState.activeReservation = active;
+                OrderListItemView reservationOrder;
+                reservationOrder.businessId = active.reservationId;
+                reservationOrder.stationId = active.stationId;
+                reservationOrder.chargerId = active.chargerId;
+                reservationOrder.type = OrderBusinessType::Reservation;
+                reservationOrder.stationName = m_reservationState.stationName;
+                reservationOrder.chargerCode = m_reservationState.chargerCode;
+                reservationOrder.createdAtText = tr("刚刚");
+                reservationOrder.summaryText = tr("预约时长 %1 · 押金已支付")
+                                                   .arg(m_reservationState.durationText);
+                reservationOrder.amountText = m_reservationState.depositText;
+                reservationOrder.statusText = tr("已预约");
+                reservationOrder.statusTone = QStringLiteral("info");
+                reservationOrder.actionText = tr("扫码充电");
+                reservationOrder.action = OrderListAction::StartReservedCharging;
+                m_orderListState.orders.prepend(reservationOrder);
+                renderStationDetailWithReservation(m_reservedDetailState);
+                renderHomeWithReservation(m_mapBinder->currentHomeState());
+                m_pendingReservationStationId.clear();
+                m_pendingReservationChargerId.clear();
+                m_pendingReservationDurationSeconds = 0;
+            } else {
+                for (OrderListItemView &order : m_orderListState.orders) {
+                    if (order.businessId != businessId
+                        || order.type != OrderBusinessType::Charging) continue;
+                    order.statusText = tr("已完成");
+                    order.statusTone = QStringLiteral("success");
+                    order.actionText = tr("查看详情");
+                    order.action = OrderListAction::ViewDetails;
+                    break;
+                }
+            }
+            m_paymentState.status = PaymentViewStatus::Success;
+            m_paymentState.canPay = false;
+            m_paymentState.message = tr("支付成功");
+            m_payment->render(m_paymentState);
+            QTimer::singleShot(500, this, [this] {
+                m_mainWindow->renderPrimaryPage(MainWindow::PrimaryPage::Home);
+            });
+        });
+    });
+    connect(m_payment, &PaymentWindow::paymentResultRefreshRequested,
+            this, [this](const QString &businessId) {
+        if (businessId != m_paymentState.businessId) return;
+        m_paymentState.status = PaymentViewStatus::Submitting;
+        m_paymentState.canRecoverResult = false;
+        m_paymentState.message = tr("正在查询原支付操作结果…");
+        m_payment->render(m_paymentState);
+        QTimer::singleShot(m_paymentDelayMs, this, [this] {
+            m_paymentState.status = PaymentViewStatus::ResultUnknown;
+            m_paymentState.canRecoverResult = true;
+            m_paymentState.message = tr("暂未查到最终结果，请稍后继续查询，切勿重新支付。");
+            m_payment->render(m_paymentState);
+        });
+    });
 
     connect(m_mapBinder, &IMapUiBinder::homeStateChanged,
             this, &UserDemoController::renderHomeWithReservation);
@@ -499,10 +952,107 @@ UserDemoController::UserDemoController(MockUserNetworkApi *network,
             m_binder->currentProfileViewState().balanceText);
         m_mainWindow->renderSecondaryPage(m_walletRecharge);
     });
+    connect(m_mainWindow, &MainWindow::ordersPageRequested, this, [this] {
+        m_orderList->render(m_orderListState);
+        m_mainWindow->renderSecondaryPage(m_orderList);
+    });
+    connect(m_orderList, &OrderListWindow::backRequested,
+            this, [this] { m_mainWindow->renderPrimaryPage(MainWindow::PrimaryPage::Profile); });
+    connect(m_orderList, &OrderListWindow::refreshRequested,
+            this, [this] { m_orderList->render(m_orderListState); });
+    connect(m_orderList, &OrderListWindow::orderActionRequested,
+            this, [this](const QString &businessId, OrderBusinessType type,
+                         OrderListAction action) {
+        for (const OrderListItemView &order : m_orderListState.orders) {
+            if (order.businessId != businessId || order.type != type) continue;
+            if (action == OrderListAction::ContinuePayment
+                && type == OrderBusinessType::Charging) {
+                m_settlementState.orderId = order.businessId;
+                m_settlementState.stationName = order.stationName;
+                m_settlementState.chargerCode = order.chargerCode;
+                m_settlementState.durationText = order.durationText;
+                m_settlementState.chargingTimeText = order.durationText;
+                m_settlementState.energyText = order.energyText;
+                m_settlementState.paymentMethodText = tr("钱包支付");
+                m_settlementState.chargerInfoText = tr("%1 · %2号桩")
+                                                        .arg(order.stationName,
+                                                             order.chargerCode);
+                m_settlementState.payableText = order.amountText;
+                m_settlementState.canPay = true;
+                m_settlement->render(m_settlementState);
+                m_mainWindow->renderSecondaryPage(m_settlement);
+            } else if (action == OrderListAction::ViewCharging) {
+                renderChargingSessions(order.relatedBusinessId.isEmpty()
+                                           ? businessId : order.relatedBusinessId);
+                m_mainWindow->renderPrimaryPage(MainWindow::PrimaryPage::Charging);
+            } else if (action == OrderListAction::StartReservedCharging) {
+                if (QMessageBox::question(
+                        m_orderList, tr("前往扫码充电"),
+                        tr("该充电桩已预约，是否现在前往扫码充电？"),
+                        QMessageBox::Yes | QMessageBox::No,
+                        QMessageBox::Yes) == QMessageBox::Yes) {
+                    m_scannerOpenedFromOrders = true;
+                    m_scannerOpenedFromCharging = true;
+                    m_scanState.expectedStationId = order.stationId;
+                    m_scanState.expectedChargerId = order.chargerId;
+                    m_scanState.chargerDisplayText = tr("已预约充电桩 %1")
+                        .arg(order.chargerCode);
+                    m_scanState.status = ScanStatus::Error;
+                    m_scanState.cameraAvailable = false;
+                    m_scanState.cameraPermissionGranted = false;
+                    m_scanState.canRetry = false;
+                    m_scanState.canImportImage = true;
+                    m_scanState.message = tr("Demo 尚未接入摄像头，可从相册选择二维码进行流程测试");
+                    m_qrScanner->render(m_scanState);
+                    m_mainWindow->renderSecondaryPage(m_qrScanner);
+                }
+            } else {
+                QMessageBox::information(m_orderList, tr("订单详情"),
+                    tr("%1\n%2号桩\n%3\n金额：%4\n状态：%5")
+                        .arg(order.stationName, order.chargerCode, order.summaryText,
+                             order.amountText, order.statusText));
+            }
+            return;
+        }
+    });
     connect(m_mainWindow, &MainWindow::activeReservationRequested,
             m_stationDetail, &StationDetailWindow::activeReservationRequested);
+    connect(m_walletRecharge, &WalletRechargeWindow::rechargeRequested,
+            this, [this](const QString &amountText) {
+        bool amountOk = false;
+        const double amount = amountText.toDouble(&amountOk);
+        QString balanceNumber = m_paymentBalanceText;
+        balanceNumber.remove(QChar(0x00A5));
+        bool balanceOk = false;
+        const double balance = balanceNumber.toDouble(&balanceOk);
+        if (!amountOk || amount <= 0.0) {
+            QMessageBox::warning(m_walletRecharge, tr("充值金额无效"),
+                                 tr("请输入大于 0 的充值金额。"));
+            return;
+        }
+        const double updatedBalance = (balanceOk ? balance : 0.0) + amount;
+        m_paymentBalanceCents = qRound64(updatedBalance * 100.0);
+        m_paymentBalanceText = QStringLiteral("¥%1").arg(updatedBalance, 0, 'f', 2);
+        m_walletRecharge->renderBalance(m_paymentBalanceText);
+        QMessageBox::information(m_walletRecharge, tr("充值成功"),
+                                 tr("钱包余额已更新，可返回继续支付。"));
+    });
     connect(m_walletRecharge, &WalletRechargeWindow::backRequested,
             this, [this] {
+        if (m_walletOpenedFromPayment) {
+            m_walletOpenedFromPayment = false;
+            m_paymentState.balanceText = m_paymentBalanceText;
+            const qint64 amountCents = moneyTextToCents(m_paymentState.amountText);
+            m_paymentState.canPay = !m_paymentOperationActive && amountCents >= 0
+                                    && m_paymentBalanceCents >= amountCents;
+            if (m_paymentState.canPay) {
+                m_paymentState.status = PaymentViewStatus::Ready;
+                m_paymentState.message.clear();
+            }
+            m_payment->render(m_paymentState);
+            m_mainWindow->renderSecondaryPage(m_payment);
+            return;
+        }
         if (m_walletOpenedFromConfirmation) {
             m_mainWindow->renderSecondaryPage(m_chargeConfirmation);
             return;
@@ -660,6 +1210,18 @@ void UserDemoController::renderStationDetailWithReservation(StationDetailViewSta
             tr("刚刚取消过预约，冷却结束后可再次预约");
         m_reservedDetailState = state;
     }
+    for (ChargerListItemView &charger : state.chargers) {
+        const QString key = state.stationId + QLatin1Char('\n') + charger.chargerId;
+        if (!m_demoChargingChargerKeys.contains(key)) continue;
+        charger.statusText = tr("充电中");
+        charger.canCharge = false;
+        charger.disabledReason = tr("该充电桩正在为当前账号充电");
+        if (state.selectedChargerId == charger.chargerId) {
+            state.selectedChargerId.clear();
+            state.canContinueToConfirmation = false;
+        }
+    }
+    m_reservedDetailState = state;
     m_stationDetail->render(state);
     renderHomeWithReservation(m_mapBinder->currentHomeState());
 }
@@ -670,12 +1232,60 @@ void UserDemoController::renderHomeWithReservation(HomeMapViewState state)
         state.activeReservation = m_reservedDetailState.activeReservation;
     else
         state.activeReservation.reset();
+    for (StationListItemView &station : state.stations) {
+        int newlyOccupied = 0;
+        const QString prefix = station.stationId + QLatin1Char('\n');
+        QSet<QString> occupiedKeys;
+        for (const QString &key : m_demoAvailabilityConsumedKeys) {
+            if (key.startsWith(prefix)) occupiedKeys.insert(key);
+        }
+        if (state.activeReservation
+            && state.activeReservation->stationId == station.stationId) {
+            occupiedKeys.insert(prefix + state.activeReservation->chargerId);
+        }
+        newlyOccupied = occupiedKeys.size();
+        station.availableCount = qMax(0, station.availableCount - newlyOccupied);
+        station.availabilityText = tr("可用 %1/%2")
+                                       .arg(station.availableCount)
+                                       .arg(qMax(0, station.totalCount));
+    }
     m_mainWindow->renderHome(state);
 }
 
 void UserDemoController::showChargeConfirmation(const QString &stationId,
                                                 const QString &chargerId)
 {
+    if (m_scannerOpenedFromCharging && !m_chargingSessionDemoTemplates.isEmpty()) {
+        m_chargeConfirmationState.stationId = stationId;
+        m_chargeConfirmationState.chargerId = chargerId;
+        for (const StationDetail &station : m_demoStations) {
+            if (station.stationId != stationId) continue;
+            m_chargeConfirmationState.stationName = station.summary.name;
+            m_chargeConfirmationState.stationAddress = station.summary.address;
+            if (station.summary.priceCentsPerKwh) {
+                m_chargeConfirmationState.energyPriceText = QStringLiteral("¥%1/度")
+                    .arg(*station.summary.priceCentsPerKwh / 100.0, 0, 'f', 2);
+            }
+            for (const ChargerSummary &charger : station.chargers) {
+                if (charger.chargerId != chargerId) continue;
+                m_chargeConfirmationState.chargerCode = charger.chargerId.section(
+                    QLatin1Char('-'), -1).toUpper();
+                m_chargeConfirmationState.chargerTypeText = charger.type;
+                m_chargeConfirmationState.powerText = charger.powerKw
+                    ? QStringLiteral("%1 kW").arg(*charger.powerKw, 0, 'f', 0)
+                    : QStringLiteral("-- kW");
+                break;
+            }
+            break;
+        }
+        m_chargeConfirmationState.chargerStatusText = tr("空闲");
+        m_chargeConfirmationState.status = ChargeConfirmationStatus::Ready;
+        m_chargeConfirmationState.canStart = true;
+        m_chargeConfirmationState.message.clear();
+        m_chargeConfirmation->render(m_chargeConfirmationState);
+        m_mainWindow->renderSecondaryPage(m_chargeConfirmation);
+        return;
+    }
     StationDetailViewState detail = m_mapBinder->currentStationDetailState();
     if (m_reservedDetailState.activeReservation.has_value())
         detail = m_reservedDetailState;
@@ -698,6 +1308,36 @@ void UserDemoController::showChargeConfirmation(const QString &stationId,
     m_chargeConfirmationState.message.clear();
     m_chargeConfirmation->render(m_chargeConfirmationState);
     m_mainWindow->renderSecondaryPage(m_chargeConfirmation);
+}
+
+void UserDemoController::renderChargingSessions(const QString &selectedOrderId)
+{
+    ChargingSessionCollectionViewState collection;
+    collection.selectedOrderId = selectedOrderId;
+    if (collection.selectedOrderId.isEmpty() && !m_chargingSessionStates.isEmpty())
+        collection.selectedOrderId = m_chargingSessionStates.first().orderId;
+    m_selectedChargingOrderId = collection.selectedOrderId;
+    for (const ChargingSessionViewState &item : m_chargingSessionStates) {
+        ChargingSessionSummaryView summary;
+        summary.orderId = item.orderId;
+        summary.stationName = item.stationName;
+        summary.chargerCode = item.chargerCode;
+        summary.chargerTypeText = item.chargerTypeText;
+        summary.ratedPowerText = item.ratedPowerText;
+        summary.currentPowerText = item.currentPowerText;
+        summary.durationText = item.durationText;
+        summary.statusText = tr("充电中");
+        summary.status = item.status;
+        collection.sessions.append(summary);
+    }
+    m_chargingSession->renderSessions(collection);
+    for (const ChargingSessionViewState &item : m_chargingSessionStates) {
+        if (item.orderId == collection.selectedOrderId) {
+            m_chargingSession->render(item);
+            return;
+        }
+    }
+    m_chargingSession->render(ChargingSessionViewState{});
 }
 
 void UserDemoController::showOnly(QWidget *target)

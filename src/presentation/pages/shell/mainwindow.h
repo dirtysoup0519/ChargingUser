@@ -46,6 +46,7 @@ signals:
     void stationSelected(const QString &stationId);
     void profileEditRequested();
     void rechargePageRequested();
+    void ordersPageRequested();
     void logoutRequested();
     void activeReservationRequested(const QString &reservationId,
                                     const QString &stationId,

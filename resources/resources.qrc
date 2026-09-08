@@ -4,6 +4,7 @@
   <file alias="images/login_hero.png">images/login_hero.png</file>
   <file alias="images/home_map.png">images/home_map.png</file>
   <file alias="images/station_hero.png">images/station_hero.png</file>
+  <file alias="images/charging_complete_hero.png">images/charging_complete_hero.png</file>
   <file alias="images/route_map.png">images/route_map.png</file>
   <file alias="map/tencent-map.html">map/tencent-map.html</file>
   <file alias="icons/default_avatar.png">icons/default_avatar.png</file>

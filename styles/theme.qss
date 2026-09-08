@@ -16,6 +16,7 @@ QLabel#sloganLabel, QLabel#hintLabel, QLabel.subtle { color: #8994A3; font-size:
 QLabel#pageTitle, QLabel#sectionTitle, QLabel#chargingPageTitle, QLabel#profilePageTitle {
     color: #202B3C; font-size: 17px; font-weight: 700;
 }
+QLabel#profilePageTitle { background: transparent; }
 QPushButton#backButton {
     background: transparent; border: none; color: #334155;
     font-size: 32px; font-weight: 400; padding: 0;
@@ -397,7 +398,10 @@ QPushButton#startButton:hover { background: #0D6BE8; }
 /* Charge confirmation */
 QWidget#chargeConfirmationPage { background: #F6F8FC; }
 QScrollArea#confirmationScroll, QScrollArea#confirmationScroll > QWidget > QWidget { background: #F6F8FC; border: none; }
-QFrame#stationCard, QFrame#chargerCard, QFrame#feeCard, QFrame#walletCard {
+QWidget#chargeConfirmationPage QFrame#stationCard,
+QWidget#chargeConfirmationPage QFrame#chargerCard,
+QWidget#chargeConfirmationPage QFrame#feeCard,
+QWidget#chargeConfirmationPage QFrame#walletCard {
     background: #FFFFFF; border: 1px solid #E2E8F0; border-radius: 14px;
 }
 QLabel#stationNameLabel, QLabel#selectedChargerTitle, QLabel#feeTitle, QLabel#walletTitle {

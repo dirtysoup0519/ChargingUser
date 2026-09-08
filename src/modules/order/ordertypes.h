@@ -20,6 +20,11 @@ struct ChargingOrder
     qint64 priceCentsPerKwhSnapshot = 0;
     double energyKwh = 0.0;
     qint64 amountCents = 0;
+    // Live telemetry is optional because not every charger exposes vehicle SOC.
+    std::optional<int> progressPercent;
+    std::optional<double> currentPowerKw;
+    std::optional<double> ratedPowerKw;
+    QString chargerType;
     QDateTime startedAtUtc;
     std::optional<QDateTime> endedAtUtc;
     std::optional<QDateTime> paymentDeadlineUtc;

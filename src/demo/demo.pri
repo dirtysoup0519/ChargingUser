@@ -15,6 +15,9 @@ HEADERS += \
 
 DISTFILES += \
     $$PWD/charge-demo-data.tmp \
+    $$PWD/charging-session-demo-data.tmp \
     $$PWD/map-demo-data.tmp \
+    $$PWD/payment-demo-data.tmp \
+    $$PWD/order-list-demo-data.tmp \
     $$PWD/reservation-demo-data.tmp \
     $$PWD/user-demo-data.tmp

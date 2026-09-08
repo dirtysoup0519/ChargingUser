@@ -6,6 +6,9 @@ HEADERS += \
     $$PWD/contracts/profileeditviewstate.h \
     $$PWD/contracts/profileviewstate.h \
     $$PWD/contracts/chargingviewstates.h \
+    $$PWD/contracts/chargingsessionviewstate.h \
+    $$PWD/contracts/paymentviewstates.h \
+    $$PWD/contracts/orderlistviewstate.h \
     $$PWD/contracts/reservationviewstates.h \
     $$PWD/contracts/scanviewstate.h
 

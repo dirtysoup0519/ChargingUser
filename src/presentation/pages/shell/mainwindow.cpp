@@ -11,6 +11,7 @@
 #include <QHBoxLayout>
 #include <QLabel>
 #include <QList>
+#include <QListWidgetItem>
 #include <QLineEdit>
 #include <QMessageBox>
 #include <QMouseEvent>
@@ -130,6 +131,11 @@ MainWindow::MainWindow(QWidget *parent) : QWidget(parent), ui(new Ui::MainWindow
             this, &MainWindow::profileEditRequested);
     connect(ui->btnRecharge, &QPushButton::clicked,
             this, &MainWindow::rechargePageRequested);
+    connect(ui->profileMenuList, &QListWidget::itemClicked,
+            this, [this](QListWidgetItem *item) {
+        if (item && ui->profileMenuList->row(item) == 0)
+            emit ordersPageRequested();
+    });
     connect(ui->btnLogout, &QPushButton::clicked,
             this, &MainWindow::logoutRequested);
 }

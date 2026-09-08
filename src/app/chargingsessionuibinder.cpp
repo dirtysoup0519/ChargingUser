@@ -203,11 +203,26 @@ void ChargingSessionUiBinder::applyOrder(const ChargingOrder &order)
 {
     m_state.stationName = order.stationName;
     m_state.chargerCode = order.chargerCode;
+    m_state.progressPercent = order.progressPercent.value_or(-1);
+    m_state.currentPowerText = order.currentPowerKw
+        ? QStringLiteral("%1 kW").arg(*order.currentPowerKw, 0, 'f', 1)
+        : QStringLiteral("-- kW");
+    m_state.ratedPowerText = order.ratedPowerKw
+        ? QStringLiteral("%1 kW").arg(*order.ratedPowerKw, 0, 'f', 0)
+        : QStringLiteral("-- kW");
+    m_state.chargerTypeText = order.chargerType;
     m_state.energyText = QStringLiteral("%1 kWh").arg(order.energyKwh, 0, 'f', 2);
     m_state.amountText = QStringLiteral("¥%1").arg(order.amountCents / 100.0, 0, 'f', 2);
     m_state.startedAtText = order.startedAtUtc.isValid()
                                 ? order.startedAtUtc.toLocalTime().toString(Qt::ISODate)
                                 : QStringLiteral("--");
+    if (order.startedAtUtc.isValid()) {
+        const qint64 minutes = qMax<qint64>(
+            0, order.startedAtUtc.secsTo(QDateTime::currentDateTimeUtc()) / 60);
+        m_state.durationText = QStringLiteral("%1 分钟").arg(minutes);
+    } else {
+        m_state.durationText = QStringLiteral("--");
+    }
     m_state.message.clear();
     m_state.canRecoverResult = false;
     m_state.canRefresh = true;
