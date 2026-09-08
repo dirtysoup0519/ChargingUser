@@ -59,6 +59,7 @@ class RealChargingNetworkTests final : public QObject
 private slots:
     void init();
     void confirmationReadsStationAndUserBalance();
+    void scanConfirmationResolvesStationByChargerCode();
     void unsafeStartCapabilityRemainsDisabled();
 
 private:
@@ -75,6 +76,8 @@ void RealChargingNetworkTests::init()
     emit m_transport->connected();
     m_api = new RealChargingNetworkApi(m_backend, this);
     m_api->setIdentity(QStringLiteral("U13800138000"));
+    // BackendClient 连接建立时会发送握手帧；各用例只断言业务请求。
+    m_transport->sentFrames.clear();
 }
 
 void RealChargingNetworkTests::confirmationReadsStationAndUserBalance()
@@ -127,6 +130,37 @@ void RealChargingNetworkTests::confirmationReadsStationAndUserBalance()
 void RealChargingNetworkTests::unsafeStartCapabilityRemainsDisabled()
 {
     QVERIFY(!m_api->capabilities().canStartChargingSafely());
+}
+
+void RealChargingNetworkTests::scanConfirmationResolvesStationByChargerCode()
+{
+    QSignalSpy ready(m_api, &IChargingNetworkApi::confirmationReady);
+    m_api->loadConfirmation({QStringLiteral("scan-1"), {}}, QString(),
+                            QStringLiteral("A-02"));
+    QCOMPARE(frameType(m_transport->sentFrames.first()), STATION_QRY_REQ);
+    const QJsonObject request = framePayload(m_transport->sentFrames.first());
+    QCOMPARE(request.value(QStringLiteral("chargerCode")).toString(),
+             QStringLiteral("A-02"));
+    QVERIFY(!request.contains(QStringLiteral("stationName")));
+
+    const QJsonObject charger{{QStringLiteral("chargerCode"), QStringLiteral("A-02")},
+                              {QStringLiteral("online"), true},
+                              {QStringLiteral("businessStatus"), CHARGER_IDLE}};
+    const QJsonObject station{{QStringLiteral("stationName"), QStringLiteral("扫码站")},
+                              {QStringLiteral("chargers"), QJsonArray{charger}}};
+    feed(m_transport, STATION_QRY_ACK,
+         QJsonObject{{QStringLiteral("stations"), QJsonArray{station}}});
+    feed(m_transport, DATA,
+         QJsonObject{{QStringLiteral("data"), QJsonArray{
+             QJsonObject{{QStringLiteral("username"), QStringLiteral("U13800138000")},
+                         {QStringLiteral("balanceCents"), 5000}}}}});
+    feed(m_transport, DATA,
+         QJsonObject{{QStringLiteral("data"), QJsonArray{}}});
+
+    QCOMPARE(ready.count(), 1);
+    const auto snapshot = ready.first().at(1).value<ChargeConfirmationSnapshot>();
+    QCOMPARE(snapshot.stationId, QStringLiteral("扫码站"));
+    QCOMPARE(snapshot.chargerId, QStringLiteral("A-02"));
 }
 
 QTEST_GUILESS_MAIN(RealChargingNetworkTests)

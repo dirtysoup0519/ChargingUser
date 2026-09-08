@@ -18,6 +18,8 @@ public:
 public slots:
     void chargeConfirmationRequested(const QString &stationId,
                                      const QString &chargerId) override;
+    /** 扫码入口：仅携带 chargerCode，由服务端解析所属站点。 */
+    void chargeConfirmationByChargerCodeRequested(const QString &chargerCode);
     void confirmationRefreshRequested() override;
     void backRequested() override;
     void startChargingRequested(const QString &stationId,

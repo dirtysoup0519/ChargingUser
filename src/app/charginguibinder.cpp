@@ -48,6 +48,21 @@ void ChargingUiBinder::chargeConfirmationRequested(const QString &stationId,
     load();
 }
 
+void ChargingUiBinder::chargeConfirmationByChargerCodeRequested(
+    const QString &chargerCode)
+{
+    const QString normalized = chargerCode.trimmed();
+    if (normalized.isEmpty()) return;
+    if (!m_requestId.isEmpty()) {
+        m_service->cancel(m_requestId);
+        m_requestId.clear();
+    }
+    m_state = ChargeConfirmationViewState{};
+    m_state.chargerId = normalized;
+    emit confirmationPageRequested();
+    load();
+}
+
 void ChargingUiBinder::confirmationRefreshRequested()
 {
     if (m_state.status != ChargeConfirmationStatus::Loading
@@ -107,10 +122,11 @@ void ChargingUiBinder::handleConfirmationReady(
     const RequestContext &context, const ChargeConfirmationSnapshot &snapshot)
 {
     if (context.requestId != m_requestId
-        || snapshot.stationId != m_state.stationId
-        || snapshot.chargerId != m_state.chargerId)
+        || (!m_state.stationId.isEmpty() && snapshot.stationId != m_state.stationId)
+        || snapshot.chargerId.compare(m_state.chargerId, Qt::CaseInsensitive) != 0)
         return;
     m_requestId.clear();
+    m_state.stationId = snapshot.stationId;
     m_state.status = ChargeConfirmationStatus::Ready;
     m_state.stationName = snapshot.stationName;
     m_state.stationAddress = snapshot.stationAddress;
