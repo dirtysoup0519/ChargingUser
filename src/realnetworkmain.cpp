@@ -7,9 +7,13 @@
 #include "network/realusernetworkapi.h"
 #include "modules/map/tencentmapservice.h"
 #include "presentation/pages/auth/loginwindow.h"
+#include "presentation/pages/charging/chargeconfirmationwindow.h"
+#include "presentation/pages/charging/qrcodescannerwindow.h"
+#include "presentation/pages/charging/reservationconfirmationwindow.h"
 #include "presentation/pages/home/navigationwindow.h"
 #include "presentation/pages/home/stationdetailwindow.h"
 #include "presentation/pages/profile/profileeditwindow.h"
+#include "presentation/pages/profile/walletrechargewindow.h"
 #include "presentation/pages/shell/mainwindow.h"
 #include "protocol.h"
 
@@ -202,13 +206,85 @@ int main(int argc, char *argv[])
     MainWindow mainWindow;
     StationDetailWindow stationDetail(&mainWindow);
     NavigationWindow navigation(&mainWindow);
+    QrCodeScannerWindow qrScanner(&mainWindow);
+    ChargeConfirmationWindow chargeConfirmation(&mainWindow);
+    ReservationConfirmationWindow reservationConfirmation(&mainWindow);
+    WalletRechargeWindow walletRecharge(&mainWindow);
     mainWindow.registerSecondaryPage(&stationDetail);
     mainWindow.registerSecondaryPage(&navigation);
+    mainWindow.registerSecondaryPage(&qrScanner);
+    mainWindow.registerSecondaryPage(&chargeConfirmation);
+    mainWindow.registerSecondaryPage(&reservationConfirmation);
+    mainWindow.registerSecondaryPage(&walletRecharge);
     if (!mapKey.isEmpty()) {
         mainWindow.setMapKey(mapKey);
     }
     IUserUiBinder *binder = assembly.userUiBinder();
     bool profileEditOpenedFromMain = false;
+    QString pendingStationId;
+    QString pendingChargerId;
+
+    const auto selectedCharger = [&mapBinder](const QString &chargerId) {
+        const StationDetailViewState detail =
+            mapBinder.currentStationDetailState();
+        for (const ChargerListItemView &charger : detail.chargers) {
+            if (charger.chargerId == chargerId) {
+                return charger;
+            }
+        }
+        return ChargerListItemView{};
+    };
+
+    const auto showChargeConfirmation = [&] {
+        const StationDetailViewState detail =
+            mapBinder.currentStationDetailState();
+        const ChargerListItemView charger = selectedCharger(pendingChargerId);
+        ChargeConfirmationViewState state;
+        state.stationId = pendingStationId;
+        state.chargerId = pendingChargerId;
+        state.stationName = detail.name;
+        state.stationAddress = detail.address;
+        state.chargerCode = charger.chargerId;
+        state.chargerTypeText = charger.title;
+        state.powerText = charger.powerText;
+        state.chargerStatusText = charger.statusText;
+        state.energyPriceText = detail.priceText;
+        state.walletBalanceText = binder->currentProfileViewState().balanceText;
+        state.status = ChargeConfirmationStatus::Ready;
+        state.canStart = false;
+        state.canRetry = false;
+        state.canRecharge = true;
+        state.disabledReason = QStringLiteral("真实启动充电将在阶段 F 接入");
+        chargeConfirmation.render(state);
+        mainWindow.renderSecondaryPage(&chargeConfirmation);
+    };
+
+    const auto showReservationConfirmation =
+        [&](const QString &stationId, const QString &chargerId) {
+        pendingStationId = stationId;
+        pendingChargerId = chargerId;
+        const StationDetailViewState detail =
+            mapBinder.currentStationDetailState();
+        const ChargerListItemView charger = selectedCharger(chargerId);
+        ReservationConfirmationViewState state;
+        state.stationId = stationId;
+        state.chargerId = chargerId;
+        state.stationName = detail.name;
+        state.stationAddress = detail.address;
+        state.chargerCode = charger.chargerId;
+        state.chargerTypeText = charger.title;
+        state.powerText = charger.powerText;
+        state.depositText = QStringLiteral("以服务端返回为准");
+        state.durationText = QStringLiteral("15 分钟");
+        state.depositPolicyText = QStringLiteral("预约能力将在阶段 J 接入");
+        state.durationSeconds = 15 * 60;
+        state.status = ReservationConfirmationStatus::Ready;
+        state.canReserve = false;
+        state.canRetry = false;
+        state.disabledReason = QStringLiteral("真实预约将在阶段 J 接入");
+        reservationConfirmation.render(state);
+        mainWindow.renderSecondaryPage(&reservationConfirmation);
+    };
 
     const auto showOnly = [&login, &profileEdit, &mainWindow](QWidget *target) {
         login.setVisible(target == &login);
@@ -256,6 +332,75 @@ int main(int argc, char *argv[])
                      &mapBinder, &IMapUiBinder::backRequested);
     QObject::connect(&stationDetail, &StationDetailWindow::stationRefreshRequested,
                      &mapBinder, &IMapUiBinder::stationRefreshRequested);
+    QObject::connect(&stationDetail, &StationDetailWindow::chargerSelected,
+                     &mapBinder, &IMapUiBinder::chargerSelected);
+    QObject::connect(&stationDetail,
+                     &StationDetailWindow::chargeConfirmationRequested,
+                     &mapBinder, &IMapUiBinder::chargeConfirmationRequested);
+    QObject::connect(&mapBinder,
+                     &IMapUiBinder::chargeConfirmationPageRequested,
+                     &app, [&](const QString &stationId,
+                               const QString &chargerId) {
+        pendingStationId = stationId;
+        pendingChargerId = chargerId;
+        ScanViewState state;
+        state.expectedStationId = stationId;
+        state.expectedChargerId = chargerId;
+        state.chargerDisplayText = selectedCharger(chargerId).title;
+        state.status = ScanStatus::Error;
+        state.cameraAvailable = false;
+        state.cameraPermissionGranted = false;
+        state.canRetry = false;
+        state.canImportImage = true;
+        state.message = QStringLiteral(
+            "摄像头识别尚未接入，可选择图片继续核对服务器电桩数据");
+        qrScanner.render(state);
+        mainWindow.renderSecondaryPage(&qrScanner);
+    });
+    QObject::connect(&qrScanner, &QrCodeScannerWindow::backRequested,
+                     &app, [&] {
+        mainWindow.renderSecondaryPage(&stationDetail);
+    });
+    QObject::connect(&qrScanner, &QrCodeScannerWindow::imageImportRequested,
+                     &app, showChargeConfirmation);
+    QObject::connect(&chargeConfirmation,
+                     &ChargeConfirmationWindow::backRequested,
+                     &app, [&] {
+        mainWindow.renderSecondaryPage(&stationDetail);
+    });
+    QObject::connect(&chargeConfirmation,
+                     &ChargeConfirmationWindow::confirmationRefreshRequested,
+                     &app, showChargeConfirmation);
+    QObject::connect(&chargeConfirmation,
+                     &ChargeConfirmationWindow::rechargeRequested,
+                     &app, [&] {
+        walletRecharge.renderBalance(
+            binder->currentProfileViewState().balanceText);
+        mainWindow.renderSecondaryPage(&walletRecharge);
+    });
+    QObject::connect(&stationDetail,
+                     &StationDetailWindow::reservationConfirmationRequested,
+                     &app, showReservationConfirmation);
+    QObject::connect(&reservationConfirmation,
+                     &ReservationConfirmationWindow::backRequested,
+                     &app, [&] {
+        mainWindow.renderSecondaryPage(&stationDetail);
+    });
+    QObject::connect(&reservationConfirmation,
+                     &ReservationConfirmationWindow::reservationRefreshRequested,
+                     &app, [&] {
+        showReservationConfirmation(pendingStationId, pendingChargerId);
+    });
+    QObject::connect(&mainWindow, &MainWindow::rechargePageRequested,
+                     &app, [&] {
+        walletRecharge.renderBalance(
+            binder->currentProfileViewState().balanceText);
+        mainWindow.renderSecondaryPage(&walletRecharge);
+    });
+    QObject::connect(&walletRecharge, &WalletRechargeWindow::backRequested,
+                     &app, [&] {
+        mainWindow.renderPrimaryPage(MainWindow::PrimaryPage::Profile);
+    });
     QObject::connect(&stationDetail, &StationDetailWindow::routePreviewRequested,
                      &mapBinder, &IMapUiBinder::routePreviewRequested);
     QObject::connect(&navigation, &NavigationWindow::backRequested,
