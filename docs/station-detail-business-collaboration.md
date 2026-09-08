@@ -1,22 +1,24 @@
 # 充电站详情页业务逻辑与 UI 协作协议
 
-状态：草案，待逻辑负责人、UI 负责人和服务端负责人共同冻结
+状态：逻辑阶段 1—7 已完成；UI 接入、正式装配和服务端协议仍待完成
 
-日期：2026-09-07
+首次编写：2026-09-07
+
+最近核对：2026-09-08
 
 适用范围：`ChargingUser` 的“首页站点 → 站点详情 → 选择充电桩 → 充电确认”链路
 
 ## 1. 结论与范围
 
-当前仓库已经具备站点详情的只读领域模型、动态电桩列表、页面状态渲染、路线入口、真实网络查询适配器和相应测试，但尚不能把详情页视为可直接接入完整真实业务的成品：
+当前仓库已经完成站点/电桩选择、充电确认、启动结果恢复、订单、充电会话、钱包和支付的非 UI 业务合同及状态编排，但尚不能把链路视为可交付成品：
 
-- 默认程序入口只显示登录页，真实站点服务、`MapUiBinder`、详情窗口和页面流转尚未形成正式装配闭环；现有完整页面连接主要位于 Demo 装配。
-- 详情页能动态展示任意数量的充电桩，但不能选择某个 `chargerId`；主按钮被固定禁用，无法进入充电确认。
-- `IChargerService` 目前只有站点/电桩只读查询，没有启动充电、停止充电、订单查询、支付或结果恢复接口。
-- v2 协议已有 108/208、109/209、106/214、115/215、225、226 等消息码和基础字段，但没有可靠回显 `requestId`、`operationId`，也没有按 `operationId` 查询变更结果的消息；因此不能安全实现幂等启动、超时后的结果恢复和并发应答关联。
-- 当前详情查询通过 100/200 依次拉取整个 `station` 表和 `charger` 表，再由客户端过滤。该方案可用于小规模联调，但不适合直接定义为生产级真实业务接口。
+- `MapUiBinder` 已支持按稳定 `chargerId` 选择、刷新后保留/清除选择，并输出是否允许进入确认页；现有 `StationDetailWindow` 尚未消费这些新增字段和意图。
+- `ChargingUiBinder`、`ChargingSessionUiBinder` 已实现确认、启动/停止提交防重和结果未知恢复；确认页、充电进行页、结算页尚未由 UI 负责人实现。
+- `IOrderService`、`IWalletService`、相关 DTO、Mock 和协议能力闸门已存在；订单结算 Binder、钱包 Binder、历史订单/结算明细合同仍未完成。
+- 正式应用装配目前仍以用户模块为主，地图、充电、订单、钱包 Binder 与页面流转尚未形成统一对象图。
+- v2.5 虽新增 `119/229` 并保留 `108/208`、`109/209`、`113/216`、`115/215`，仍缺少稳定站点/电桩 ID、可靠回显 `requestId`/`operationId`、幂等规则和按原操作查询结果的合同；真实变更能力因此被显式关闭。
 
-本阶段必须完成详情页的所有只读按钮响应、动态列表与选择响应，并为订单、钱包、启动/停止充电留下稳定接口。订单、钱包、支付和真实启动本阶段不实现业务内部逻辑。
+现阶段目标是由 UI 负责人依据已冻结的 ViewState/意图完成页面，由逻辑负责人补齐非网络业务编排和正式装配；协议条件不满足前，不启用真实启动、停止、充值或支付。
 
 ## 2. 现有资料及权威关系
 
@@ -167,60 +169,35 @@ UI 不发出无参数 `chargeRequested()`，也不生成 `requestId` 或 `operat
 
 ## 7. 订单、钱包与充电接口预留
 
-本阶段可以先定义接口与 DTO，不实现真实网络适配。建议订单与充电控制独立于只读 `IChargerService`：
+接口与 DTO 已实现，订单与充电控制保持独立于只读 `IChargerService`。权威定义以代码为准：
 
 ```cpp
-struct ChargeConfirmationSnapshot {
-    QString stationId;
-    QString chargerId;
-    QString stationName;
-    QString chargerCode;
-    QString chargerType;
-    std::optional<double> powerKw;
-    qint64 priceCentsPerKwh = 0;
-    std::optional<qint64> walletBalanceCents;
-    bool canStart = false;
-    QString disabledReason;
-};
+// src/modules/charging/ichargingservice.h
+loadConfirmation(context, stationId, chargerId);
+startCharging(context, stationId, chargerId);
+queryStartResult(readContext, originalOperationId);
 
-struct StartChargingResult {
-    QString requestId;
-    QString operationId;
-    QString orderId;
-    QString stationId;
-    QString chargerId;
-    qint64 priceCentsPerKwhSnapshot = 0;
-    QDateTime startedAtUtc;
-};
+// src/modules/order/iorderservice.h
+queryActiveOrder(readContext);
+queryOrderDetail(readContext, orderId);
+stopCharging(mutationContext, orderId);
+queryStopResult(readContext, originalOperationId);
 
-class IChargingService : public QObject {
-    Q_OBJECT
-public slots:
-    virtual void loadConfirmation(const RequestContext &context,
-                                  const QString &stationId,
-                                  const QString &chargerId) = 0;
-    virtual void startCharging(const RequestContext &context,
-                               const QString &stationId,
-                               const QString &chargerId) = 0;
-    virtual void queryOperationResult(const RequestContext &context,
-                                      const QString &operationId) = 0;
-    virtual void cancelRead(const QString &requestId) = 0;
-signals:
-    void confirmationReady(const RequestContext &, const ChargeConfirmationSnapshot &);
-    void chargingStarted(const RequestContext &, const StartChargingResult &);
-    void operationStatusReady(const RequestContext &, const OperationResult &);
-    void requestFailed(const ClientError &);
-};
+// src/modules/wallet/iwalletservice.h
+queryWallet(readContext);
+recharge(mutationContext, amountCents);
+payOrder(mutationContext, orderId);
+queryOperationResult(readContext, originalOperationId);
 ```
 
 约束：
 
 - `loadConfirmation` 是只读请求，`operationId` 必须为空。
 - `startCharging` 是变更请求，`operationId` 必须非空且由客户端生成；服务端必须按它幂等。
-- `queryOperationResult` 查询原操作，不得产生新的启动操作。
+- `queryStartResult`、`queryStopResult`、`queryOperationResult` 都只查询各自原操作，不得产生新的变更操作。
 - 用户身份从已认证会话获取，不接受 UI 自报 `username` 作为授权依据。
 - 钱包余额在确认页仅作展示；本阶段允许为 `null` 并显示“余额待接入”。余额不足是否阻止启动必须由产品/服务端明确，不能由 UI 猜测。
-- 后续订单模块应提供 `queryActiveOrder`、`queryOrderDetail`、`stopCharging`、`payOrder`；钱包模块提供 `queryWallet`、`recharge`。所有金额均使用整数分。
+- 订单模块已提供 `queryActiveOrder`、`queryOrderDetail`、`stopCharging`；支付归属钱包模块的 `payOrder`。所有金额均使用整数分。
 
 ## 8. 服务端协议必须补齐的字段
 
@@ -293,10 +270,116 @@ signals:
 - 变更请求具备非空 `operationId`；结果未知时只查询原操作，不盲目重试。
 - 在 BitDev Ubuntu 22.04、Qt 6.2.4、`qmake6` 环境完成构建、自动测试和 UI 验收；未执行前只能报告“未验证”。
 
-## 11. 建议实施顺序
+## 11. 初始实施进度
 
-1. 共同冻结 ViewState、signals、稳定 ID 和服务端协议缺口。
-2. UI 完成动态选择与所有页面状态；逻辑同步完成 Binder 选择规则和 Mock。
-3. 正式装配现有真实只读详情与路线能力，完成真实站点详情联调。
-4. 新增确认页接口和占位实现，保证详情页可走到确认页但不真实启动。
-5. 服务端补齐幂等与关联字段后，再实现启动、订单、停止、结算和钱包。
+1. ViewState、业务接口、稳定 ID 约束和服务端协议缺口已经形成合同。
+2. Binder 选择规则、确认/会话编排及 Mock 已完成；动态选择和页面状态 UI 待 UI 负责人完成。
+3. 真实只读详情与路线已有基础实现；正式应用装配和完整联调待完成。
+4. 确认、订单、停止、钱包、支付接口已预留；对应页面及钱包/结算 Binder 待完成。
+5. 真实启动、停止、充值和支付必须等待服务端补齐幂等、关联和结果查询合同。
+
+## 12. 2026-09-08 实现基线
+
+以下非 UI 能力已完成并有自动测试，不应由页面重复实现：
+
+| 能力 | 权威代码 | 当前结论 |
+|---|---|---|
+| 动态电桩选择与选择失效 | `MapUiBinder`、`StationDetailViewState` | 已完成；按 `chargerId` 工作，不依赖数量或下标 |
+| 充电确认状态编排 | `ChargingUiBinder`、`ChargeConfirmationViewState` | 已完成；含刷新、防重、迟到应答隔离和启动结果恢复 |
+| 真实充电能力闸门 | `ChargingService`、`ChargingBackendCapabilities` | 已完成；v2.5 默认禁止不安全变更 |
+| 订单边界 | `IOrderService`、`ChargingOrder`、`MockOrderService` | 已完成基础查询/停止/结果查询合同；真实适配未实现 |
+| 充电会话编排 | `ChargingSessionUiBinder`、`ChargingSessionViewState` | 已完成基础详情刷新、停止防重和结果恢复 |
+| 钱包与支付边界 | `IWalletService`、`WalletService`、`WalletBackendCapabilities` | 已完成；金额为整数分，v2.5 默认禁止不安全资金变更 |
+
+这些能力位于提交 `15cbea5` 至 `8955c72`。页面不得复制其中的校验、金额计算、请求标识或操作恢复逻辑。
+
+## 13. UI 负责人执行清单
+
+UI 负责人拥有 `src/presentation/pages/**`、`ui/**`、样式和资源文件。逻辑负责人不在这些文件中决定布局或视觉方案。双方只通过 ViewState、页面意图和页面注册接缝协作。
+
+### 13.1 站点详情页
+
+修改现有 `StationDetailWindow`：
+
+- `render()` 必须完全按 `StationDetailViewState.chargers` 渲染 0、1、3、20+ 个电桩，不创建固定数量槽位。
+- 每个可用电桩行发出 `chargerSelected(chargerId)`；选中态只取自 `selectedChargerId`，页面不得自行保存第二份选择真相。
+- 主按钮仅在 `canContinueToConfirmation=true` 时启用，点击发出 `chargeConfirmationRequested(stationId, selectedChargerId)`。
+- 路线按钮使用 `navigationDisabledReason`，充电按钮使用 `chargingDisabledReason`，禁止继续使用一个通用原因覆盖两个动作。
+- `isRefreshing=true` 时保留旧内容但禁止继续；0 桩显示合法空态；不可用行展示 `disabledReason`。
+- 大列表必须可滚动且不遮挡底部按钮。列表实现形式由 UI 负责人决定，业务层不要求特定控件。
+
+### 13.2 充电确认页
+
+新增确认页并只消费 `ChargeConfirmationViewState`：
+
+- 展示站点、地址、电桩、类型、功率、状态、电价和钱包余额。
+- 页面发出返回、重新核对、去充值、开始充电四类语义意图。
+- `Loading`、`Submitting`、`ResultUnknown` 期间按 ViewState 禁止重复提交；不得用 UI 定时器模拟启动成功。
+- `canStart=false` 时展示 `disabledReason`；余额缺失显示“待接入”，不得按展示字符串推断余额策略。
+- 开始按钮不得生成 `requestId`、`operationId` 或订单号。
+
+### 13.3 充电进行页
+
+新增充电会话页并只消费 `ChargingSessionViewState`：
+
+- 覆盖 `Loading`、`Charging`、`Stopping`、`ResultUnknown`、`Ended`、`Error`。
+- 展示订单号、站点、电桩、开始时间、已充电量和当前金额；缺失字段使用占位，不自行估算费用。
+- 页面发出刷新、停止充电、恢复停止结果意图。
+- 只有 `canStop=true` 时允许停止；`canRecoverResult=true` 时显示“继续确认结果”，不得重新提交停止操作。
+
+### 13.4 钱包、支付与结算页
+
+- 现有 `WalletRechargeWindow` 只负责金额输入和展示；金额字符串的合法性、元转分和上限校验交给后续 `WalletUiBinder`。
+- 结算页只展示后续 `SettlementViewState` 的权威金额明细，不在页面内相加电费、服务费、停车费或优惠。
+- 支付、充值提交中和结果未知时禁止返回操作造成“看似取消”；是否允许离开由 Binder 状态决定。
+- UI 可完成禁用态和演示夹具，但协议能力关闭时不得通过按钮或本地状态绕过能力闸门。
+
+### 13.5 UI 自测矩阵
+
+UI 提交至少覆盖：
+
+- 电桩数量 0、1、3、20+，以及选中桩刷新后消失或不可用；
+- 长站名、长地址、长错误原因、空价格和空余额；
+- 首次加载、保留内容刷新、空态、可重试/不可重试错误；
+- 快速双击继续、开始、停止、充值和支付时只发出一次有效意图；
+- 键盘焦点、滚动、固定底栏、禁用原因和可访问名称；
+- 页面返回后仍保持正确的 `stationId`、`chargerId`、`orderId`。
+
+## 14. 除真实网络功能外的未完成项
+
+### P0：形成可运行的正式业务闭环
+
+1. **正式应用装配**：当前 `UserApplicationAssembly` 只装配用户模块。需要建立应用级对象图，注入地图、充电、订单、钱包 Service，并暴露对应 Binder；对象生命周期由装配层统一管理。
+2. **页面流转协调**：扩展 M4，使链路成为“首页 → 详情 → 确认 → 充电中 → 结算/订单详情”，以及“确认 → 充值 → 返回后重新核对”。页面不得互相直接持有并决定业务跳转。
+3. **UI 接入**：完成第 13 节四组页面及信号连接。业务 Binder 已存在的功能不得在 Widget 中重新实现。
+4. **移除兼容接缝**：新 UI 接通后，评审并删除无参数 `chargeRequested()`、旧 `navigationRequested()` 等兼容信号，避免新旧链路同时触发。删除必须独立提交并先确认没有其他调用方。
+
+### P1：补齐非网络业务编排
+
+1. **钱包 Binder**：新增 `WalletViewState`/`WalletUiBinder`，负责严格解析充值金额、元转整数分、上下限校验、提交防重、迟到应答隔离和结果未知恢复。
+2. **结算与订单 Binder**：新增 `SettlementViewState`、`OrderDetailViewState` 和相应 Binder，处理待支付、支付中、结果未知、余额不足、已结算、已取消等状态。
+3. **结算明细合同**：订单 DTO 目前只有总金额。需与产品/服务端冻结电费、服务费、停车费、优惠、应付、实付、支付截止时间和退款字段；UI 不自行拆分或计算。
+4. **活动订单恢复**：登录成功和应用恢复前台时调用 `queryActiveOrder`，存在 Charging 订单则恢复充电会话，存在 PendingSettlement 订单则进入结算提醒；不得依赖上次打开的页面判断。
+5. **充电过程刷新策略**：定义 `IChargingProgressSource` 或等价抽象，统一处理推送、轮询、退避、前后台切换和数据新鲜度。即使暂用 Mock，也不能在页面内部累计电量或金额。
+6. **统一操作恢复**：把启动、停止、充值、支付共同需要的 operationId 保存与恢复策略抽出，至少保证进程内不重复提交；是否需要跨进程持久化必须在产品确认后决定。
+7. **业务权限汇总**：明确 Frozen、Unknown、余额不足、已有活动订单分别对启动、充值、支付、停止的影响，由 Service/Binder 输出最终 `canXxx`，UI 不组合推断。
+
+### P2：质量、产品决策与可维护性
+
+1. **错误模型统一**：冻结错误码到用户文案、是否可重试、是否结果未知和推荐动作的映射，避免各 Binder 自带不一致中文文案。
+2. **边界和容量限制**：冻结最大电桩数、最大订单/流水页大小、字符串长度、金额范围和时间格式；超限数据必须可诊断且不拖垮页面。
+3. **时间与金额规则**：统一 UTC 输入、本地展示、舍入规则和货币单位；禁止 `double` 参与资金计算。
+4. **分页与历史记录**：若产品要求订单历史和钱包流水，增加游标分页合同、空态、刷新和去重规则；目前只定义了钱包快照中的近期流水。
+5. **可观测性**：为 requestId、operationId、订单状态迁移和能力闸门拒绝增加脱敏日志；日志不得记录 token、完整手机号或支付敏感信息。
+6. **测试补齐**：增加应用装配测试、全链路状态测试、重启恢复测试、错误映射测试和 UI 合并后的回归测试；最终在 BitDev Qt 6.2.4 做完整工程构建与测试。
+
+## 15. 剩余工作实施顺序
+
+1. **合同冻结**：逻辑与 UI 共同确认页面意图、四组 ViewState、结算字段、充值金额规则和页面返回策略；先提交纯合同变更。
+2. **逻辑补齐**：实现 Wallet/Settlement/Order Binder、活动订单恢复、进度源抽象和统一错误映射，每个模块配独立测试。
+3. **UI 并行开发**：UI 负责人按第 13 节完成页面，只依赖已冻结合同；不得修改 Service 内部规则。
+4. **正式装配**：建立统一应用对象图与 M4 流转，先用 Mock 完成全链路，不等待真实网络协议。
+5. **联合验收**：合并 UI 后覆盖动态数量、快速重复点击、迟到应答、结果未知、返回恢复和应用重启场景。
+6. **真实网络阶段**：服务端协议补齐后再实现适配器、开启 capabilities，并进行联调、故障注入和兼容测试；不得只因消息码存在就开启变更按钮。
+
+每一步都应保持“合同 → 逻辑 → UI → 装配”的依赖方向。涉及共享合同或 `.pri/.pro` 时先同步，禁止用整文件覆盖解决冲突。

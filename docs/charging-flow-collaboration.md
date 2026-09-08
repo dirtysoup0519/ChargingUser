@@ -4,6 +4,8 @@
 当前 UI 交付分支：`station-detail-navigation-ui`  
 适用链路：站点详情 → 充电确认 → 充电进行 → 订单结算
 
+2026-09-08 状态更新：非 UI 合同已推进到订单、充电会话、钱包和支付边界。UI 负责人开始实现前必须同时阅读 `docs/station-detail-business-collaboration.md` 第 12—15 节；若本文的旧阶段描述或示例名称与公共头文件冲突，以公共头文件和该更新规划为准。
+
 本文用于 UI 负责人和逻辑负责人并行开发充电流程并安全合并。地图与站点查询继续遵守 `docs/map-navigation-collaboration.md` 和 `docs/station-detail-navigation-collaboration.md`。用户、钱包、订单和结果未知恢复继续遵守 `docs/user-module-contract.md`。
 
 若本文与已冻结的公共头文件冲突，以公共头文件为准，并通过单独的 `contract:` 提交同时修订本文。双方不得在各自分支创建同名但字段不同的 ViewState、重复接口或临时业务类型。
@@ -262,7 +264,7 @@ UI 不使用定时器模拟业务完成。状态刷新、轮询或推送由逻�
 
 ## 8. 后续两页接缝方向
 
-以下名称用于双方预留文件和职责，不在本阶段视为最终冻结；实现前再提交独立合同评审。
+充电会话的基础合同现已冻结；结算页仍需在结算明细字段确认后提交独立合同评审。
 
 ### 充电进行页
 
@@ -272,14 +274,16 @@ UI 不使用定时器模拟业务完成。状态刷新、轮询或推送由逻�
 - 当前功率、已充电量、持续时间、当前费用；
 - 连接、充电、停止中、结果未知、异常和恢复状态。
 
-预期意图：
+已冻结意图以 `IChargingSessionUiBinder` 为准：
 
 ```cpp
-void chargingSessionRefreshRequested();
-void stopChargingRequested(const QString &orderId);
+void sessionRequested(const QString &orderId); // 由流程层激活，不是页面点击
+void refreshRequested();
+void stopChargingRequested();
+void recoverStopResultRequested();
 ```
 
-停止充电是变更操作，必须使用新的 operationId；页面不生成 operationId，也不得重复提交。
+页面只发出后三类无参数意图；`orderId` 由 Binder 当前状态持有。停止充电是变更操作，必须使用新的 operationId；页面不生成 operationId，也不得重复提交。
 
 ### 订单结算页
 
