@@ -2,6 +2,7 @@
 
 #include "modules/charger/chargertypes.h"
 #include "modules/map/maptypes.h"
+#include "presentation/contracts/reservationviewstates.h"
 
 #include <QMetaType>
 #include <QString>
@@ -104,6 +105,7 @@ struct HomeMapViewState
     MapLoadStatus stationsStatus = MapLoadStatus::Idle;
     QVector<MapMarkerView> markers;
     QVector<StationListItemView> stations;
+    std::optional<ActiveReservationView> activeReservation;
     QString selectedStationId;
     MapCameraView camera;
     MapCameraCommand cameraCommand;
@@ -132,6 +134,7 @@ struct StationDetailViewState
     QString availabilityText;
     QString priceText;
     QVector<ChargerListItemView> chargers;
+    std::optional<ActiveReservationView> activeReservation;
     /** 当前选中的稳定电桩标识；刷新后仅在该桩仍可启动时保留。 */
     QString selectedChargerId;
     QString message;
@@ -141,6 +144,8 @@ struct StationDetailViewState
     bool canNavigate = false;
     bool canCharge = false;
     bool canContinueToConfirmation = false;
+    bool canCreateReservation = true;
+    QString reservationDisabledReason;
     QString navigationDisabledReason;
     QString chargingDisabledReason;
     // 兼容现有调用方；新代码应使用上面两个按操作区分的禁用原因。

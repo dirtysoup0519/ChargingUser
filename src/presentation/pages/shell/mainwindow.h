@@ -47,6 +47,12 @@ signals:
     void profileEditRequested();
     void rechargePageRequested();
     void logoutRequested();
+    void activeReservationRequested(const QString &reservationId,
+                                    const QString &stationId,
+                                    const QString &chargerId);
+
+protected:
+    bool eventFilter(QObject *watched, QEvent *event) override;
 
 private:
     enum class StationSortMode { Distance, Availability };
@@ -57,6 +63,7 @@ private:
                              const StationListItemView &station);
     void applyStationOrder(const QString &selectedStationId);
     void selectStation(const QString &stationId, bool emitIntent);
+    void updateHomeReservationCountdown();
 
     Ui::MainWindow *ui;
     QHash<QString, QPushButton *> m_stationButtons;
@@ -64,4 +71,10 @@ private:
     QString m_selectedStationId;
     StationSortMode m_stationSortMode = StationSortMode::Distance;
     quint64 m_cameraRevision = 0;
+    class QFrame *m_homeReservationCard = nullptr;
+    class QLabel *m_homeReservationTitle = nullptr;
+    class QLabel *m_homeReservationStation = nullptr;
+    class QLabel *m_homeReservationCountdown = nullptr;
+    class QTimer *m_homeReservationTimer = nullptr;
+    std::optional<ActiveReservationView> m_homeActiveReservation;
 };

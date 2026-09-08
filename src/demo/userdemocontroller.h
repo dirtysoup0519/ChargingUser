@@ -2,6 +2,9 @@
 
 #include "app/imapuibinder.h"
 #include "flow/userflowtypes.h"
+#include "presentation/contracts/chargingviewstates.h"
+#include "presentation/contracts/reservationviewstates.h"
+#include "presentation/contracts/scanviewstate.h"
 
 #include <QObject>
 #include <QHash>
@@ -16,6 +19,9 @@ class ProfileEditWindow;
 class NavigationWindow;
 class StationDetailWindow;
 class WalletRechargeWindow;
+class ChargeConfirmationWindow;
+class ReservationConfirmationWindow;
+class QrCodeScannerWindow;
 class QWidget;
 struct DemoUserData
 {
@@ -50,6 +56,9 @@ private:
     void rememberConfirmedNickname(const UserProfileResult &result);
     void handleNavigation(NavigationTarget target);
     void handleMapPage(MapPageTarget target, const QString &stationId);
+    void renderStationDetailWithReservation(StationDetailViewState state);
+    void renderHomeWithReservation(HomeMapViewState state);
+    void showChargeConfirmation(const QString &stationId, const QString &chargerId);
     void showOnly(QWidget *target);
 
     MockUserNetworkApi *m_network;
@@ -61,7 +70,26 @@ private:
     StationDetailWindow *m_stationDetail;
     NavigationWindow *m_navigation;
     WalletRechargeWindow *m_walletRecharge;
+    ChargeConfirmationWindow *m_chargeConfirmation;
+    ReservationConfirmationWindow *m_reservationConfirmation;
+    QrCodeScannerWindow *m_qrScanner;
+    ChargeConfirmationViewState m_chargeConfirmationState;
+    ReservationConfirmationViewState m_reservationState;
+    ScanViewState m_scanState;
+    StationDetailViewState m_reservedDetailState;
+    int m_reservationResponseDelayMs = 450;
+    int m_reservationCancellationCooldownSeconds = 3;
+    int m_cancellationResponseDelayMs = 450;
+    QString m_cancellationOutcome;
+    QString m_cancellationRetryOutcome;
+    QString m_cancellationFailureMessage;
+    QString m_cancellationUnknownMessage;
+    QString m_reservationOutcome;
+    bool m_walletOpenedFromConfirmation = false;
     bool m_profileEditOpenedFromMain = false;
+    QString m_currentAccountKey;
+    QString m_pendingReservationFocusChargerId;
+    QSet<QString> m_reservationCancellationLockedAccounts;
     QString m_newUserNicknamePattern;
     QHash<QString, DemoUserData> m_demoUsers;
     QSet<QString> m_failedOnce;

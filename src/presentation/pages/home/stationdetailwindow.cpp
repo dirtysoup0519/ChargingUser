@@ -5,13 +5,42 @@
 
 #include <algorithm>
 #include <QFrame>
+#include <QDateTime>
 #include <QHBoxLayout>
 #include <QLabel>
+#include <QMouseEvent>
+#include <QMessageBox>
 #include <QPixmap>
 #include <QPushButton>
 #include <QSignalBlocker>
 #include <QStyle>
+#include <QTimer>
 #include <QVBoxLayout>
+
+#include <functional>
+
+namespace {
+class ClickableChargerRow final : public QFrame
+{
+public:
+    explicit ClickableChargerRow(QWidget *parent = nullptr) : QFrame(parent) {}
+    std::function<void()> activated;
+
+protected:
+    void mouseReleaseEvent(QMouseEvent *event) override
+    {
+        QFrame::mouseReleaseEvent(event);
+        if (event->button() == Qt::LeftButton && rect().contains(event->pos())
+            && activated)
+            activated();
+    }
+};
+
+void passMouseToRow(QWidget *widget)
+{
+    widget->setAttribute(Qt::WA_TransparentForMouseEvents);
+}
+}
 
 StationDetailWindow::StationDetailWindow(QWidget *parent)
     : QWidget(parent), ui(new Ui::StationDetailWindow)
@@ -23,6 +52,46 @@ StationDetailWindow::StationDetailWindow(QWidget *parent)
     m_map->setMinimumHeight(180);
     m_map->setMaximumHeight(180);
     ui->contentLayout->insertWidget(0, m_map);
+    m_reservationBanner = new QFrame(ui->pageBackground);
+    m_reservationBanner->setObjectName(QStringLiteral("reservationBanner"));
+    auto *reservationLayout = new QHBoxLayout(m_reservationBanner);
+    reservationLayout->setContentsMargins(14, 10, 14, 10);
+    reservationLayout->setSpacing(8);
+    m_reservationTitle = new QLabel(m_reservationBanner);
+    m_reservationTitle->setObjectName(QStringLiteral("reservationBannerTitle"));
+    m_reservationCountdown = new QLabel(m_reservationBanner);
+    m_reservationCountdown->setObjectName(QStringLiteral("reservationCountdown"));
+    m_reservationCountdown->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
+    reservationLayout->addWidget(m_reservationTitle, 1);
+    reservationLayout->addWidget(m_reservationCountdown);
+    m_cancelReservationButton = new QPushButton(tr("取消预约"), m_reservationBanner);
+    m_cancelReservationButton->setObjectName(QStringLiteral("cancelReservationButton"));
+    reservationLayout->addWidget(m_cancelReservationButton);
+    m_cancellationStateLabel = new QLabel(m_reservationBanner);
+    m_cancellationStateLabel->setObjectName(QStringLiteral("cancellationStateLabel"));
+    m_cancellationStateLabel->setWordWrap(true);
+    reservationLayout->addWidget(m_cancellationStateLabel);
+    ui->contentLayout->insertWidget(1, m_reservationBanner);
+    m_reservationBanner->hide();
+    m_reservationRestrictionLabel = new QLabel(ui->pageBackground);
+    m_reservationRestrictionLabel->setObjectName(
+        QStringLiteral("reservationRestrictionLabel"));
+    m_reservationRestrictionLabel->setAlignment(Qt::AlignCenter);
+    m_reservationRestrictionLabel->setWordWrap(true);
+    ui->contentLayout->insertWidget(2, m_reservationRestrictionLabel);
+    m_reservationRestrictionLabel->hide();
+    m_reservationTimer = new QTimer(this);
+    m_reservationTimer->setInterval(1000);
+    connect(m_reservationTimer, &QTimer::timeout,
+            this, &StationDetailWindow::updateReservationCountdown);
+    connect(m_cancelReservationButton, &QPushButton::clicked, this, [this] {
+        if (!m_state.activeReservation
+            || m_state.activeReservation->reservationId.isEmpty()) return;
+        if (m_state.activeReservation->canRetryCancel)
+            emit cancelReservationRetryRequested(m_state.activeReservation->reservationId);
+        else if (m_state.activeReservation->canCancel)
+            emit cancelReservationRequested(m_state.activeReservation->reservationId);
+    });
     DragScrollHelper::prioritizeInteractiveWidget(m_map, ui->detailScroll);
     // 详情页没有独立的定位业务上下文；点击地图定位按钮时，
     // 将当前站点重新置于视野中心，避免按钮看起来无响应。
@@ -39,6 +108,43 @@ StationDetailWindow::StationDetailWindow(QWidget *parent)
     });
     connect(ui->detailRetryButton, &QPushButton::clicked,
             this, &StationDetailWindow::stationRefreshRequested);
+    connect(ui->chargeButton, &QPushButton::clicked, this, [this] {
+        if (!m_state.stationId.isEmpty() && !m_state.selectedChargerId.isEmpty())
+            emit chargeConfirmationRequested(m_state.stationId, m_state.selectedChargerId);
+    });
+    connect(ui->reservationButton, &QPushButton::clicked, this, [this] {
+        if (m_state.activeReservation) {
+            const bool ownReservationSelected =
+                m_state.activeReservation->stationId == m_state.stationId
+                && m_state.activeReservation->chargerId == m_state.selectedChargerId;
+            if (ownReservationSelected) {
+                if (m_state.activeReservation->canRetryCancel)
+                    emit cancelReservationRetryRequested(
+                        m_state.activeReservation->reservationId);
+                else if (m_state.activeReservation->canCancel)
+                    emit cancelReservationRequested(
+                        m_state.activeReservation->reservationId);
+                return;
+            }
+            const QString chargerCode = m_state.activeReservation->chargerId
+                                            .section(QLatin1Char('-'), -1)
+                                            .toUpper();
+            if (QMessageBox::question(
+                    this, tr("查看已有预约"),
+                    tr("当前账号已有预约。是否前往预约所属站点并查看充电桩 %1？")
+                        .arg(chargerCode),
+                    QMessageBox::Yes | QMessageBox::No,
+                    QMessageBox::Yes) != QMessageBox::Yes)
+                return;
+            emit activeReservationRequested(m_state.activeReservation->reservationId,
+                                            m_state.activeReservation->stationId,
+                                            m_state.activeReservation->chargerId);
+            return;
+        }
+        if (!m_state.stationId.isEmpty() && !m_state.selectedChargerId.isEmpty())
+            emit reservationConfirmationRequested(m_state.stationId,
+                                                  m_state.selectedChargerId);
+    });
     ui->openBadge->hide();
     ui->feeNote->hide();
     ui->chargeButton->setEnabled(false);
@@ -50,6 +156,45 @@ StationDetailWindow::~StationDetailWindow() { delete ui; }
 void StationDetailWindow::render(const StationDetailViewState &state)
 {
     m_state = state;
+    m_expiryRefreshEmitted = false;
+    const bool hasActiveReservation = state.activeReservation.has_value();
+    const bool reservationRestricted = !hasActiveReservation
+                                       && !state.canCreateReservation
+                                       && !state.reservationDisabledReason.isEmpty();
+    m_reservationRestrictionLabel->setText(
+        reservationRestricted
+            ? tr("预约冷却中：%1").arg(state.reservationDisabledReason)
+            : QString());
+    m_reservationRestrictionLabel->setVisible(reservationRestricted);
+    const bool hasReservationHere = hasActiveReservation
+                                    && state.activeReservation->stationId == state.stationId;
+    m_reservationBanner->setVisible(hasReservationHere);
+    if (hasReservationHere) {
+        m_reservationTitle->setText(tr("已预约充电桩 %1")
+                                        .arg(state.activeReservation->chargerId.section(
+                                            QLatin1Char('-'), -1).toUpper()));
+        updateReservationCountdown();
+        const bool cancelBusy = state.activeReservation->cancellationStatus
+                                == ReservationCancellationStatus::Submitting
+                                || state.activeReservation->cancellationStatus
+                                       == ReservationCancellationStatus::ResultUnknown;
+        m_cancelReservationButton->setEnabled(!cancelBusy
+                                              && (state.activeReservation->canCancel
+                                                  || state.activeReservation->canRetryCancel));
+        m_cancelReservationButton->setText(
+            cancelBusy ? tr("取消中…")
+                       : state.activeReservation->canRetryCancel
+                             ? tr("重试取消") : tr("取消预约"));
+        m_cancellationStateLabel->setText(state.activeReservation->cancellationMessage);
+        m_cancellationStateLabel->setVisible(
+            !state.activeReservation->cancellationMessage.isEmpty());
+        m_cancelReservationButton->setToolTip(
+            state.activeReservation->canCancel
+                ? QString() : state.activeReservation->cancelDisabledReason);
+        m_reservationTimer->start();
+    } else {
+        m_reservationTimer->stop();
+    }
     if (m_map) {
         QList<InteractiveMapWidget::Marker> markers;
         if (state.point && state.point->isValid())
@@ -107,6 +252,18 @@ void StationDetailWindow::render(const StationDetailViewState &state)
 
     // 刷新期间和刷新失败后保留上一次成功内容，只通过状态文案标明新鲜度。
     rebuildChargers(state.chargers);
+    if (!state.selectedChargerId.isEmpty()) {
+        const QString selectedId = state.selectedChargerId;
+        QTimer::singleShot(0, this, [this, selectedId] {
+            const auto rows = ui->chargerListHost->findChildren<QFrame *>(
+                QStringLiteral("chargerRow"), Qt::FindDirectChildrenOnly);
+            for (QFrame *row : rows) {
+                if (row->property("chargerId").toString() != selectedId) continue;
+                ui->detailScroll->ensureWidgetVisible(row, 0, 72);
+                break;
+            }
+        });
+    }
     ui->chargerListHost->setVisible(!state.chargers.isEmpty());
     ui->sectionTitle->setVisible(ready || !state.chargers.isEmpty());
 
@@ -115,12 +272,46 @@ void StationDetailWindow::render(const StationDetailViewState &state)
     ui->navigationButton->setToolTip(
         ui->navigationButton->isEnabled() ? QString() : state.disabledReason);
 
-    // 冻结地图合同尚无 chargerId 选择意图，不能安全进入充电确认。
-    ui->chargeButton->setEnabled(false);
-    ui->chargeButton->setText(state.canCharge
-                                  ? tr("请选择充电桩")
-                                  : tr("暂不可充电"));
-    ui->chargeButton->setToolTip(state.disabledReason);
+    const bool ownReservationSelected = hasActiveReservation
+                                        && state.activeReservation->stationId == state.stationId
+                                        && state.activeReservation->chargerId
+                                               == state.selectedChargerId;
+    const bool canConfirm = ready
+                            && (state.canContinueToConfirmation || ownReservationSelected)
+                            && !state.stationId.isEmpty()
+                            && !state.selectedChargerId.isEmpty();
+    ui->chargeButton->setEnabled(canConfirm);
+    ui->chargeButton->setText(canConfirm ? tr("扫码充电")
+                                         : state.canCharge ? tr("请选择充电桩")
+                                                           : tr("暂不可充电"));
+    ui->chargeButton->setToolTip(canConfirm ? QString() : state.chargingDisabledReason);
+    const bool cancellationBusy = ownReservationSelected
+                                  && (state.activeReservation->cancellationStatus
+                                          == ReservationCancellationStatus::Submitting
+                                      || state.activeReservation->cancellationStatus
+                                             == ReservationCancellationStatus::ResultUnknown);
+    const bool canUseCancelAction = ownReservationSelected && !cancellationBusy
+                                    && (state.activeReservation->canCancel
+                                        || state.activeReservation->canRetryCancel);
+    ui->reservationButton->setVisible(canConfirm || hasActiveReservation);
+    if (ownReservationSelected) {
+        ui->reservationButton->setText(
+            cancellationBusy ? tr("取消中…")
+                             : state.activeReservation->canRetryCancel
+                                   ? tr("重试取消") : tr("取消预约"));
+        ui->reservationButton->setEnabled(canUseCancelAction);
+        ui->reservationButton->setToolTip(
+            canUseCancelAction ? QString() : state.activeReservation->cancelDisabledReason);
+    } else if (hasActiveReservation) {
+        ui->reservationButton->setText(tr("查看已有预约"));
+        ui->reservationButton->setEnabled(true);
+        ui->reservationButton->setToolTip(tr("查看预约所属站点和充电桩"));
+    } else {
+        ui->reservationButton->setText(tr("前往预约"));
+        ui->reservationButton->setEnabled(canConfirm && state.canCreateReservation);
+        ui->reservationButton->setToolTip(
+            state.canCreateReservation ? QString() : state.reservationDisabledReason);
+    }
 }
 
 void StationDetailWindow::rebuildChargers(
@@ -139,11 +330,20 @@ void StationDetailWindow::rebuildChargers(
     }
 
     for (const ChargerListItemView &charger : chargers) {
-        auto *row = new QFrame(ui->chargerListHost);
+        const bool isOwnReservation = m_state.activeReservation.has_value()
+                                      && m_state.activeReservation->stationId == m_state.stationId
+                                      && m_state.activeReservation->chargerId == charger.chargerId;
+        auto *row = new ClickableChargerRow(ui->chargerListHost);
         row->setObjectName(QStringLiteral("chargerRow"));
         row->setProperty("chargerId", charger.chargerId);
         row->setProperty("available", charger.canCharge);
+        row->setProperty("reserved", isOwnReservation);
+        row->setProperty("selected", charger.chargerId == m_state.selectedChargerId);
         row->setMinimumHeight(82);
+        if (charger.canCharge || isOwnReservation) {
+            row->setCursor(Qt::PointingHandCursor);
+            row->activated = [this, charger] { selectCharger(charger); };
+        }
 
         auto *layout = new QHBoxLayout(row);
         layout->setContentsMargins(12, 9, 10, 9);
@@ -157,9 +357,12 @@ void StationDetailWindow::rebuildChargers(
         idLabel->setToolTip(charger.chargerId);
         idLabel->setFixedSize(58, 56);
         idLabel->setAlignment(Qt::AlignCenter);
+        passMouseToRow(idLabel);
         layout->addWidget(idLabel);
 
         auto *textBlock = new QWidget(row);
+        textBlock->setObjectName(QStringLiteral("chargerTextBlock"));
+        passMouseToRow(textBlock);
         auto *textLayout = new QVBoxLayout(textBlock);
         textLayout->setContentsMargins(0, 0, 0, 0);
         textLayout->setSpacing(3);
@@ -172,25 +375,69 @@ void StationDetailWindow::rebuildChargers(
         layout->addWidget(textBlock, 1);
 
         auto *status = new QLabel(charger.statusText, row);
-        status->setObjectName(charger.canCharge
-                                  ? QStringLiteral("availableBadge")
-                                  : QStringLiteral("busyBadge"));
+        status->setObjectName(isOwnReservation
+                                  ? QStringLiteral("reservationBadge")
+                                  : charger.canCharge ? QStringLiteral("availableBadge")
+                                                      : QStringLiteral("busyBadge"));
         status->setToolTip(charger.disabledReason);
+        status->setFixedSize(46, 24);
+        status->setAlignment(Qt::AlignCenter);
+        passMouseToRow(status);
         layout->addWidget(status);
 
-        auto *actionIcon = new QLabel(row);
-        actionIcon->setObjectName(QStringLiteral("chargerActionIcon"));
-        actionIcon->setFixedSize(32, 32);
-        const QString iconPath = charger.canCharge
-                                     ? QStringLiteral(":/icons/station_charge.png")
-                                     : QStringLiteral(":/icons/station_charge_active.png");
-        actionIcon->setPixmap(QPixmap(iconPath).scaled(
-            28, 28, Qt::KeepAspectRatio, Qt::SmoothTransformation));
-        actionIcon->setAlignment(Qt::AlignCenter);
-        actionIcon->setToolTip(charger.canCharge
-                                   ? tr("当前充电桩可用")
-                                   : charger.disabledReason);
-        layout->addWidget(actionIcon);
+        auto *selectButton = new QPushButton(row);
+        selectButton->setObjectName(QStringLiteral("chargerSelectButton"));
+        selectButton->setFixedSize(52, 32);
+        selectButton->setEnabled(charger.canCharge || isOwnReservation);
+        selectButton->setText(charger.chargerId == m_state.selectedChargerId
+                                  ? tr("已选")
+                                  : (charger.canCharge || isOwnReservation)
+                                        ? tr("选择") : tr("不可用"));
+        selectButton->setToolTip(isOwnReservation ? tr("选择本人已预约的充电桩")
+                                                   : charger.canCharge
+                                                         ? tr("选择此充电桩")
+                                                         : charger.disabledReason);
+        connect(selectButton, &QPushButton::clicked, this, [this, charger] {
+            selectCharger(charger);
+        });
+        layout->addWidget(selectButton);
         ui->chargerListLayout->addWidget(row);
+    }
+}
+
+void StationDetailWindow::selectCharger(const ChargerListItemView &charger)
+{
+    const bool isOwnReservation = m_state.activeReservation.has_value()
+                                  && m_state.activeReservation->stationId == m_state.stationId
+                                  && m_state.activeReservation->chargerId == charger.chargerId;
+    if ((!charger.canCharge && !isOwnReservation) || charger.chargerId.isEmpty())
+        return;
+    if (isOwnReservation) {
+        m_state.selectedChargerId = charger.chargerId;
+        m_state.canContinueToConfirmation = true;
+        render(m_state);
+        return;
+    }
+    emit chargerSelected(charger.chargerId);
+}
+
+void StationDetailWindow::updateReservationCountdown()
+{
+    if (!m_state.activeReservation || !m_reservationBanner->isVisible()) {
+        m_reservationTimer->stop();
+        return;
+    }
+    const ActiveReservationView &reservation = *m_state.activeReservation;
+    qint64 seconds = QDateTime::currentDateTimeUtc().secsTo(reservation.expiresAtUtc);
+    seconds = qMax<qint64>(0, seconds);
+    const qint64 minutes = seconds / 60;
+    const qint64 remainder = seconds % 60;
+    m_reservationCountdown->setText(
+        tr("剩余 %1:%2").arg(minutes, 2, 10, QLatin1Char('0'))
+                           .arg(remainder, 2, 10, QLatin1Char('0')));
+    if (seconds == 0 && !m_expiryRefreshEmitted) {
+        m_expiryRefreshEmitted = true;
+        m_reservationTimer->stop();
+        emit reservationExpiredRefreshRequested();
     }
 }

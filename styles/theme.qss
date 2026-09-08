@@ -235,10 +235,12 @@ QFrame.metricCard { background: #F8FAFD; border: none; border-radius: 9px; }
 QLabel.metricValue { font-size: 18px; font-weight: 700; }
 QLabel.metricCaption { color: #8C97A6; font-size: 9px; }
 QFrame.chargerRow, QFrame#chargerRow { background: #FFFFFF; border-bottom: 1px solid #EDF1F5; }
-QLabel.chargerName, QLabel#chargerName { font-size: 12px; font-weight: 700; }
-QLabel.chargerSpec, QLabel#chargerSpec { color: #8B96A6; font-size: 9px; }
-QLabel.availableBadge, QLabel#availableBadge { color: #13966B; background: #E8F8F1; border-radius: 8px; padding: 3px 7px; }
-QLabel.busyBadge, QLabel#busyBadge { color: #8993A2; background: #F0F2F5; border-radius: 8px; padding: 3px 7px; }
+QWidget#chargerTextBlock, QWidget#chargerTextBlock QLabel { background: transparent; border: none; }
+QLabel.chargerName, QLabel#chargerName { background: transparent; font-size: 12px; font-weight: 700; }
+QLabel.chargerSpec, QLabel#chargerSpec { background: transparent; color: #8B96A6; font-size: 9px; }
+QLabel.availableBadge, QLabel#availableBadge { color: #13966B; background: #FFFFFF; border: 1px solid #7DD3B0; border-radius: 4px; padding: 0; font-size: 9px; }
+QLabel.busyBadge, QLabel#busyBadge { color: #8993A2; background: #FFFFFF; border: 1px solid #C9D0D9; border-radius: 4px; padding: 0; font-size: 9px; }
+QLabel#reservationBadge { color: #F79009; background: #FFFFFF; border: 1px solid #FDBA74; border-radius: 4px; padding: 0; font-size: 9px; font-weight: 700; }
 QLabel#chargerIdLabel {
     color: #12AFA5; background: #F0FFFD; border: 1px solid #9EE7E1;
     border-radius: 9px; padding: 9px 5px; font-size: 15px; font-weight: 700;
@@ -391,3 +393,75 @@ QPushButton#startButton {
     font-size: 14px; font-weight: 700;
 }
 QPushButton#startButton:hover { background: #0D6BE8; }
+
+/* Charge confirmation */
+QWidget#chargeConfirmationPage { background: #F6F8FC; }
+QScrollArea#confirmationScroll, QScrollArea#confirmationScroll > QWidget > QWidget { background: #F6F8FC; border: none; }
+QFrame#stationCard, QFrame#chargerCard, QFrame#feeCard, QFrame#walletCard {
+    background: #FFFFFF; border: 1px solid #E2E8F0; border-radius: 14px;
+}
+QLabel#stationNameLabel, QLabel#selectedChargerTitle, QLabel#feeTitle, QLabel#walletTitle {
+    color: #17243A; font-size: 15px; font-weight: 700; background: transparent;
+}
+QLabel#stationAddressLabel, QLabel#stationDistanceLabel { color: #748196; font-size: 11px; background: transparent; }
+QLabel#chargerCodeLabel { color: #12AFA5; border: 1px solid #19B9AE; border-radius: 9px; font-size: 21px; font-weight: 800; }
+QLabel#chargerTypeLabel, QLabel#chargerPowerLabel { color: #526174; font-size: 13px; background: transparent; }
+QLabel#chargerStatusLabel { color: #12AFA5; border: 1px solid #79D9D3; border-radius: 8px; padding: 5px; background: #F3FCFB; }
+QLabel#energyCaption, QLabel#serviceCaption { color: #647187; font-size: 13px; background: transparent; }
+QLabel#energyPriceLabel, QLabel#serviceFeeLabel, QLabel#walletBalanceLabel { color: #17243A; font-size: 16px; font-weight: 700; background: transparent; }
+QPushButton#rechargeButton { background: #EFF8FF; color: #1677FF; border: none; border-radius: 8px; padding: 7px 10px; }
+QLabel#confirmationStateLabel[state="error"] { color: #D14343; background: #FFF1F1; border-radius: 8px; padding: 7px; }
+QLabel#confirmationStateLabel[state="unknown"] { color: #9A6700; background: #FFF7D6; border-radius: 8px; padding: 7px; }
+QLabel#confirmationStateLabel[state="neutral"] { color: #687386; background: #F1F5FA; border-radius: 8px; padding: 7px; }
+QPushButton#confirmationRetryButton { background: #EAF3FF; color: #1677FF; border: 1px solid #A9CBFF; border-radius: 8px; font-weight: 700; }
+QPushButton#startChargingButton { background: #1677FF; color: #FFFFFF; border: none; border-radius: 11px; font-size: 15px; font-weight: 700; }
+QPushButton#startChargingButton:disabled { background: #AFCBF4; color: #F7FAFF; }
+QFrame#chargerRow[selected="true"] { background: #EFF7FF; border: 1px solid #8DBBFF; border-radius: 10px; }
+QFrame#chargerRow[reserved="true"] { background: #FFF9E8; border: 2px solid #F2B84B; border-radius: 10px; }
+QFrame#chargerRow[reserved="true"][selected="true"] { background: #FFF4D6; border: 2px solid #E9A72E; }
+/* QR scanner */
+QWidget#scannerHeader { background: #FFFFFF; border-bottom: 1px solid #E4E9F0; }
+QWidget#scannerPage { background: #F6F8FC; }
+QWidget#scannerHeader QLabel#pageTitle { color: #101828; font-size: 17px; font-weight: 700; }
+QWidget#scannerHeader QPushButton#backButton { background: transparent; color: #172033; border: none; font-size: 30px; }
+QLabel#chargerLabel { color: #1D2939; font-size: 15px; font-weight: 700; }
+QFrame#cameraCard { background: #111827; border-radius: 18px; }
+QFrame#scanFrame { background: #172033; border: 3px solid #27D3C2; border-radius: 18px; }
+QLabel#previewPlaceholder { color: #DCE7F3; font-size: 14px; }
+QLabel#stateLabel { color: #667085; background: transparent; font-size: 12px; }
+QLabel#stateLabel[state="error"] { color: #D92D20; }
+QPushButton#torchButton, QPushButton#importButton {
+    min-height: 44px; background: #FFFFFF; color: #1677FF;
+    border: 1px solid #B7D3FF; border-radius: 12px; font-weight: 700;
+}
+QPushButton#permissionButton, QPushButton#retryButton {
+    background: #1677FF; color: #FFFFFF; border: none;
+    border-radius: 12px; font-weight: 700;
+}
+QPushButton#chargerSelectButton { background: #EAF3FF; color: #1677FF; border: 1px solid #A9CBFF; border-radius: 8px; font-size: 10px; font-weight: 700; }
+QPushButton#chargerSelectButton:disabled { background: #F2F4F7; color: #98A2B1; border-color: #E1E5EA; }
+/* Reservation confirmation */
+QWidget#reservationConfirmationPage { background: #F6F8FC; }
+QFrame#reservationStationCard, QFrame#reservationChargerCard, QFrame#reservationTermsCard { background: #FFFFFF; border: 1px solid #E2E8F0; border-radius: 14px; }
+QLabel#selectedTitle, QLabel#termsTitle { color: #17243A; font-size: 15px; font-weight: 700; background: transparent; }
+QLabel#depositCaption, QLabel#durationCaption { color: #647187; font-size: 13px; background: transparent; }
+QLabel#depositLabel, QLabel#durationLabel { color: #17243A; font-size: 17px; font-weight: 700; background: transparent; }
+QLabel#depositPolicyLabel { color: #B54708; background: #FFF6E5; border-radius: 8px; padding: 7px 9px; font-size: 11px; }
+QPushButton#reservationRetryButton { background: #EAF3FF; color: #1677FF; border: 1px solid #A9CBFF; border-radius: 8px; font-weight: 700; }
+QPushButton#reserveButton { background: #1677FF; color: #FFFFFF; border: none; border-radius: 11px; font-size: 15px; font-weight: 700; }
+QPushButton#reserveButton:disabled { background: #AFCBF4; color: #F7FAFF; }
+QPushButton#reservationButton { background: #FFFFFF; color: #1677FF; border: 1px solid #1677FF; border-radius: 11px; font-size: 12px; font-weight: 700; }
+QPushButton#reservationButton:disabled { color: #98A2B1; border-color: #CDD5DF; }
+QFrame#reservationBanner { background: #EAF3FF; border: 1px solid #9CC4FF; border-radius: 11px; }
+QLabel#reservationBannerTitle { color: #174B8F; font-size: 12px; font-weight: 700; background: transparent; }
+QLabel#reservationCountdown { color: #1677FF; font-size: 16px; font-weight: 800; background: transparent; }
+QPushButton#cancelReservationButton { color: #D92D20; background: #FFFFFF; border: 1px solid #FDA29B; border-radius: 8px; padding: 5px 8px; font-size: 10px; font-weight: 700; }
+QPushButton#cancelReservationButton:disabled { color: #98A2B1; border-color: #D0D5DD; }
+QLabel#cancellationStateLabel { color: #B54708; background: transparent; font-size: 10px; }
+QLabel#reservationRestrictionLabel { color: #B54708; background: #FFF6E5; border: 1px solid #FEDF89; border-radius: 9px; padding: 8px 10px; font-size: 11px; font-weight: 700; }
+QFrame#homeReservationCard { background: #FFF8E8; border: 1px solid #F5B942; border-radius: 10px; margin: 6px 10px; }
+QWidget#homeReservationText, QWidget#homeReservationText QLabel { background: transparent; border: none; }
+QLabel#homeReservationTitle { color: #9A6700; font-size: 12px; font-weight: 800; }
+QLabel#homeReservationStation { color: #667085; font-size: 10px; }
+QLabel#homeReservationCountdown { color: #F79009; background: transparent; font-size: 14px; font-weight: 800; }
+QLabel#homeReservationChevron { color: #F79009; background: transparent; font-size: 24px; font-weight: 700; }
