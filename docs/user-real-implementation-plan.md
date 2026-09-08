@@ -21,7 +21,7 @@
 | 能力 | 现状 |
 |---|---|
 | 手机登录/登出 | ✅ `RealUserNetworkApi` 已实现 116/217/102，smoke 实测通过 |
-| 连接目标配置 | ✅ `realnetworkmain` 已支持 host/port 参数（默认 SERVER_IP/SERVER_PORT） |
+| 连接目标配置 | ✅ 真实入口（`src/main.cpp`，原 `realnetworkmain`）已支持 host/port 参数（默认 SERVER_IP/SERVER_PORT） |
 | 用户资料查询 | ❌ v2.4 无专用消息，当前返回 unsupported-protocol |
 | 昵称修改 | ❌ 同上（v2.5 有 118/228 但协议未合入） |
 | 余额展示 | ⚠️ 217 载荷已含 balanceCents，会话内未独立刷新 |
@@ -32,7 +32,8 @@
 
 ### P0 远程连接打通（半天）
 
-- `realnetworkmain` 增加 `CHARGER_SERVER_HOST/PORT` 环境变量读取（优先于 JSON 参数），
+- 真实入口（`src/main.cpp`，原 `realnetworkmain`）增加 `CHARGER_SERVER_HOST/PORT`
+  环境变量读取（优先于 JSON 参数），
   Key 注入同款模式，不落盘；
 - 先用 `tools/network-smoke --host <远程IP>` 验证 107/230 心跳与 116/217 登录，
   再启动客户端——把"不通"隔离在网络层之前。
@@ -76,8 +77,8 @@
 
 ### P4 装配与联调（半天）
 
-- `realnetworkmain` 装配顺序：transport → backend → real APIs（user/wallet）→
-  services → binders；Mock 仅在 `user_demo` 入口保留；
+- 真实入口（`src/main.cpp`，原 `realnetworkmain`）装配顺序：transport → backend →
+  real APIs（user/wallet）→ services → binders；Mock 仅在 `user_demo` 入口保留；
 - 远程联调清单：远程主机网络可达 → smoke 双通过 → 登录 → 资料刷新 →
   充值（含断线 ResultUnknown 恢复）→ 推送可见；
 - 未验证项如实记录（同 bitdev 清单格式）。

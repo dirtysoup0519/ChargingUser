@@ -169,6 +169,12 @@ int main(int argc, char *argv[])
     app.setApplicationName(QStringLiteral("智充用户流程 Demo"));
     app.setStyle(QStringLiteral("Fusion"));
 
+    // 阶段 A：启动日志必须能区分运行模式——本入口只使用本地 fixture，
+    // 不会连接任何服务端；正式数据入口是 src/main.cpp（real-network 模式）。
+    qInfo().noquote()
+        << QStringLiteral("Starting user-demo entry (mock fixtures only; "
+                          "no server connection).");
+
     QFile theme(QStringLiteral(":/styles/theme.qss"));
     if (theme.open(QIODevice::ReadOnly)) {
         app.setStyleSheet(QString::fromUtf8(theme.readAll()));

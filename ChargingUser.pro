@@ -72,10 +72,9 @@ contains(CONFIG, user_demo) {
     contains(CONFIG, real_network) {
         error("user_demo and real_network cannot be enabled together")
     }
+    # Demo 入口替换正式入口；userdemomain.cpp 在 demo.pri 中登记。
     SOURCES -= src/main.cpp
     RESOURCES += resources/demo-resources.qrc
     include($$PROJECT_ROOT/src/demo/demo.pri)
-} else:contains(CONFIG, real_network) {
-    SOURCES -= src/main.cpp
-    SOURCES += src/realnetworkmain.cpp
 }
+# 默认构建（real_network）直接以 src/main.cpp 作为正式入口。

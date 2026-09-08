@@ -1,5 +1,7 @@
 #pragma once
 
+#include "presentation/contracts/walletviewstate.h"
+
 #include <QWidget>
 
 namespace Ui { class WalletRechargeWindow; }
@@ -12,6 +14,7 @@ public:
     ~WalletRechargeWindow() override;
 
     void renderBalance(const QString &balanceText);
+    void render(const WalletViewState &state);
 
 signals:
     void backRequested();

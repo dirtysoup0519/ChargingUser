@@ -1,0 +1,446 @@
+#include "realorderservice.h"
+
+#include "backendclient.h"
+#include "protocol.h"
+
+#include <QDateTime>
+#include <QTimer>
+
+#include <algorithm>
+
+namespace {
+
+ClientError makeError(const QString &requestId, const QString &operationId,
+                      const QString &code, const QString &message,
+                      bool retryable)
+{
+    // 订单查询为只读：永不携带 resultUnknown；operationId 仅透传（正常为空）。
+    ClientError error;
+    error.requestId = requestId;
+    error.operationId = operationId;
+    error.code = code;
+    error.displayMessage = message;
+    error.retryable = retryable;
+    error.resultUnknown = false;
+    return error;
+}
+
+/** 服务端错误码中可重试的类型（数据库瞬态类）。 */
+bool isRetryableServerError(int errType)
+{
+    return errType == DB_ERROR;
+}
+
+double numberValue(const QJsonValue &value, bool *ok)
+{
+    *ok = false;
+    if (value.isDouble()) {
+        *ok = true;
+        return value.toDouble();
+    }
+    if (value.isString()) {
+        bool parsed = false;
+        const double number = value.toString().toDouble(&parsed);
+        if (parsed) {
+            *ok = true;
+            return number;
+        }
+    }
+    return 0.0;
+}
+
+QString recordString(const QJsonObject &record,
+                     std::initializer_list<const char *> keys)
+{
+    for (const char *key : keys) {
+        const QJsonValue value = record.value(QLatin1String(key));
+        if (value.isString()) {
+            return value.toString().trimmed();
+        }
+    }
+    return QString();
+}
+
+QDateTime parseTimestamp(const QString &text)
+{
+    // 服务端时间格式未在协议文档明确：先按 ISO，再按空格分隔的常见
+    // MySQL DATETIME 文本；解析失败返回无效 QDateTime，由调用方按缺失处理。
+    if (text.isEmpty()) {
+        return QDateTime();
+    }
+    const QDateTime iso = QDateTime::fromString(text, Qt::ISODate);
+    if (iso.isValid()) {
+        return iso;
+    }
+    return QDateTime::fromString(text, QStringLiteral("yyyy-MM-dd hh:mm:ss"));
+}
+
+} // namespace
+
+RealOrderService::RealOrderService(BackendClient *backend, QObject *parent)
+    : IOrderService(parent),
+      m_backend(backend)
+{
+    connect(m_backend, &BackendClient::frameReceived,
+            this, &RealOrderService::handleFrame);
+    connect(m_backend, &BackendClient::connectionStateChanged,
+            this, &RealOrderService::handleConnectionStateChanged);
+}
+
+void RealOrderService::setIdentity(const QString &username)
+{
+    // 登录成功注入 / 登出清空：orderInfo 以 username 为归属权威键。
+    m_username = username.trimmed();
+}
+
+void RealOrderService::setRequestTimeoutMs(int timeoutMs)
+{
+    m_requestTimeoutMs = timeoutMs;
+}
+
+void RealOrderService::queryActiveOrder(const RequestContext &context)
+{
+    startQuery(QueryKind::ActiveOrder, context, QString());
+}
+
+void RealOrderService::queryOrderDetail(const RequestContext &context,
+                                        const QString &orderId)
+{
+    startQuery(QueryKind::OrderDetail, context, orderId);
+}
+
+void RealOrderService::stopCharging(const RequestContext &context,
+                                    const QString &orderId)
+{
+    Q_UNUSED(orderId);
+    // 阶段 G（109/209 + 停止结果恢复）未实现：显式失败，绝不伪造停止成功。
+    emitFailed(context, QStringLiteral("order-stop-unsupported"),
+               QStringLiteral("Order stop is not wired yet (phase G)."), false);
+}
+
+void RealOrderService::queryStopResult(const RequestContext &context,
+                                       const QString &operationId)
+{
+    Q_UNUSED(operationId);
+    emitFailed(context, QStringLiteral("order-stop-unsupported"),
+               QStringLiteral("Order stop is not wired yet (phase G)."), false);
+}
+
+void RealOrderService::cancel(const QString &requestId)
+{
+    // 尽力取消：摘除在途关联即可，214 迟到应答因关联缺失被静默丢弃。
+    if (m_pending && m_pending->requestId == requestId) {
+        if (m_pending->timer) {
+            m_pending->timer->stop();
+            m_pending->timer->deleteLater();
+        }
+        m_pending.reset();
+    }
+}
+
+bool RealOrderService::startQuery(QueryKind kind, const RequestContext &context,
+                                  const QString &orderId)
+{
+    if (!context.isValid()) {
+        emitFailed(context, QStringLiteral("order-invalid-request"),
+                   QStringLiteral("Request id is required."), false);
+        return false;
+    }
+    if (context.isMutation()) {
+        emitFailed(context, QStringLiteral("order-readonly-operation"),
+                   QStringLiteral("Order queries must not contain an operation ID."),
+                   false);
+        return false;
+    }
+    if (!m_backend || m_backend->connectionState() != ConnectionState::Connected) {
+        emitFailed(context, QStringLiteral("not-connected"),
+                   QStringLiteral("Not connected to the server."), true);
+        return false;
+    }
+    if (m_pending) {
+        emitFailed(context, QStringLiteral("request-in-flight"),
+                   QStringLiteral("Another order query is in flight."), false);
+        return false;
+    }
+    if (m_username.isEmpty()) {
+        // 未登录/身份未注入：无法收敛查询范围，快速失败而不是查全表。
+        emitFailed(context, QStringLiteral("order-identity-missing"),
+                   QStringLiteral("Current user identity is unknown."), false);
+        return false;
+    }
+    if (kind == QueryKind::OrderDetail && orderId.trimmed().isEmpty()) {
+        emitFailed(context, QStringLiteral("order-invalid-request"),
+                   QStringLiteral("Order id is required."), false);
+        return false;
+    }
+
+    PendingRequest pending;
+    pending.kind = kind;
+    pending.requestId = context.requestId;
+    pending.operationId = context.operationId;
+    pending.orderId = orderId.trimmed();
+    pending.timer = new QTimer(this);
+    pending.timer->setSingleShot(true);
+    connect(pending.timer, &QTimer::timeout,
+            this, &RealOrderService::handleTimeout);
+    m_pending = pending;
+
+    // 条件：活动订单按 username 拉取本用户全部订单后客户端筛选
+    //（服务端 cond 对 status 支持未知，客户端过滤在"cond 被忽略返回全表"
+    // 时依然正确）；详情按 orderNo 收敛，同样客户端过滤兜底。
+    QJsonObject condition;
+    if (kind == QueryKind::OrderDetail) {
+        condition.insert(QStringLiteral("orderNo"), pending.orderId);
+    } else {
+        condition.insert(QStringLiteral("username"), m_username);
+    }
+    if (!m_backend->sendFrame(ORDERQRY_REQ, makeOrderQuery(condition,
+                                                           context.requestId))) {
+        m_pending.reset();
+        if (pending.timer) {
+            pending.timer->stop();
+            pending.timer->deleteLater();
+        }
+        emitFailed(context, QStringLiteral("send-failed"),
+                   QStringLiteral("Failed to send the order query."), true);
+        return false;
+    }
+
+    pending.timer->start(m_requestTimeoutMs);
+    return true;
+}
+
+QJsonObject RealOrderService::makeOrderQuery(const QJsonObject &cond,
+                                             const QString &requestId)
+{
+    // ORDERQRY_REQ {username?,stationName?,chargerCode?,orderNo?,status?}；
+    // requestId 冗余携带，服务端忽略无害，未来支持回显时自动升级关联。
+    QJsonObject payload = cond;
+    payload.insert(QStringLiteral("requestId"), requestId);
+    return payload;
+}
+
+void RealOrderService::handleFrame(int msgType, const QJsonObject &payload)
+{
+    if (!m_pending) {
+        return; // 迟到应答：在途关联已摘除（超时/取消/断线）
+    }
+    // 服务端未来回显 requestId 时按值归属；当前 FIFO 单在途天然消歧。
+    const QString echoed = payload.value(QStringLiteral("requestId")).toString();
+    if (!echoed.isEmpty() && echoed != m_pending->requestId) {
+        return;
+    }
+
+    if (msgType == ORDERQRY_ACK) {
+        const QJsonValue data = payload.value(QStringLiteral("orders"));
+        if (!data.isArray()) {
+            // 兼容部分实现返回 data 包装的 JSON 数组。
+            const QJsonValue wrapped = payload.value(QStringLiteral("data"));
+            if (wrapped.isArray()) {
+                handleFrame(ORDERQRY_ACK, QJsonObject{
+                    {QStringLiteral("orders"), wrapped}});
+                return;
+            }
+            failPending(QStringLiteral("bad-response"),
+                        QStringLiteral("Server response was malformed."), true);
+            return;
+        }
+
+        const PendingRequest pending = *m_pending;
+        m_pending.reset();
+        if (pending.timer) {
+            pending.timer->stop();
+            pending.timer->deleteLater();
+        }
+
+        const RequestContext context{pending.requestId, pending.operationId};
+
+        if (pending.kind == QueryKind::OrderDetail) {
+            // 详情：orderNo 精确匹配；找不到视为数据不存在而非解析失败。
+            ChargingOrder matched;
+            bool found = false;
+            for (const QJsonValue &value : data.toArray()) {
+                if (!value.isObject()) {
+                    continue;
+                }
+                const ChargingOrder order = parseOrderRecord(value.toObject());
+                if (order.orderId == pending.orderId) {
+                    matched = order;
+                    found = true;
+                    break;
+                }
+            }
+            if (!found) {
+                emitFailed(context, QStringLiteral("order-not-found"),
+                           QStringLiteral("Requested order does not exist."),
+                           false);
+                return;
+            }
+            emit orderDetailReady(context, matched);
+            return;
+        }
+
+        // 活动订单：Charging 优先于 PendingSettlement，最多返回一条。
+        std::optional<ChargingOrder> active;
+        for (const QJsonValue &value : data.toArray()) {
+            if (!value.isObject()) {
+                continue;
+            }
+            const ChargingOrder order = parseOrderRecord(value.toObject());
+            if (order.status != OrderStatus::Charging
+                && order.status != OrderStatus::PendingSettlement) {
+                continue;
+            }
+            if (!active.has_value()
+                || (order.status == OrderStatus::Charging
+                    && active->status != OrderStatus::Charging)) {
+                active = order;
+            }
+        }
+        emit activeOrderReady(context, active);
+        return;
+    }
+
+    if (msgType == ILLEGAL_REQUEST || msgType == DATA_NOEXIST
+        || msgType == DB_ERROR || msgType == PARAM_ERROR
+        || msgType == LOGIN_FAIL || msgType == DATA_EXIST) {
+        // 服务端错误规范：code 字符串优先，err/reason 仅作展示补充。
+        const QString bizCode = payload.value(QStringLiteral("code")).toString();
+        QString reason = payload.value(QStringLiteral("err")).toString();
+        if (reason.isEmpty()) {
+            reason = payload.value(QStringLiteral("reason")).toString();
+        }
+        const int errType = msgType;
+        const PendingRequest pending = *m_pending;
+        m_pending.reset();
+        if (pending.timer) {
+            pending.timer->stop();
+            pending.timer->deleteLater();
+        }
+        ClientError error;
+        error.requestId = pending.requestId;
+        error.operationId = pending.operationId;
+        error.code = bizCode.isEmpty()
+                         ? QStringLiteral("server-error-%1").arg(errType)
+                         : bizCode;
+        error.displayMessage =
+            reason.isEmpty()
+                ? QStringLiteral("Server rejected the order query (%1).").arg(errType)
+                : reason;
+        error.retryable = isRetryableServerError(errType);
+        emit requestFailed(error);
+    }
+}
+
+ChargingOrder RealOrderService::parseOrderRecord(const QJsonObject &record)
+{
+    // 坏行不丢弃整批：orderId 缺失的记录在详情匹配/活动筛选中自然无法命中。
+    ChargingOrder order;
+    order.orderId = recordString(record, {"orderNo", "orderId"});
+    order.stationName = recordString(record, {"stationName"});
+    order.chargerCode = recordString(record, {"chargerCode"});
+    order.stationId = order.stationName; // 稳定 ID 待 v2.5 冲突解决，暂用名称
+    order.chargerId = order.chargerCode;
+
+    const QString status = recordString(record, {"status"});
+    if (status == QLatin1String("Charging")) {
+        order.status = OrderStatus::Charging;
+    } else if (status == QLatin1String("PendingSettlement")) {
+        order.status = OrderStatus::PendingSettlement;
+    } else if (status == QLatin1String("Settled")) {
+        order.status = OrderStatus::Settled;
+    } else if (status == QLatin1String("Cancelled")) {
+        order.status = OrderStatus::Cancelled;
+    } else {
+        order.status = OrderStatus::Unknown;
+    }
+
+    bool ok = false;
+    const double priceCents = numberValue(record.value(QStringLiteral("priceCents")), &ok);
+    if (ok) {
+        order.priceCentsPerKwhSnapshot = static_cast<qint64>(priceCents);
+    } else {
+        const double yuan = numberValue(record.value(QStringLiteral("price")), &ok);
+        if (ok && yuan >= 0.0) {
+            order.priceCentsPerKwhSnapshot = static_cast<qint64>(qRound64(yuan * 100.0));
+        }
+    }
+
+    const double kwh = numberValue(record.value(QStringLiteral("kwh")), &ok);
+    if (ok && kwh >= 0.0) {
+        order.energyKwh = kwh;
+    }
+
+    const QJsonValue cents = record.value(QStringLiteral("amountCents"));
+    if (cents.isDouble()) {
+        order.amountCents = static_cast<qint64>(cents.toDouble());
+    } else {
+        const double amount = numberValue(record.value(QStringLiteral("amount")), &ok);
+        if (ok && amount >= 0.0) {
+            order.amountCents = static_cast<qint64>(qRound64(amount * 100.0));
+        }
+    }
+
+    order.startedAtUtc = parseTimestamp(recordString(record, {"startedAt", "startTime"}));
+    const QDateTime ended = parseTimestamp(recordString(record, {"endedAt", "endTime"}));
+    if (ended.isValid()) {
+        order.endedAtUtc = ended;
+    }
+    const QDateTime deadline =
+        parseTimestamp(recordString(record, {"paymentDeadline", "payDeadline"}));
+    if (deadline.isValid()) {
+        order.paymentDeadlineUtc = deadline;
+    }
+
+    return order;
+}
+
+void RealOrderService::handleConnectionStateChanged(ConnectionState state)
+{
+    // 断线/重连中立即失败在途查询并允许重试：比等超时兜底更快可恢复。
+    if ((state == ConnectionState::Disconnected
+         || state == ConnectionState::Reconnecting)
+        && m_pending) {
+        failAllPending(QStringLiteral("connection-lost"),
+                       QStringLiteral("Connection to server was lost."));
+    }
+}
+
+void RealOrderService::handleTimeout()
+{
+    if (!m_pending) {
+        return;
+    }
+    failPending(QStringLiteral("request-timeout"),
+                QStringLiteral("Request timed out."), true);
+}
+
+void RealOrderService::failPending(const QString &code, const QString &message,
+                                   bool retryable)
+{
+    if (!m_pending) {
+        return;
+    }
+    const PendingRequest pending = *m_pending;
+    m_pending.reset();
+    if (pending.timer) {
+        pending.timer->stop();
+        pending.timer->deleteLater();
+    }
+    emit requestFailed(makeError(pending.requestId, pending.operationId,
+                                 code, message, retryable));
+}
+
+void RealOrderService::failAllPending(const QString &code, const QString &message)
+{
+    while (m_pending) {
+        failPending(code, message, true);
+    }
+}
+
+void RealOrderService::emitFailed(const RequestContext &context, const QString &code,
+                                  const QString &message, bool retryable)
+{
+    emit requestFailed(makeError(context.requestId, context.operationId,
+                                 code, message, retryable));
+}

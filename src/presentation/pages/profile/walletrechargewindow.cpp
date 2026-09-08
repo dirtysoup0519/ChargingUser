@@ -54,6 +54,25 @@ void WalletRechargeWindow::renderBalance(const QString &balanceText)
                                    ? QStringLiteral("--") : balanceText);
 }
 
+void WalletRechargeWindow::render(const WalletViewState &state)
+{
+    renderBalance(state.balanceText);
+    const bool busy = state.status == WalletPageStatus::Loading
+                      || state.status == WalletPageStatus::Submitting;
+    ui->loadingIndicator->setVisible(busy);
+    ui->loadingIndicator->setText(state.status == WalletPageStatus::Loading
+                                      ? tr("正在刷新钱包数据…")
+                                      : tr("正在提交充值请求…"));
+    ui->errorLabel->setVisible(!state.message.isEmpty());
+    ui->errorLabel->setText(state.message);
+    ui->confirmRechargeButton->setEnabled(state.canSubmit && !busy);
+    ui->customAmountEdit->setEnabled(!busy);
+    ui->amount20Button->setEnabled(!busy);
+    ui->amount50Button->setEnabled(!busy);
+    ui->amount100Button->setEnabled(!busy);
+    ui->amount200Button->setEnabled(!busy);
+}
+
 void WalletRechargeWindow::selectQuickAmount(const QString &amountText)
 {
     ui->customAmountEdit->setText(amountText);

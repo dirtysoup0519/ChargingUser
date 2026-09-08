@@ -104,7 +104,7 @@ QWidget
 主要文件：
 
 ```text
-src/realnetworkmain.cpp
+src/main.cpp
 src/app/application.*
 src/app/mapuibinder.*
 src/app/charginguibinder.*
