@@ -1,5 +1,8 @@
 #include "clientsocketworker.h"
 
+#include "backendclient.h"
+#include "qtnetworktransport.h"
+
 #include <QThread>
 
 ClientSocketWorker::ClientSocketWorker(const QString &host, quint16 port)
@@ -15,9 +18,20 @@ void ClientSocketWorker::initialize()
         return;
     }
 
-    // 阶段一只建立线程生命周期；阶段二在这里创建传输层和 BackendClient。
+    // 必须在本槽中创建：构造 Worker 时调用方仍位于主线程。
+    m_transport = new QtNetworkTransport(m_host, m_port, this);
+    m_backend = new BackendClient(m_transport, this);
+
+    connect(m_backend, &BackendClient::frameReceived,
+            this, &ClientSocketWorker::frameReceived);
+    connect(m_backend, &BackendClient::connectionStateChanged,
+            this, &ClientSocketWorker::connectionStateChanged);
+    connect(m_backend, &BackendClient::networkError,
+            this, &ClientSocketWorker::networkError);
+
     m_initialized = true;
     emit initialized();
+    m_backend->start();
 }
 
 void ClientSocketWorker::shutdown()
@@ -28,6 +42,9 @@ void ClientSocketWorker::shutdown()
         return;
     }
 
+    if (m_backend) {
+        m_backend->shutdown();
+    }
     m_initialized = false;
     emit stopped();
 }
@@ -35,11 +52,16 @@ void ClientSocketWorker::shutdown()
 void ClientSocketWorker::sendFrame(int messageType, const QJsonObject &payload)
 {
     Q_ASSERT(QThread::currentThread() == thread());
-    Q_UNUSED(payload)
-    emit frameSendFailed(
-        messageType,
-        m_initialized
-            ? QStringLiteral("Network transport is not installed yet.")
-            : QStringLiteral("Network worker is not running."));
+    if (!m_initialized || !m_backend) {
+        emit frameSendFailed(messageType,
+                             QStringLiteral("Network worker is not running."));
+        return;
+    }
+    if (!m_backend->sendFrame(messageType, payload)) {
+        emit frameSendFailed(
+            messageType,
+            m_backend->connectionState() == ConnectionState::Connected
+                ? QStringLiteral("Protocol frame could not be queued.")
+                : QStringLiteral("Backend is not connected."));
+    }
 }
-

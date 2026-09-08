@@ -6,6 +6,9 @@
 #include <QObject>
 #include <QString>
 
+class BackendClient;
+class QtNetworkTransport;
+
 /**
  * 客户端网络线程中的私有 Worker。
  *
@@ -35,6 +38,7 @@ signals:
 private:
     QString m_host;
     quint16 m_port = 0;
+    QtNetworkTransport *m_transport = nullptr;
+    BackendClient *m_backend = nullptr;
     bool m_initialized = false;
 };
-

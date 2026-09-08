@@ -6,7 +6,8 @@
 /* 网络传输抽象（合同 §7 步骤 7）：
  * BackendClient 只依赖本接口，不直接接触 QTcpSocket，
  * 使连接管理与编解码可在无 socket 的测试环境中验证。
- * 线程约定：创建、调用与信号全部发生在同一线程（默认主线程）。
+ * 线程约定：创建、调用与信号全部发生在对象所属线程；正式程序将实现放在
+ * ClientSocketWorker 的专用网络线程，测试可在测试线程内直接使用。
  */
 class INetworkTransport : public QObject
 {

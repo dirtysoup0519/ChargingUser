@@ -1,5 +1,6 @@
 #include "qtnetworktransport.h"
 
+#include <QThread>
 #include <QTcpSocket>
 
 QtNetworkTransport::QtNetworkTransport(const QString &host, quint16 port, QObject *parent)
@@ -52,6 +53,7 @@ QtNetworkTransport::~QtNetworkTransport() = default;
 
 void QtNetworkTransport::connectToServer()
 {
+    Q_ASSERT(QThread::currentThread() == thread());
     if (m_socket->state() == QAbstractSocket::UnconnectedState) {
         m_socket->connectToHost(m_host, m_port);
     }
@@ -59,6 +61,7 @@ void QtNetworkTransport::connectToServer()
 
 void QtNetworkTransport::disconnectFromServer()
 {
+    Q_ASSERT(QThread::currentThread() == thread());
     clearWriteQueue();
     if (m_socket->state() != QAbstractSocket::UnconnectedState) {
         // shutdown 不应继续发送 QTcpSocket 内部尚未刷出的旧请求。
@@ -68,6 +71,7 @@ void QtNetworkTransport::disconnectFromServer()
 
 bool QtNetworkTransport::send(const QByteArray &data)
 {
+    Q_ASSERT(QThread::currentThread() == thread());
     if (m_socket->state() != QAbstractSocket::ConnectedState) {
         return false;
     }
@@ -82,6 +86,7 @@ bool QtNetworkTransport::send(const QByteArray &data)
 
 bool QtNetworkTransport::isConnected() const
 {
+    Q_ASSERT(QThread::currentThread() == thread());
     return m_socket->state() == QAbstractSocket::ConnectedState;
 }
 
