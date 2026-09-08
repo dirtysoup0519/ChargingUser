@@ -8,10 +8,13 @@ HEADERS += \
     $$PROJECT_ROOT/src/common/requestcontext.h \
     $$PROJECT_ROOT/src/modules/user/iusernetworkapi.h \
     $$PROJECT_ROOT/src/modules/user/iuserservice.h \
-    $$PROJECT_ROOT/src/modules/user/mockusernetworkapi.h \
     $$PROJECT_ROOT/src/modules/user/userservice.h \
     $$PROJECT_ROOT/src/modules/user/usertypes.h
 
 SOURCES += \
-    $$PROJECT_ROOT/src/modules/user/mockusernetworkapi.cpp \
     $$PROJECT_ROOT/src/modules/user/userservice.cpp
+
+!contains(CONFIG, real_network) {
+    HEADERS += $$PROJECT_ROOT/src/modules/user/mockusernetworkapi.h
+    SOURCES += $$PROJECT_ROOT/src/modules/user/mockusernetworkapi.cpp
+}

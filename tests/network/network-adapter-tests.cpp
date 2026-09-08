@@ -1,7 +1,7 @@
 /* RealUserNetworkApi 适配器测试
  * 用 MockTransport 模拟 socket：直接注入协议帧、控制连接状态。
- * 覆盖当前服务端 v2.4 协议的适配器语义：
- *  - 登录请求携带 requestId；未冻结的资料接口不得借用高权限通道
+ * 覆盖当前服务端 v2.6 协议的适配器语义：
+ *  - 登录请求携带 requestId；资料查询与昵称修改分别使用 100/200、118/228
  *  - 登录应答优先按 requestId 匹配，无回显时按类型回退
  *  - 218 是重启确认，不得误解析为用户资料应答
  *  - 3xx 映射业务错误码；断线使在途请求失败
@@ -13,7 +13,10 @@
 #include "network/realusernetworkapi.h"
 #include "protocol.h"
 
+#include <QJsonArray>
 #include <QSignalSpy>
+
+#include <algorithm>
 #include <QtTest>
 
 namespace
@@ -93,6 +96,19 @@ QList<QPair<int, QJsonObject>> decodeFrames(const QList<QByteArray> &bytesList)
     return frames;
 }
 
+/* 过滤连接时自动发出的 107 存活心跳：心跳属于生命周期帧，
+ * 业务用例只断言业务帧的条数与顺序。 */
+QList<QPair<int, QJsonObject>> businessFrames(const QList<QByteArray> &bytesList)
+{
+    auto frames = decodeFrames(bytesList);
+    frames.erase(std::remove_if(frames.begin(), frames.end(),
+                                [](const QPair<int, QJsonObject> &frame) {
+                                    return frame.first == HEARTBEAT;
+                                }),
+                 frames.end());
+    return frames;
+}
+
 RequestContext makeContext(const QString &requestId)
 {
     RequestContext context;
@@ -113,8 +129,8 @@ private slots:
     void loginAckMapsToLoginResult();
     void loginAckWithoutEchoStillMatches();
     void serverErrorMapsToClientError();
-    void queryProfileReportsUnsupportedProtocol();
-    void nicknameUpdateReportsUnsupportedProtocol();
+    void queryProfileUsesGetData();
+    void nicknameUpdateUsesProfileUpdate();
     void disconnectFailsPendingRequests();
     void restartAckIsIgnoredByUserAdapter();
     void logoutSendsImmediatelyWithoutAck();
@@ -140,7 +156,7 @@ void NetworkAdapterTests::loginSendsPhoneRequestWithRequestId()
     RealUserNetworkApi api(&backend);
 
     api.loginByPhone(QStringLiteral("13800138000"), makeContext(QStringLiteral("req-x")));
-    const auto frames = decodeFrames(transport.m_sentFrames);
+    const auto frames = businessFrames(transport.m_sentFrames);
 
     QCOMPARE(frames.size(), 1);
     QCOMPARE(frames.first().first, PHONE_LOGIN_REQ);
@@ -149,6 +165,7 @@ void NetworkAdapterTests::loginSendsPhoneRequestWithRequestId()
              QStringLiteral("13800138000"));
     QCOMPARE(payload.value(QLatin1String("requestId")).toString(),
              QStringLiteral("req-x"));
+    QVERIFY(!payload.contains(QLatin1String("password")));
 }
 
 void NetworkAdapterTests::loginAckMapsToLoginResult()
@@ -179,6 +196,8 @@ void NetworkAdapterTests::loginAckMapsToLoginResult()
     QVERIFY(result.isNewUser);
     QCOMPARE(result.session.profile.userId, QStringLiteral("U13800138000"));
     QCOMPARE(result.session.profile.nickname, QStringLiteral("用户0000"));
+    QVERIFY(result.session.profile.balanceCents.has_value());
+    QCOMPARE(*result.session.profile.balanceCents, 0);
     QCOMPARE(result.session.accountStatus, AccountStatus::Normal);
     QVERIFY(result.session.authenticated);
 }
@@ -231,46 +250,76 @@ void NetworkAdapterTests::serverErrorMapsToClientError()
     QCOMPARE(error.requestId, QStringLiteral("req-3"));
 }
 
-void NetworkAdapterTests::queryProfileReportsUnsupportedProtocol()
+void NetworkAdapterTests::queryProfileUsesGetData()
 {
     MockTransport transport;
     BackendClient backend(&transport);
     backend.start();
     RealUserNetworkApi api(&backend);
-    QSignalSpy failures(&api, &IUserNetworkApi::requestFailed);
+    QSignalSpy successes(&api, &IUserNetworkApi::currentUserQuerySucceeded);
     api.queryCurrentUser(QStringLiteral("U13800138000"),
                          makeContext(QStringLiteral("req-4")));
 
-    QCOMPARE(failures.count(), 1);
-    const ClientError error =
-        qvariant_cast<ClientError>(failures.takeFirst().at(0));
-    QCOMPARE(error.code, QStringLiteral("unsupported-protocol"));
-    QCOMPARE(error.requestId, QStringLiteral("req-4"));
-    QCOMPARE(error.operationId, QStringLiteral("req-4-op"));
-    QVERIFY(!error.retryable);
-    QVERIFY(!error.resultUnknown);
-    QVERIFY(transport.m_sentFrames.isEmpty());
+    const auto frames = businessFrames(transport.m_sentFrames);
+    QCOMPARE(frames.size(), 1);
+    QCOMPARE(frames.first().first, GETDATA);
+    QCOMPARE(frames.first().second.value(QLatin1String("table")).toString(),
+             QStringLiteral(TBL_USER));
+    QCOMPARE(frames.first().second.value(QLatin1String("cond")).toObject()
+                 .value(QLatin1String("username")).toString(),
+             QStringLiteral("U13800138000"));
+
+    QJsonObject row;
+    row.insert(QStringLiteral("username"), QStringLiteral("U13800138000"));
+    row.insert(QStringLiteral("phone"), QStringLiteral("13800138000"));
+    row.insert(QStringLiteral("nickname"), QStringLiteral("测试用户"));
+    row.insert(QStringLiteral("status"), QStringLiteral("Normal"));
+    row.insert(QStringLiteral("balanceCents"), 12345);
+    QJsonObject ack;
+    ack.insert(QStringLiteral("data"), QJsonArray{row});
+    transport.simulateIncoming(MassageHandler::pack(DATA, ack));
+
+    QCOMPARE(successes.count(), 1);
+    const UserProfileResult result =
+        qvariant_cast<UserProfileResult>(successes.takeFirst().at(0));
+    QCOMPARE(result.requestId, QStringLiteral("req-4"));
+    QCOMPARE(result.profile.userId, QStringLiteral("U13800138000"));
+    QCOMPARE(result.profile.nickname, QStringLiteral("测试用户"));
+    QVERIFY(result.profile.balanceCents.has_value());
+    QCOMPARE(*result.profile.balanceCents, 12345);
 }
 
-void NetworkAdapterTests::nicknameUpdateReportsUnsupportedProtocol()
+void NetworkAdapterTests::nicknameUpdateUsesProfileUpdate()
 {
     MockTransport transport;
     BackendClient backend(&transport);
     backend.start();
     RealUserNetworkApi api(&backend);
-    QSignalSpy failures(&api, &IUserNetworkApi::requestFailed);
+    QSignalSpy successes(&api, &IUserNetworkApi::nicknameUpdateSucceeded);
     api.updateNickname(QStringLiteral("U13800138000"), QStringLiteral("老王"),
                        makeContext(QStringLiteral("req-5")));
 
-    QCOMPARE(failures.count(), 1);
-    const ClientError error =
-        qvariant_cast<ClientError>(failures.takeFirst().at(0));
-    QCOMPARE(error.code, QStringLiteral("unsupported-protocol"));
-    QCOMPARE(error.requestId, QStringLiteral("req-5"));
-    QCOMPARE(error.operationId, QStringLiteral("req-5-op"));
-    QVERIFY(!error.retryable);
-    QVERIFY(!error.resultUnknown);
-    QVERIFY(transport.m_sentFrames.isEmpty());
+    const auto frames = businessFrames(transport.m_sentFrames);
+    QCOMPARE(frames.size(), 1);
+    QCOMPARE(frames.first().first, PROFILE_UPD_REQ);
+    QCOMPARE(frames.first().second.value(QLatin1String("username")).toString(),
+             QStringLiteral("U13800138000"));
+    QCOMPARE(frames.first().second.value(QLatin1String("nickname")).toString(),
+             QStringLiteral("老王"));
+
+    QJsonObject ack;
+    ack.insert(QStringLiteral("ok"), true);
+    ack.insert(QStringLiteral("username"), QStringLiteral("U13800138000"));
+    ack.insert(QStringLiteral("changed"),
+               QJsonArray{QStringLiteral("nickname")});
+    transport.simulateIncoming(MassageHandler::pack(PROFILE_UPD_ACK, ack));
+
+    QCOMPARE(successes.count(), 1);
+    const UserProfileResult result =
+        qvariant_cast<UserProfileResult>(successes.takeFirst().at(0));
+    QCOMPARE(result.requestId, QStringLiteral("req-5"));
+    QCOMPARE(result.operationId, QStringLiteral("req-5-op"));
+    QCOMPARE(result.profile.nickname, QStringLiteral("老王"));
 }
 
 void NetworkAdapterTests::disconnectFailsPendingRequests()
@@ -463,7 +512,7 @@ void NetworkAdapterTests::logoutSendsImmediatelyWithoutAck()
     QCOMPARE(successes.count(), 1);
     QCOMPARE(failures.count(), 0);
 
-    const auto frames = decodeFrames(transport.m_sentFrames);
+    const auto frames = businessFrames(transport.m_sentFrames);
     QCOMPARE(frames.size(), 1);
     QCOMPARE(frames.first().first, LOGOUT_REQ);
     QCOMPARE(frames.first().second.value(QLatin1String("requestId")).toString(),

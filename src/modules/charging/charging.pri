@@ -3,9 +3,11 @@ HEADERS += \
     $$PWD/chargingbackendcapabilities.h \
     $$PWD/ichargingnetworkapi.h \
     $$PWD/ichargingservice.h \
-    $$PWD/chargingservice.h \
-    $$PWD/mockchargingservice.h
+    $$PWD/chargingservice.h
 
-SOURCES += \
-    $$PWD/chargingservice.cpp \
-    $$PWD/mockchargingservice.cpp
+SOURCES += $$PWD/chargingservice.cpp
+
+!contains(CONFIG, real_network) {
+    HEADERS += $$PWD/mockchargingservice.h
+    SOURCES += $$PWD/mockchargingservice.cpp
+}

@@ -21,6 +21,7 @@ LoginResult loginResult(const QString &phone, bool isNewUser = false)
     result.session.profile.nickname = isNewUser
                                           ? QString()
                                           : QStringLiteral("Existing user");
+    result.session.profile.balanceCents = 12345;
     return result;
 }
 
@@ -31,6 +32,7 @@ UserProfileResult profileResult(const QString &phone,
     result.profile.userId = QStringLiteral("U") + phone;
     result.profile.phone = phone;
     result.profile.nickname = nickname;
+    result.profile.balanceCents = 12345;
     result.accountStatus = AccountStatus::Normal;
     return result;
 }
@@ -219,6 +221,7 @@ void UserAppTests::profileSummaryTracksAuthenticatedSession()
     const ProfileViewState state = fixture.binder()->currentProfileViewState();
     QCOMPARE(state.nickname, QStringLiteral("Existing user"));
     QCOMPARE(state.maskedPhone, QStringLiteral("138****0000"));
+    QCOMPARE(state.balanceText, QStringLiteral("¥123.45"));
     QCOMPARE(state.accountState, AccountDisplayState::Normal);
     QVERIFY(state.accountMessage.isEmpty());
 }

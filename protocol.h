@@ -26,9 +26,7 @@
 #define FRAME_HEAD_LEN      (MSG_TYPE_LEN + MSG_SIZE_LEN)   // 帧头 12B
 #define MAX_MSG_SIZE        (8 * 1024 * 1024)   // 单帧载荷上限 8MB
 #define BIGDATA_THRESHOLD   (16 * 1024)         // 超过 16KB 自动分片
-/* 分片重组后"完整业务消息"的冻结上限（调试指南 §9 修复项 1）。
- * 与单帧上限取值一致：既然单帧最大 8MB，重组消息没有理由允许更大；
- * 解析端据此拒绝累计超限的分片流，防止异常对端撑爆重组缓冲。 */
+/* 分片重组后的完整业务消息不得超过单帧上限，防止异常分片耗尽内存。 */
 #define MAX_ASSEMBLED_MSG_SIZE  MAX_MSG_SIZE
 
 /* 心跳与超时（断线重连机制） */
@@ -44,7 +42,17 @@
 /* 订单待支付期限：停止充电后 15 分钟内未支付自动冻结用户 */
 #define PAYMENT_DEADLINE_MS     (15 * 60 * 1000)
 
-/* 服务器默认地址（默认值：客户端与服务器设置页均可配置覆盖） */
+/* 预约充电业务规则：
+ * 1) 预约保持时长最大 2 小时，超时由服务端自动注销（预约失效，押金不予退还）；
+ * 2) 押金 20 元，预约成功即从钱包扣除（DEPOSIT 流水）；
+ * 3) 预约用户正式开始充电时押金退还（REFUND 流水），预约记录转 Completed；
+ * 4) 同一用户同时只能有一笔进行中预约，同一电桩同时只能被一人预约。 */
+#define RESERVE_KEEP_MS         (2 * 60 * 60 * 1000)    // 预约保持时长：2 小时
+#define RESERVE_DEPOSIT_CENTS   2000                    // 预约押金：20 元 = 2000 分
+
+/* 服务器默认地址（客户端与服务器设置页均可配置覆盖）。
+ * 客户端工程拷贝本文件后：把 SERVER_IP 改成服务器所在机器的局域网 IP 即可全工程生效；
+ * 服务器端：settings 界面 IP 留空 = 绑定全部网卡（局域网测试必选，127.0.0.1 只能本机连）。 */
 #define SERVER_IP   "127.0.0.1"
 #define SERVER_PORT "12345"
 
@@ -54,11 +62,11 @@
 #define TBL_CHARGER     "charger"           // 电桩表
 #define TBL_ORDER       "orderInfo"         // 订单表（order 为 SQL 关键字，故用 orderInfo）
 #define TBL_WALLET_TX   "walletTransaction" // 钱包资金流水表
-#define TBL_RESERVATION "reservation"       // 预约表（冗余预留：业务降优先级，仅建表）
+#define TBL_RESERVATION "reservation"       // 预约表（预约业务已启用，见 §预约充电）
 
 /* 电桩业务状态（charger 表 businessStatus 字段；与网络在线状态 online 分离） */
 #define CHARGER_IDLE        0       // 空闲
-#define CHARGER_RESERVED    1       // 已预约（冗余预留）
+#define CHARGER_RESERVED    1       // 已预约（预约充电业务）
 #define CHARGER_CHARGING    2       // 充电中
 #define CHARGER_FAULT       3       // 故障（预留）
 #define CHARGER_RESTARTING  4       // 重启中（冗余预留）
@@ -71,6 +79,7 @@
 /* 用户角色（user 表 role 字段） */
 #define ROLE_ADMIN      "admin" // PC 端普通管理员
 #define ROLE_USER       "user"  // 手机端用户
+#define ROLE_DEVICE     "device"// 电桩设备会话（仅协议交互，无账户身份）
 
 /* 订单状态（orderInfo 表 status 字段） */
 #define ORDER_CHARGING          "Charging"           // 充电中
@@ -81,8 +90,8 @@
 /* 钱包流水类型（walletTransaction 表 type 字段） */
 #define TX_RECHARGE "RECHARGE"      // 充值
 #define TX_PAY      "PAY"           // 订单支付
-#define TX_REFUND   "REFUND"        // 退款（冗余预留）
-#define TX_DEPOSIT  "DEPOSIT"       // 预约押金（冗余预留）
+#define TX_REFUND   "REFUND"        // 退款（预约充电开始时退押金）
+#define TX_DEPOSIT  "DEPOSIT"       // 预约押金（预约成功时扣）
 
 /* 业务错误码（错误响应 JSON 的 code 字符串字段，网络层仍用 3xx 类型码） */
 #define BIZ_ERR_FROZEN              "USER_FROZEN"            // 账户冻结，禁止开始新充电/预约
@@ -92,6 +101,10 @@
 #define BIZ_ERR_NOT_FOUND           "NOT_FOUND"              // 目标不存在
 #define BIZ_ERR_PARAM               "PARAM_ERROR"            // 参数缺失/非法
 #define BIZ_ERR_DB                  "DB_ERROR"               // 数据库操作失败
+#define BIZ_ERR_AUTH                "AUTH_FAIL"              // 认证失败（旧密码校验不过/越权修改他人资料）
+#define BIZ_ERR_FORBIDDEN           "OP_FORBIDDEN"           // 业务规则禁止（删非空电站/改充电中桩等）
+#define BIZ_ERR_DUPLICATE           "DUPLICATE"              // 唯一性冲突（用户名/手机号已占用）
+#define BIZ_ERR_RESERVE_CONFLICT    "RESERVE_CONFLICT"       // 预约冲突（已有进行中预约/押金规则不满足）
 
 /* ================ 消息类型定义 ================ */
 
@@ -112,6 +125,11 @@
 #define DELDATA             112     // 删除记录 {table, key}（高权限通用接口，保留）
 #define DEV_ONLINE          120     // 设备上线（须已由管理员登记，未登记设备将被拒绝）{chargerCode,stationName?}
 #define DEV_OFFLINE         121     // 设备主动下线 {chargerCode}
+#define REG_REQ             117     // 用户注册（一般注册，免密登录之外的常规通道）{username,password,phone?,nickname?}
+#define PROFILE_UPD_REQ     118     // 用户修改账户（用户名/密码/昵称/头像，同步改 user 表）{username,newUsername?,oldPassword?,newPassword?,nickname?,avatar?}
+#define STATION_QRY_REQ     119     // 电站/电桩信息查询（用户端 & PC端）{stationName?,chargerCode?}
+#define STATION_MNG_REQ     124     // 电站/电桩管理（PC管理员）{op:add|update|remove, target:station|charger, data?, key?}
+#define RESERVE_REQ         125     // 预约充电（手机用户）{chargerCode}（押金 20 元即扣，保持 2 小时）
 
 /* 返回类型 2开头 */
 #define DATA                200     // 通用查询结果（预留）
@@ -136,7 +154,15 @@
 #define CHG_PROGRESS        225     // 充电进度推送（服务端→对应用户）{orderNo,percent,kwh,amountCents,amount,remainMin}
 #define CHG_FAULT_NOTICE    226     // 充电异常通知（服务端→对应用户）{chargerCode,orderNo,kwh,amountCents,amount,settled,reason}
 #define CHARGER_FAULT_NOTICE 227    // 电桩故障广播（服务端→管理员）{chargerCode}
+#define REG_ACK             219     // 注册成功 {ok,username,phone,nickname,autoLogin}
+#define PROFILE_UPD_ACK     228     // 账户修改成功 {ok,username,changed:[...]}
+#define STATION_QRY_ACK     229     // 电站/电桩查询结果 {stations:[{...station, chargers:[...]}]}
+#define STATION_MNG_ACK     231     // 电站/电桩管理操作成功 {ok,op,target,...}
 #define HEARTBEAT_ACK       230     // 心跳应答
+#define RESERVE_ACK         232     // 预约成功 {reserveId,chargerCode,phone,reserveAt,expireAt,balanceCents,balance}
+#define RESERVE_EXPIRED_NOTICE 233  // 预约超时注销通知（服务端→用户）{reserveId,chargerCode,reserveAt,expireAt}
+#define CHG_ORDER_NOTICE    234     // 订单状态同步（服务端→电桩设备会话）{chargerCode,status,orderNo?,username?}
+                                    //   status: Reserved/Charging/Idle（电桩据此刷新本地展示）
 
 /* 错误类型 3开头（错误响应 JSON 携带 code 字段 = 业务错误码，见 BIZ_ERR_*） */
 #define DATA_NOEXIST    300     // 数据不存在
@@ -145,6 +171,8 @@
 #define DATA_EXIST      303     // 主键冲突（记录已存在）
 #define DB_ERROR        304     // 数据库操作失败
 #define PARAM_ERROR     305     // 参数缺失/非法
+#define AUTH_ERROR      306     // 认证失败（修改密码时旧密码校验不过等）
+#define OP_FORBIDDEN    307     // 业务规则禁止（删除非空电站、修改充电中电桩归属等）
 
 /* 特殊类型 4开头 —— 大数据自动分片（对上层透明） */
 #define BIGDATA_START   400     // 分片起始：payload = [4B原始类型码][数据块0]

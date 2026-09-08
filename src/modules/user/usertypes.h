@@ -3,6 +3,8 @@
 #include <QMetaType>
 #include <QString>
 
+#include <optional>
+
 enum class AccountStatus
 {
     Normal,
@@ -16,6 +18,8 @@ struct UserProfile
     QString phone;
     QString nickname;
     QString avatarKey;
+    /** 服务端 user.balanceCents；缺失时保持 unknown，不能伪造为 0。 */
+    std::optional<qint64> balanceCents;
 };
 
 struct UserSession

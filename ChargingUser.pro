@@ -10,10 +10,10 @@ qtHaveModule(webenginewidgets):qtHaveModule(webchannel) {
 CONFIG += c++17
 CONFIG -= app_bundle
 
-# Local/Qt Creator builds should exercise the complete UI assembly by default.
-# Production network integration remains an explicit CONFIG+=real_network mode.
-!contains(CONFIG, real_network) {
-    CONFIG += user_demo
+# Normal builds must use the real server. The fixture-backed demo is opt-in so
+# running qmake again cannot silently switch production data back to *.tmp.
+!contains(CONFIG, real_network):!contains(CONFIG, user_demo) {
+    CONFIG += real_network
 }
 
 TEMPLATE = app
@@ -21,11 +21,22 @@ TARGET = ChargingUserUI
 
 PROJECT_ROOT = $$PWD
 
-DESTDIR = $$PROJECT_ROOT/bin
-MOC_DIR = $$PROJECT_ROOT/build/moc
-UI_DIR = $$PROJECT_ROOT/build/ui
-RCC_DIR = $$PROJECT_ROOT/build/rcc
-OBJECTS_DIR = $$PROJECT_ROOT/build/obj
+# Real client keeps the documented ./bin/ChargingUserUI path. An explicitly
+# requested fixture demo is isolated under its own build directory so it can
+# never overwrite the real executable.
+contains(CONFIG, user_demo) {
+    DESTDIR = $$OUT_PWD/bin
+    MOC_DIR = $$OUT_PWD/build/moc
+    UI_DIR = $$OUT_PWD/build/ui
+    RCC_DIR = $$OUT_PWD/build/rcc
+    OBJECTS_DIR = $$OUT_PWD/build/obj
+} else {
+    DESTDIR = $$PROJECT_ROOT/bin
+    MOC_DIR = $$PROJECT_ROOT/build/moc
+    UI_DIR = $$PROJECT_ROOT/build/ui
+    RCC_DIR = $$PROJECT_ROOT/build/rcc
+    OBJECTS_DIR = $$PROJECT_ROOT/build/obj
+}
 
 INCLUDEPATH += \
     $$PROJECT_ROOT \
@@ -62,6 +73,7 @@ contains(CONFIG, user_demo) {
         error("user_demo and real_network cannot be enabled together")
     }
     SOURCES -= src/main.cpp
+    RESOURCES += resources/demo-resources.qrc
     include($$PROJECT_ROOT/src/demo/demo.pri)
 } else:contains(CONFIG, real_network) {
     SOURCES -= src/main.cpp

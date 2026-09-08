@@ -1,7 +1,8 @@
 HEADERS += \
     $$PWD/chargertypes.h \
-    $$PWD/ichargerservice.h \
-    $$PWD/mockchargerservice.h
+    $$PWD/ichargerservice.h
 
-SOURCES += \
-    $$PWD/mockchargerservice.cpp
+!contains(CONFIG, real_network) {
+    HEADERS += $$PWD/mockchargerservice.h
+    SOURCES += $$PWD/mockchargerservice.cpp
+}

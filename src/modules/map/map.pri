@@ -5,7 +5,6 @@ HEADERS += \
     $$PWD/coordinateconverter.h \
     $$PWD/imapservice.h \
     $$PWD/maptypes.h \
-    $$PWD/mockmapservice.h \
     $$PWD/tencentmapservice.h
 
 # WebChannel bridge is QtCore-only and therefore remains buildable on kits
@@ -16,8 +15,12 @@ HEADERS += \
 
 SOURCES += \
     $$PWD/coordinateconverter.cpp \
-    $$PWD/mockmapservice.cpp \
     $$PWD/tencentmapservice.cpp
+
+!contains(CONFIG, real_network) {
+    HEADERS += $$PWD/mockmapservice.h
+    SOURCES += $$PWD/mockmapservice.cpp
+}
 
 SOURCES += \
     $$PROJECT_ROOT/src/presentation/widgets/map/tencentmapbridge.cpp

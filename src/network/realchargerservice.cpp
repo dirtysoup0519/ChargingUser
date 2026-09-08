@@ -512,14 +512,20 @@ QString RealChargerService::chargerStationField(const QJsonObject &record)
 std::optional<GeoPoint> RealChargerService::parsePoint(const QJsonObject &record)
 {
     bool lngOk = false;
-    const double lng = numberValue(record.value(QStringLiteral("lng")), &lngOk);
+    double lng = numberValue(record.value(QStringLiteral("longitude")), &lngOk);
     if (!lngOk) {
-        return std::nullopt;
+        lng = numberValue(record.value(QStringLiteral("lng")), &lngOk);
+        if (!lngOk) {
+            return std::nullopt;
+        }
     }
     bool latOk = false;
-    const double lat = numberValue(record.value(QStringLiteral("lat")), &latOk);
+    double lat = numberValue(record.value(QStringLiteral("latitude")), &latOk);
     if (!latOk) {
-        return std::nullopt;
+        lat = numberValue(record.value(QStringLiteral("lat")), &latOk);
+        if (!latOk) {
+            return std::nullopt;
+        }
     }
     const GeoPoint point{lat, lng};
     if (!point.isValid()) {

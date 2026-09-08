@@ -229,6 +229,10 @@ void UserUiBinder::rebuildViewStates(const UserFlowSnapshot &snapshot)
     if (snapshot.session.authenticated) {
         profileSummary.nickname = snapshot.session.profile.nickname;
         profileSummary.maskedPhone = maskedPhone(snapshot.session.profile.phone);
+        if (snapshot.session.profile.balanceCents) {
+            profileSummary.balanceText = QStringLiteral("¥%1")
+                .arg(*snapshot.session.profile.balanceCents / 100.0, 0, 'f', 2);
+        }
         switch (snapshot.session.accountStatus) {
         case AccountStatus::Normal:
             profileSummary.accountState = AccountDisplayState::Normal;

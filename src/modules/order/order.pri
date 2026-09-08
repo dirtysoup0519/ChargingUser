@@ -1,2 +1,6 @@
-HEADERS += $$PWD/ordertypes.h $$PWD/iorderservice.h $$PWD/mockorderservice.h
-SOURCES += $$PWD/mockorderservice.cpp
+HEADERS += $$PWD/ordertypes.h $$PWD/iorderservice.h
+
+!contains(CONFIG, real_network) {
+    HEADERS += $$PWD/mockorderservice.h
+    SOURCES += $$PWD/mockorderservice.cpp
+}

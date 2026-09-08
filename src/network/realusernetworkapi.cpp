@@ -3,6 +3,7 @@
 #include "backendclient.h"
 #include "protocol.h"
 
+#include <QJsonArray>
 #include <QTimer>
 
 namespace
@@ -53,8 +54,9 @@ int reqTypeForKind(RealUserNetworkApi::PendingKind kind)
     case RealUserNetworkApi::PendingKind::Login:
         return PHONE_LOGIN_REQ;
     case RealUserNetworkApi::PendingKind::QueryProfile:
+        return GETDATA;
     case RealUserNetworkApi::PendingKind::UpdateNickname:
-        return 0;   // 最新服务端协议未提供普通用户资料专用接口
+        return PROFILE_UPD_REQ;
     }
     return 0;
 }
@@ -113,25 +115,26 @@ void RealUserNetworkApi::loginByPhone(const QString &phone,
 void RealUserNetworkApi::queryCurrentUser(const QString &userId,
                                           const RequestContext &context)
 {
-    Q_UNUSED(userId);
-    emit requestFailed(failedRequestError(
-        context,
-        QStringLiteral("unsupported-protocol"),
-        QStringLiteral("The server protocol does not provide a dedicated user profile query."),
-        false));
+    QJsonObject condition;
+    condition.insert(QStringLiteral("username"), userId);
+
+    QJsonObject payload;
+    payload.insert(QStringLiteral("table"), QString::fromLatin1(TBL_USER));
+    payload.insert(QStringLiteral("cond"), condition);
+    payload.insert(QStringLiteral("requestId"), context.requestId);
+    startRequest(PendingKind::QueryProfile, payload, context, userId);
 }
 
 void RealUserNetworkApi::updateNickname(const QString &userId,
                                         const QString &nickname,
                                         const RequestContext &context)
 {
-    Q_UNUSED(userId);
-    Q_UNUSED(nickname);
-    emit requestFailed(failedRequestError(
-        context,
-        QStringLiteral("unsupported-protocol"),
-        QStringLiteral("The server protocol does not provide a dedicated nickname update."),
-        false));
+    QJsonObject payload;
+    payload.insert(QStringLiteral("username"), userId);
+    payload.insert(QStringLiteral("nickname"), nickname);
+    payload.insert(QStringLiteral("requestId"), context.requestId);
+    payload.insert(QStringLiteral("operationId"), context.operationId);
+    startRequest(PendingKind::UpdateNickname, payload, context, userId, nickname);
 }
 
 void RealUserNetworkApi::logout(const RequestContext &context)
@@ -158,7 +161,8 @@ void RealUserNetworkApi::logout(const RequestContext &context)
 
 bool RealUserNetworkApi::startRequest(PendingKind kind, const QJsonObject &payload,
                                       const RequestContext &context,
-                                      const QString &userId)
+                                      const QString &userId,
+                                      const QString &requestedNickname)
 {
     if (m_backend->connectionState() != ConnectionState::Connected) {
         // 与 connection-lost 同语义：BackendClient 会自动重连，用户应当能重试
@@ -193,6 +197,7 @@ bool RealUserNetworkApi::startRequest(PendingKind kind, const QJsonObject &paylo
     pending.requestId = context.requestId;
     pending.operationId = context.operationId;
     pending.userId = userId;
+    pending.requestedNickname = requestedNickname;
 
     pending.timer = new QTimer(this);
     pending.timer->setSingleShot(true);
@@ -208,7 +213,7 @@ bool RealUserNetworkApi::startRequest(PendingKind kind, const QJsonObject &paylo
 
 void RealUserNetworkApi::handleFrame(int msgType, const QJsonObject &payload)
 {
-    if (msgType >= DATA_NOEXIST && msgType <= PARAM_ERROR) {
+    if (msgType >= DATA_NOEXIST && msgType <= OP_FORBIDDEN) {
         handleServerError(msgType, payload);
         return;
     }
@@ -216,6 +221,10 @@ void RealUserNetworkApi::handleFrame(int msgType, const QJsonObject &payload)
     PendingKind kind;
     if (msgType == PHONE_LOGIN_ACK) {
         kind = PendingKind::Login;
+    } else if (msgType == DATA) {
+        kind = PendingKind::QueryProfile;
+    } else if (msgType == PROFILE_UPD_ACK) {
+        kind = PendingKind::UpdateNickname;
     } else {
         return;   // 未知消息码不得污染会话（合同 §8 测试基线）
     }
@@ -225,9 +234,23 @@ void RealUserNetworkApi::handleFrame(int msgType, const QJsonObject &payload)
         return;   // 迟到响应或未匹配，静默丢弃
     }
 
+    QJsonObject response = payload;
+    if (kind == PendingKind::QueryProfile) {
+        const QJsonArray rows = payload.value(QStringLiteral("data")).toArray();
+        response = QJsonObject();
+        for (const QJsonValue &value : rows) {
+            const QJsonObject row = value.toObject();
+            if (row.value(QStringLiteral("username")).toString()
+                == pending->userId) {
+                response = row;
+                break;
+            }
+        }
+    }
+
     // 合同 §5.1：不能以“得到 QJsonObject”作为成功条件，必须校验必填字段；
     // 缺失字段的应答不得污染会话（合同 §8 测试基线）
-    if (!successPayloadValid(kind, payload, pending->userId)) {
+    if (!successPayloadValid(kind, response, pending->userId)) {
         ClientError error;
         if (kind == PendingKind::UpdateNickname) {
             // 变更操作的应答损坏 → 无法得知服务端是否已生效 → 结果未知
@@ -254,11 +277,19 @@ void RealUserNetworkApi::handleFrame(int msgType, const QJsonObject &payload)
         result.isNewUser = payload.value(QStringLiteral("autoRegistered")).toBool(false);
         // v1.1：profileCompleted 由客户端推导，217 不携带该字段
         result.profileCompleted = !result.isNewUser;
-        result.session.profile.userId = payload.value(QStringLiteral("username")).toString();
-        result.session.profile.phone = payload.value(QStringLiteral("phone")).toString();
-        result.session.profile.nickname = payload.value(QStringLiteral("nickname")).toString();
+        result.session.profile.userId = response.value(QStringLiteral("username")).toString();
+        result.session.profile.phone = response.value(QStringLiteral("phone")).toString();
+        result.session.profile.nickname = response.value(QStringLiteral("nickname")).toString();
+        if (response.contains(QStringLiteral("balanceCents"))) {
+            bool balanceOk = false;
+            const qint64 balance = response.value(QStringLiteral("balanceCents"))
+                                       .toVariant().toLongLong(&balanceOk);
+            if (balanceOk) {
+                result.session.profile.balanceCents = balance;
+            }
+        }
         result.session.accountStatus =
-            parseStatus(payload.value(QStringLiteral("status")).toString());
+            parseStatus(response.value(QStringLiteral("status")).toString());
         result.session.authenticated = true;
         emit loginSucceeded(result);
         break;
@@ -267,11 +298,19 @@ void RealUserNetworkApi::handleFrame(int msgType, const QJsonObject &payload)
         UserProfileResult result;
         result.requestId = request.requestId;
         result.operationId = request.operationId;
-        result.profile.userId = payload.value(QStringLiteral("username")).toString();
-        result.profile.phone = payload.value(QStringLiteral("phone")).toString();
-        result.profile.nickname = payload.value(QStringLiteral("nickname")).toString();
+        result.profile.userId = response.value(QStringLiteral("username")).toString();
+        result.profile.phone = response.value(QStringLiteral("phone")).toString();
+        result.profile.nickname = response.value(QStringLiteral("nickname")).toString();
+        if (response.contains(QStringLiteral("balanceCents"))) {
+            bool balanceOk = false;
+            const qint64 balance = response.value(QStringLiteral("balanceCents"))
+                                       .toVariant().toLongLong(&balanceOk);
+            if (balanceOk) {
+                result.profile.balanceCents = balance;
+            }
+        }
         result.accountStatus =
-            parseStatus(payload.value(QStringLiteral("status")).toString());
+            parseStatus(response.value(QStringLiteral("status")).toString());
         emit currentUserQuerySucceeded(result);
         break;
     }
@@ -280,7 +319,7 @@ void RealUserNetworkApi::handleFrame(int msgType, const QJsonObject &payload)
         result.requestId = request.requestId;
         result.operationId = request.operationId;
         result.profile.userId = request.userId;
-        result.profile.nickname = payload.value(QStringLiteral("nickname")).toString();
+        result.profile.nickname = request.requestedNickname;
         emit nicknameUpdateSucceeded(result);
         break;
     }
@@ -453,9 +492,9 @@ bool RealUserNetworkApi::successPayloadValid(PendingKind kind,
                                              const QString &requestedUserId)
 {
     // 217 必须携带 username（会话尚未建立，phone 缺失不产生污染，按降级处理）；
-    // 218 必须携带 username 且必须回的是请求的那个用户（防串号），
+    // 200 的 user 行必须携带 username 且必须回的是请求的那个用户（防串号），
     //     且必须携带 phone（缺失会把会话手机号清空——审查问题 5）；
-    // 219 必须携带 ok=true（合同 §4.2b 字段定义）与生效后的 nickname；
+    // 228 必须携带 ok=true，并回显实际生效账户的 username；
     // status 等其余字段缺失时按既有语义降级（Unknown 按受限处理），不视为协议错误。
     const QString username = payload.value(QStringLiteral("username")).toString();
     switch (kind) {
@@ -467,7 +506,7 @@ bool RealUserNetworkApi::successPayloadValid(PendingKind kind,
                && !payload.value(QStringLiteral("phone")).toString().isEmpty();
     case PendingKind::UpdateNickname:
         return payload.value(QStringLiteral("ok")).toBool(false)
-               && !payload.value(QStringLiteral("nickname")).toString().isEmpty();
+               && username == requestedUserId;
     }
     return false;
 }

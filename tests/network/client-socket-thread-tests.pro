@@ -1,18 +1,18 @@
-QT += core network
+QT += core testlib network
 QT -= gui
 
-CONFIG += c++17 console
+CONFIG += c++17 console testcase
 CONFIG -= app_bundle
 
 TEMPLATE = app
-TARGET = network-smoke
+TARGET = client-socket-thread-tests
 
 PROJECT_ROOT = $$PWD/../..
 INCLUDEPATH += $$PROJECT_ROOT \
                $$PROJECT_ROOT/src
 
 SOURCES += \
-    main.cpp \
+    client-socket-thread-tests.cpp \
     $$PROJECT_ROOT/massagehandler.cpp \
     $$PROJECT_ROOT/src/network/backendclient.cpp \
     $$PROJECT_ROOT/src/network/qtnetworktransport.cpp \
