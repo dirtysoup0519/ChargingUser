@@ -8,7 +8,9 @@
 #include <QCamera>
 #include <QMediaDevices>
 #include <QMediaCaptureSession>
-#include <QVideoWidget>
+#include <QPixmap>
+#include <QVideoFrame>
+#include <QVideoSink>
 #endif
 
 QrCodeScannerWindow::QrCodeScannerWindow(QWidget *parent)
@@ -30,11 +32,17 @@ QrCodeScannerWindow::QrCodeScannerWindow(QWidget *parent)
     if (!cameras.isEmpty()) {
         m_camera = new QCamera(cameras.front(), this);
         m_captureSession = new QMediaCaptureSession(this);
-        m_videoWidget = new QVideoWidget(ui->previewPlaceholder->parentWidget());
-        m_videoWidget->setGeometry(ui->previewPlaceholder->geometry());
-        m_videoWidget->setVisible(false);
+        m_videoSink = new QVideoSink(this);
         m_captureSession->setCamera(m_camera);
-        m_captureSession->setVideoOutput(m_videoWidget);
+        m_captureSession->setVideoSink(m_videoSink);
+        connect(m_videoSink, &QVideoSink::videoFrameChanged, this,
+                [this](const QVideoFrame &frame) {
+            const QImage image = frame.toImage();
+            if (image.isNull() || !m_state.cameraPermissionGranted) return;
+            ui->previewPlaceholder->setPixmap(QPixmap::fromImage(image).scaled(
+                ui->previewPlaceholder->size(), Qt::KeepAspectRatioByExpanding,
+                Qt::SmoothTransformation));
+        });
         connect(m_camera, &QCamera::errorOccurred, this,
                 [this](QCamera::Error, const QString &) {
             emit cameraStatusChanged(false, false);
@@ -81,13 +89,14 @@ void QrCodeScannerWindow::render(const ScanViewState &state)
                                          ? tr("摄像头画面接入区域")
                                          : tr("未检测到摄像头\n可从相册选择二维码"));
 #ifdef CHARGINGUSER_ENABLE_QT_MULTIMEDIA
-    if (m_videoWidget) {
+    if (m_videoSink) {
         const bool showPreview = state.cameraPermissionGranted
             && (state.status == ScanStatus::OpeningCamera || state.status == ScanStatus::Scanning);
-        m_videoWidget->setVisible(showPreview);
-        // The placeholder label is underneath the camera preview; keeping it
-        // visible would paint the hint text over the live video frame.
-        ui->previewPlaceholder->setVisible(!showPreview);
+        ui->previewPlaceholder->setVisible(true);
+        if (showPreview)
+            ui->previewPlaceholder->setText(QString());
+        else
+            ui->previewPlaceholder->setPixmap(QPixmap());
         if (showPreview && !m_camera->isActive())
             m_camera->start();
         if (!showPreview && m_camera->isActive())

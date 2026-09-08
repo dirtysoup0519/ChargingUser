@@ -7,7 +7,7 @@
 #ifdef CHARGINGUSER_ENABLE_QT_MULTIMEDIA
 class QCamera;
 class QMediaCaptureSession;
-class QVideoWidget;
+class QVideoSink;
 #endif
 
 namespace Ui { class QrCodeScannerWindow; }
@@ -35,6 +35,6 @@ private:
 #ifdef CHARGINGUSER_ENABLE_QT_MULTIMEDIA
     QCamera *m_camera = nullptr;
     QMediaCaptureSession *m_captureSession = nullptr;
-    QVideoWidget *m_videoWidget = nullptr;
+    QVideoSink *m_videoSink = nullptr;
 #endif
 };
