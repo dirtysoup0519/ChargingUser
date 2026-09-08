@@ -5,6 +5,10 @@
 #include "loginviewstate.h"
 
 namespace Ui { class LoginWindow; }
+class LegalDocumentPage;
+class QResizeEvent;
+class QLineEdit;
+class QPushButton;
 
 class LoginWindow final : public QWidget
 {
@@ -15,11 +19,22 @@ public:
 
     void render(const LoginViewState &state);
 
+protected:
+    void resizeEvent(QResizeEvent *event) override;
+
 signals:
     void loginRequested(const QString &phone);
+    void usernamePasswordLoginRequested(const QString &username,
+                                        const QString &password);
 
 private:
     void submitCurrentInput();
+    void openLegalDocument(const QString &target);
+    void setUsernameLogin(bool enabled);
 
     Ui::LoginWindow *ui;
+    LegalDocumentPage *m_legalPage = nullptr;
+    QLineEdit *m_passwordEdit = nullptr;
+    QPushButton *m_loginModeButton = nullptr;
+    bool m_usernameLogin = false;
 };

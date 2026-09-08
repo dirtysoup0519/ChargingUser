@@ -16,6 +16,9 @@ struct PaymentViewState
     QString descriptionText;
     QString amountText;
     QString balanceText;
+    // Formatted projection calculated from integer cents by the Binder. It is
+    // informational only; the page must not use it to decide payment success.
+    QString balanceAfterPaymentText;
     QString message;
     PaymentViewStatus status = PaymentViewStatus::Ready;
     bool canPay = false;

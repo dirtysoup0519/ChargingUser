@@ -19,7 +19,12 @@
 #include "presentation/pages/charging/settlementwindow.h"
 #include "presentation/pages/charging/paymentwindow.h"
 #include "presentation/pages/profile/orderlistwindow.h"
+#include "presentation/pages/profile/orderdetailwindow.h"
+#include "presentation/pages/profile/frequentstationswindow.h"
+#include "presentation/pages/profile/profiletextwindow.h"
+#include "presentation/pages/profile/passwordchangewindow.h"
 
+#include <algorithm>
 #include <QFile>
 #include <QJsonDocument>
 #include <QJsonObject>
@@ -27,6 +32,8 @@
 #include <QDateTime>
 #include <QTimer>
 #include <QMessageBox>
+#include <QInputDialog>
+#include <QLineEdit>
 
 namespace
 {
@@ -43,6 +50,17 @@ qint64 moneyTextToCents(QString text)
     return ok ? qRound64(amount * 100.0) : -1;
 }
 
+QString balanceAfterPaymentText(qint64 balanceCents, const QString &amountText)
+{
+    const qint64 amountCents = moneyTextToCents(amountText);
+    if (balanceCents < 0 || amountCents < 0)
+        return QStringLiteral("--");
+    if (balanceCents < amountCents)
+        return QStringLiteral("余额不足");
+    return QStringLiteral("¥%1").arg((balanceCents - amountCents) / 100.0,
+                                     0, 'f', 2);
+}
+
 QHash<QString, DemoUserData> loadDemoUsers(QString *newUserNicknamePattern)
 {
     QFile file(QStringLiteral(":/demo/user-demo-data.tmp"));
@@ -57,6 +75,8 @@ QHash<QString, DemoUserData> loadDemoUsers(QString *newUserNicknamePattern)
         const QJsonObject object = value.toObject();
         DemoUserData user;
         user.nickname = object.value(QStringLiteral("nickname")).toString();
+        user.password = object.value(QStringLiteral("password"))
+                            .toString(QStringLiteral("123456"));
         const QJsonObject firstFailure =
             object.value(QStringLiteral("firstLoginFailure")).toObject();
         user.failFirstLogin = !firstFailure.isEmpty();
@@ -124,6 +144,10 @@ UserDemoController::UserDemoController(MockUserNetworkApi *network,
     , m_settlement(new SettlementWindow(mainWindow))
     , m_payment(new PaymentWindow(mainWindow))
     , m_orderList(new OrderListWindow(mainWindow))
+    , m_orderDetail(new OrderDetailWindow(mainWindow))
+    , m_frequentStations(new FrequentStationsWindow(mainWindow))
+    , m_profileText(new ProfileTextWindow(mainWindow))
+    , m_passwordChange(new PasswordChangeWindow)
     , m_demoUsers(loadDemoUsers(&m_newUserNicknamePattern))
 {
     Q_ASSERT(m_network);
@@ -149,6 +173,9 @@ UserDemoController::UserDemoController(MockUserNetworkApi *network,
     m_mainWindow->registerSecondaryPage(m_settlement);
     m_mainWindow->registerSecondaryPage(m_payment);
     m_mainWindow->registerSecondaryPage(m_orderList);
+    m_mainWindow->registerSecondaryPage(m_orderDetail);
+    m_mainWindow->registerSecondaryPage(m_frequentStations);
+    m_mainWindow->registerSecondaryPage(m_profileText);
 
     QFile paymentFile(QStringLiteral(":/demo/payment-demo-data.tmp"));
     if (paymentFile.open(QIODevice::ReadOnly)) {
@@ -255,6 +282,12 @@ UserDemoController::UserDemoController(MockUserNetworkApi *network,
             m_settlementState.message.clear();
             OrderListItemView pendingOrder;
             pendingOrder.businessId = session.orderId;
+            const QString sessionChargerKey =
+                m_orderChargerKeys.value(session.orderId);
+            pendingOrder.stationId = sessionChargerKey.section(
+                QLatin1Char('\n'), 0, 0);
+            pendingOrder.chargerId = sessionChargerKey.section(
+                QLatin1Char('\n'), 1, 1);
             pendingOrder.type = OrderBusinessType::Charging;
             pendingOrder.stationName = session.stationName;
             pendingOrder.chargerCode = session.chargerCode;
@@ -341,10 +374,52 @@ UserDemoController::UserDemoController(MockUserNetworkApi *network,
             this, &UserDemoController::configureLogin);
     connect(m_login, &LoginWindow::loginRequested,
             m_binder, &IUserUiBinder::loginRequested);
+    connect(m_login, &LoginWindow::usernamePasswordLoginRequested,
+            this, [this](const QString &username, const QString &password) {
+        m_usernameFirstSetup = true;
+        m_pendingUsername = username;
+        m_pendingUsernamePassword = password;
+        m_profileEditOpenedFromMain = false;
+        m_profileEdit->setEditMode(ProfileEditMode::UsernameFirstSetup, username);
+        ProfileEditViewState state;
+        state.nicknameInput = username;
+        state.canSubmit = true;
+        m_profileEdit->render(state);
+        showOnly(m_profileEdit);
+    });
     connect(m_profileEdit, &ProfileEditWindow::profileSaveRequested,
             this, &UserDemoController::configureNicknameSave);
     connect(m_profileEdit, &ProfileEditWindow::profileSaveRequested,
             m_binder, &IUserUiBinder::profileSaveRequested);
+    connect(m_profileEdit, &ProfileEditWindow::profileCompletionRequested,
+            this, [this](const QString &nickname, const QString &phone,
+                         const QString &newPassword) {
+        if (m_usernameFirstSetup) {
+            DemoUserData user;
+            user.nickname = nickname;
+            user.password = m_pendingUsernamePassword;
+            user.status = AccountStatus::Normal;
+            m_demoUsers.insert(phone, user);
+            m_currentAccountKey = phone;
+            m_usernameFirstSetup = false;
+            m_pendingUsername.clear();
+            m_pendingUsernamePassword.clear();
+            ProfileViewState profile;
+            profile.nickname = nickname;
+            profile.maskedPhone = phone.left(3) + QStringLiteral("****") + phone.right(4);
+            profile.balanceText = m_paymentBalanceText;
+            profile.accountState = AccountDisplayState::Normal;
+            m_mainWindow->renderProfile(profile);
+            m_mainWindow->renderPrimaryPage(MainWindow::PrimaryPage::Home);
+            showOnly(m_mainWindow);
+            m_mapBinder->activateHome();
+            return;
+        }
+        if (!newPassword.isEmpty())
+            m_demoUsers[m_currentAccountKey].password = newPassword;
+        configureNicknameSave(nickname);
+        m_binder->profileSaveRequested(nickname);
+    });
     connect(m_mainWindow, &MainWindow::logoutRequested,
             m_binder, &IUserUiBinder::logoutRequested);
 
@@ -370,11 +445,19 @@ UserDemoController::UserDemoController(MockUserNetworkApi *network,
     connect(m_mainWindow, &MainWindow::profileEditRequested,
             this, [this] {
         m_profileEditOpenedFromMain = true;
+        m_profileEdit->setEditMode(ProfileEditMode::ExistingProfile);
         m_profileEdit->render(m_binder->currentProfileEditViewState());
         showOnly(m_profileEdit);
     });
     connect(m_profileEdit, &ProfileEditWindow::backRequested,
             this, [this] {
+        if (m_usernameFirstSetup) {
+            m_usernameFirstSetup = false;
+            m_pendingUsername.clear();
+            m_pendingUsernamePassword.clear();
+            showOnly(m_login);
+            return;
+        }
         if (m_profileEditOpenedFromMain) {
             showOnly(m_mainWindow);
             return;
@@ -382,6 +465,55 @@ UserDemoController::UserDemoController(MockUserNetworkApi *network,
         // 新用户资料尚未完善时不能绕过该步骤进入首页；返回即放弃本次
         // 已认证会话，由既有流程统一清理状态并导航回登录页。
         m_binder->logoutRequested();
+    });
+    connect(m_profileEdit, &ProfileEditWindow::passwordChangeRequested,
+            this, [this] {
+        bool accepted = false;
+        const QString password = QInputDialog::getText(
+            m_profileEdit, tr("验证原密码"),
+            tr("请输入当前登录密码"), QLineEdit::Password,
+            QString(), &accepted);
+        if (!accepted)
+            return;
+        if (password.isEmpty()) {
+            QMessageBox::warning(m_profileEdit, tr("无法验证"),
+                                 tr("请输入原密码。"));
+            return;
+        }
+        if (m_demoUsers.value(m_currentAccountKey).password != password) {
+            QMessageBox::warning(m_profileEdit, tr("验证失败"),
+                                 tr("原密码不正确，请重新输入。"));
+            return;
+        }
+        QMessageBox::information(m_profileEdit, tr("验证成功"),
+                                 tr("原密码验证正确，即将进入密码修改页面。"));
+        m_passwordChange->setGeometry(m_profileEdit->geometry());
+        m_passwordChange->setStep(PasswordChangeStep::EnterNewPassword);
+        showOnly(m_passwordChange);
+    });
+    connect(m_passwordChange, &PasswordChangeWindow::backRequested,
+            this, [this] {
+        m_profileEdit->setEditMode(ProfileEditMode::ExistingProfile);
+        showOnly(m_profileEdit);
+    });
+    connect(m_passwordChange, &PasswordChangeWindow::originalPasswordSubmitted,
+            this, [this](const QString &password) {
+        if (m_demoUsers.value(m_currentAccountKey).password != password) {
+            m_passwordChange->setStep(PasswordChangeStep::VerifyOriginal,
+                                      tr("原密码不正确，请重新输入"));
+            return;
+        }
+        QMessageBox::information(m_passwordChange, tr("验证成功"),
+                                 tr("原密码验证正确，请继续设置新密码。"));
+        m_passwordChange->setStep(PasswordChangeStep::EnterNewPassword);
+    });
+    connect(m_passwordChange, &PasswordChangeWindow::newPasswordSubmitted,
+            this, [this](const QString &password) {
+        m_demoUsers[m_currentAccountKey].password = password;
+        QMessageBox::information(m_passwordChange, tr("修改成功"),
+                                 tr("登录密码已修改。"));
+        m_profileEdit->setEditMode(ProfileEditMode::ExistingProfile);
+        showOnly(m_profileEdit);
     });
 
     connect(m_mainWindow, &MainWindow::locateRequested,
@@ -525,6 +657,9 @@ UserDemoController::UserDemoController(MockUserNetworkApi *network,
                                                   m_reservationState.chargerCode);
         m_paymentState.amountText = m_reservationState.depositText;
         m_paymentState.balanceText = m_paymentBalanceText;
+        m_paymentState.balanceAfterPaymentText =
+            balanceAfterPaymentText(m_paymentBalanceCents,
+                                    m_paymentState.amountText);
         const qint64 reservationAmountCents = moneyTextToCents(m_paymentState.amountText);
         m_paymentState.canPay = reservationAmountCents >= 0
                                 && m_paymentBalanceCents >= reservationAmountCents;
@@ -784,6 +919,9 @@ UserDemoController::UserDemoController(MockUserNetworkApi *network,
                                                   m_settlementState.chargerCode);
         m_paymentState.amountText = m_settlementState.payableText;
         m_paymentState.balanceText = m_paymentBalanceText;
+        m_paymentState.balanceAfterPaymentText =
+            balanceAfterPaymentText(m_paymentBalanceCents,
+                                    m_paymentState.amountText);
         const qint64 settlementAmountCents = moneyTextToCents(m_paymentState.amountText);
         m_paymentState.canPay = settlementAmountCents >= 0
                                 && m_paymentBalanceCents >= settlementAmountCents;
@@ -956,10 +1094,66 @@ UserDemoController::UserDemoController(MockUserNetworkApi *network,
         m_orderList->render(m_orderListState);
         m_mainWindow->renderSecondaryPage(m_orderList);
     });
+    connect(m_mainWindow, &MainWindow::frequentStationsRequested, this, [this] {
+        QHash<QString, FrequentStationItemView> aggregated;
+        for (const OrderListItemView &order : m_orderListState.orders) {
+            const QString key = order.stationId.isEmpty()
+                                    ? order.stationName : order.stationId;
+            if (key.isEmpty() || order.stationName.isEmpty()) continue;
+            FrequentStationItemView item = aggregated.value(key);
+            item.stationId = order.stationId;
+            item.stationName = order.stationName;
+            ++item.orderCount;
+            if (item.lastUsedText.isEmpty()) item.lastUsedText = order.createdAtText;
+            aggregated.insert(key, item);
+        }
+        FrequentStationsViewState state;
+        state.stations = aggregated.values();
+        std::sort(state.stations.begin(), state.stations.end(),
+                  [](const FrequentStationItemView &left,
+                     const FrequentStationItemView &right) {
+            if (left.orderCount != right.orderCount)
+                return left.orderCount > right.orderCount;
+            return left.stationName < right.stationName;
+        });
+        if (state.stations.isEmpty())
+            state.message = tr("完成充电或预约后，常用充电站会显示在这里");
+        m_frequentStations->render(state);
+        m_mainWindow->renderSecondaryPage(m_frequentStations);
+    });
+    connect(m_mainWindow, &MainWindow::feedbackRequested, this, [this] {
+        m_profileText->renderContent(
+            tr("帮助与反馈"),
+            tr("如果您在查找充电站、预约、扫码充电、订单支付或钱包使用过程中遇到问题，请记录发生时间、充电站名称和页面提示。当前版本为演示界面，后续接入服务端后将提供反馈提交、处理进度和历史反馈查询功能。"));
+        m_mainWindow->renderSecondaryPage(m_profileText);
+    });
+    connect(m_mainWindow, &MainWindow::aboutRequested, this, [this] {
+        m_profileText->renderContent(
+            tr("关于智充"),
+            tr("智充是一款面向新能源汽车用户的充电服务应用，提供附近充电站查询、路线规划、充电桩预约、扫码充电、实时进度、订单结算和钱包服务。我们希望让充电信息更清晰，让每一次出发都充满能量。当前展示版本用于客户端 UI 与服务端接口联调。"));
+        m_mainWindow->renderSecondaryPage(m_profileText);
+    });
+    connect(m_frequentStations, &FrequentStationsWindow::backRequested,
+            this, [this] {
+        m_mainWindow->renderPrimaryPage(MainWindow::PrimaryPage::Profile);
+    });
+    connect(m_frequentStations, &FrequentStationsWindow::stationRequested,
+            m_mapBinder, &IMapUiBinder::stationDetailsRequested);
+    connect(m_profileText, &ProfileTextWindow::backRequested,
+            this, [this] {
+        m_mainWindow->renderPrimaryPage(MainWindow::PrimaryPage::Profile);
+    });
     connect(m_orderList, &OrderListWindow::backRequested,
             this, [this] { m_mainWindow->renderPrimaryPage(MainWindow::PrimaryPage::Profile); });
     connect(m_orderList, &OrderListWindow::refreshRequested,
             this, [this] { m_orderList->render(m_orderListState); });
+    connect(m_orderDetail, &OrderDetailWindow::backRequested,
+            this, [this] {
+        m_orderList->render(m_orderListState);
+        m_mainWindow->renderSecondaryPage(m_orderList);
+    });
+    connect(m_orderDetail, &OrderDetailWindow::actionRequested,
+            m_orderList, &OrderListWindow::orderActionRequested);
     connect(m_orderList, &OrderListWindow::orderActionRequested,
             this, [this](const QString &businessId, OrderBusinessType type,
                          OrderListAction action) {
@@ -1007,10 +1201,31 @@ UserDemoController::UserDemoController(MockUserNetworkApi *network,
                     m_mainWindow->renderSecondaryPage(m_qrScanner);
                 }
             } else {
-                QMessageBox::information(m_orderList, tr("订单详情"),
-                    tr("%1\n%2号桩\n%3\n金额：%4\n状态：%5")
-                        .arg(order.stationName, order.chargerCode, order.summaryText,
-                             order.amountText, order.statusText));
+                OrderDetailViewState detail;
+                detail.businessId = order.businessId;
+                detail.relatedBusinessId = order.relatedBusinessId;
+                detail.stationId = order.stationId;
+                detail.chargerId = order.chargerId;
+                detail.type = order.type;
+                detail.titleText = order.type == OrderBusinessType::Charging
+                                       ? tr("充电订单") : tr("预约订单");
+                detail.stationName = order.stationName;
+                detail.chargerCode = order.chargerCode;
+                detail.createdAtText = order.createdAtText;
+                detail.durationText = order.durationText;
+                detail.energyText = order.energyText;
+                detail.amountText = order.amountText;
+                detail.paymentMethodText = tr("钱包支付");
+                detail.statusText = order.statusText;
+                detail.statusTone = order.statusTone;
+                detail.message = order.summaryText;
+                if (order.action != OrderListAction::ViewDetails) {
+                    detail.action = order.action;
+                    detail.actionText = order.actionText;
+                    detail.actionEnabled = order.action != OrderListAction::None;
+                }
+                m_orderDetail->render(detail);
+                m_mainWindow->renderSecondaryPage(m_orderDetail);
             }
             return;
         }
@@ -1042,6 +1257,9 @@ UserDemoController::UserDemoController(MockUserNetworkApi *network,
         if (m_walletOpenedFromPayment) {
             m_walletOpenedFromPayment = false;
             m_paymentState.balanceText = m_paymentBalanceText;
+            m_paymentState.balanceAfterPaymentText =
+                balanceAfterPaymentText(m_paymentBalanceCents,
+                                        m_paymentState.amountText);
             const qint64 amountCents = moneyTextToCents(m_paymentState.amountText);
             m_paymentState.canPay = !m_paymentOperationActive && amountCents >= 0
                                     && m_paymentBalanceCents >= amountCents;
@@ -1059,6 +1277,11 @@ UserDemoController::UserDemoController(MockUserNetworkApi *network,
         }
         m_mainWindow->renderPrimaryPage(MainWindow::PrimaryPage::Profile);
     });
+}
+
+UserDemoController::~UserDemoController()
+{
+    delete m_passwordChange;
 }
 
 void UserDemoController::showInitialPage()
@@ -1148,6 +1371,7 @@ void UserDemoController::handleNavigation(NavigationTarget target)
         break;
     case NavigationTarget::ProfileEdit:
         m_profileEditOpenedFromMain = false;
+        m_profileEdit->setEditMode(ProfileEditMode::PhoneFirstSetup);
         m_profileEdit->render(m_binder->currentProfileEditViewState());
         showOnly(m_profileEdit);
         break;
@@ -1344,6 +1568,7 @@ void UserDemoController::showOnly(QWidget *target)
 {
     m_login->setVisible(target == m_login);
     m_profileEdit->setVisible(target == m_profileEdit);
+    m_passwordChange->setVisible(target == m_passwordChange);
     m_mainWindow->setVisible(target == m_mainWindow);
     if (target) {
         target->raise();

@@ -133,8 +133,14 @@ MainWindow::MainWindow(QWidget *parent) : QWidget(parent), ui(new Ui::MainWindow
             this, &MainWindow::rechargePageRequested);
     connect(ui->profileMenuList, &QListWidget::itemClicked,
             this, [this](QListWidgetItem *item) {
-        if (item && ui->profileMenuList->row(item) == 0)
-            emit ordersPageRequested();
+        if (!item) return;
+        switch (ui->profileMenuList->row(item)) {
+        case 0: emit ordersPageRequested(); break;
+        case 1: emit frequentStationsRequested(); break;
+        case 2: emit feedbackRequested(); break;
+        case 3: emit aboutRequested(); break;
+        default: break;
+        }
     });
     connect(ui->btnLogout, &QPushButton::clicked,
             this, &MainWindow::logoutRequested);

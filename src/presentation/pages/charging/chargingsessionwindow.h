@@ -8,6 +8,7 @@ namespace Ui { class ChargingSessionWindow; }
 class QPropertyAnimation;
 class QListWidget;
 class QFrame;
+class QLabel;
 class QResizeEvent;
 
 /** Displays one selected charging order and lets the user switch active orders. */
@@ -41,6 +42,7 @@ private:
     ChargingSessionCollectionViewState m_collection;
     QPropertyAnimation *m_progressAnimation = nullptr;
     QFrame *m_sessionChooserPanel = nullptr;
+    QFrame *m_emptyState = nullptr;
     QListWidget *m_sessionChooser = nullptr;
     bool m_updatingSelector = false;
 };

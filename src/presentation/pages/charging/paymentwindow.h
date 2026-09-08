@@ -21,7 +21,9 @@ private:
     QLabel *m_title = nullptr;
     QLabel *m_description = nullptr;
     QLabel *m_amount = nullptr;
+    QLabel *m_orderType = nullptr;
     QLabel *m_balance = nullptr;
+    QLabel *m_afterBalance = nullptr;
     QLabel *m_message = nullptr;
     QPushButton *m_recharge = nullptr;
     QPushButton *m_pay = nullptr;

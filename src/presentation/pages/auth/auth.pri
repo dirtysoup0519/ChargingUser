@@ -1,4 +1,8 @@
 INCLUDEPATH += $$PWD
 
-HEADERS += $$PWD/loginwindow.h
-SOURCES += $$PWD/loginwindow.cpp
+HEADERS += \
+    $$PWD/legaldocumentpage.h \
+    $$PWD/loginwindow.h
+SOURCES += \
+    $$PWD/legaldocumentpage.cpp \
+    $$PWD/loginwindow.cpp

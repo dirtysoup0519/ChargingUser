@@ -1,10 +1,16 @@
 #pragma once
 
 #include <QWidget>
+#include <QMetaType>
 
 #include "profileeditviewstate.h"
 
 namespace Ui { class ProfileEditWindow; }
+class QLabel;
+class QLineEdit;
+class QPushButton;
+
+enum class ProfileEditMode { ExistingProfile, PhoneFirstSetup, UsernameFirstSetup };
 
 class ProfileEditWindow final : public QWidget
 {
@@ -14,13 +20,26 @@ public:
     ~ProfileEditWindow() override;
 
     void render(const ProfileEditViewState &state);
+    void setEditMode(ProfileEditMode mode, const QString &username = QString());
 
 signals:
     void backRequested();
     void profileSaveRequested(const QString &nickname);
+    void profileCompletionRequested(const QString &nickname,
+                                    const QString &phone,
+                                    const QString &newPassword);
+    void passwordChangeRequested();
 
 private:
     void submitCurrentInput();
 
     Ui::ProfileEditWindow *ui;
+    ProfileEditMode m_mode = ProfileEditMode::ExistingProfile;
+    QLabel *m_newPasswordLabel = nullptr;
+    QLineEdit *m_newPasswordEdit = nullptr;
+    QLabel *m_confirmPasswordLabel = nullptr;
+    QLineEdit *m_confirmPasswordEdit = nullptr;
+    QPushButton *m_changePasswordButton = nullptr;
 };
+
+Q_DECLARE_METATYPE(ProfileEditMode)

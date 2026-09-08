@@ -63,7 +63,8 @@ void OrderListWindow::rebuild()
         auto *meta=new QLabel(tr("%1号桩  ·  %2").arg(order.chargerCode,order.createdAtText),card); meta->setObjectName("orderMeta"); box->addWidget(meta);
         auto *summary=new QLabel(order.summaryText,card); summary->setObjectName("orderSummary"); summary->setWordWrap(true); box->addWidget(summary);
         auto *bottom=new QHBoxLayout; auto *amount=new QLabel(order.amountText,card); amount->setObjectName("orderAmount"); bottom->addWidget(amount); bottom->addStretch();
-        if(order.action!=OrderListAction::None){auto *action=new QPushButton(order.actionText,card); action->setObjectName("orderAction"); action->setProperty("primary",order.action==OrderListAction::ContinuePayment); connect(action,&QPushButton::clicked,this,[this,order]{emit orderActionRequested(order.businessId,order.type,order.action);}); bottom->addWidget(action);} box->addLayout(bottom); m_cardsLayout->addWidget(card);
+        auto *details=new QPushButton(tr("查看详情"),card); details->setObjectName("orderAction"); connect(details,&QPushButton::clicked,this,[this,order]{emit orderActionRequested(order.businessId,order.type,OrderListAction::ViewDetails);}); bottom->addWidget(details);
+        if(order.action!=OrderListAction::None && order.action!=OrderListAction::ViewDetails){auto *action=new QPushButton(order.actionText,card); action->setObjectName("orderAction"); action->setProperty("primary",order.action==OrderListAction::ContinuePayment); connect(action,&QPushButton::clicked,this,[this,order]{emit orderActionRequested(order.businessId,order.type,order.action);}); bottom->addWidget(action);} box->addLayout(bottom); m_cardsLayout->addWidget(card);
     }
     m_emptyLabel = new QLabel(tr("暂无订单")); m_emptyLabel->setAlignment(Qt::AlignCenter); m_emptyLabel->setStyleSheet("color:#8A96A8;padding:48px;"); m_cardsLayout->addWidget(m_emptyLabel);
     m_cardsLayout->addStretch();

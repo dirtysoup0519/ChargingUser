@@ -15,7 +15,8 @@
     <widget class="QLabel" name="heroImage">
      <property name="minimumSize"><size><width>338</width><height>245</height></size></property>
      <property name="pixmap"><pixmap resource="../../resources/resources.qrc">:/images/login_hero.png</pixmap></property>
-     <property name="scaledContents"><bool>true</bool></property>
+     <property name="scaledContents"><bool>false</bool></property>
+     <property name="alignment"><set>Qt::AlignCenter</set></property>
     </widget>
    </item>
    <item><widget class="QLabel" name="pageTitle"><property name="text"><string>欢迎使用</string></property></widget></item>
@@ -37,7 +38,7 @@
     <layout class="QHBoxLayout" name="agreementLayout">
      <item><spacer name="leftAgreement"><property name="orientation"><enum>Qt::Horizontal</enum></property><property name="sizeHint"><size><width>10</width><height>1</height></size></property></spacer></item>
      <item><widget class="QCheckBox" name="agreementCheck"><property name="text"><string>我已阅读并同意</string></property></widget></item>
-     <item><widget class="QLabel" name="agreementLabel"><property name="text"><string>《用户协议》和《隐私政策》</string></property><property name="styleSheet"><string notr="true">color:#1677FF;font-size:10px;</string></property></widget></item>
+     <item><widget class="QLabel" name="agreementLabel"><property name="text"><string>《用户协议》和《隐私政策》</string></property><property name="styleSheet"><string notr="true">color:#1677FF;font-size:10px;</string></property><property name="textInteractionFlags"><set>Qt::LinksAccessibleByMouse</set></property></widget></item>
      <item><spacer name="rightAgreement"><property name="orientation"><enum>Qt::Horizontal</enum></property><property name="sizeHint"><size><width>10</width><height>1</height></size></property></spacer></item>
     </layout>
    </item>

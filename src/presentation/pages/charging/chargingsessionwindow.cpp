@@ -4,6 +4,7 @@
 #include <QComboBox>
 #include <QAbstractItemView>
 #include <QPalette>
+#include <QPixmap>
 #include <QPropertyAnimation>
 #include <QPushButton>
 #include <QListWidget>
@@ -27,6 +28,51 @@ ChargingSessionWindow::ChargingSessionWindow(QWidget *parent)
     : QWidget(parent), ui(new Ui::ChargingSessionWindow)
 {
     ui->setupUi(this);
+    m_emptyState = new QFrame(this);
+    m_emptyState->setObjectName(QStringLiteral("chargingEmptyState"));
+    m_emptyState->setStyleSheet(QStringLiteral(
+        "#chargingEmptyState{background:white;border:1px solid #E4EAF2;border-radius:22px;}"
+        "#emptyIconHalo{background:#EAF3FF;border:none;border-radius:58px;}"
+        "#emptyTitle{background:transparent;color:#13223F;font-size:22px;font-weight:700;}"
+        "#emptyDescription{background:transparent;color:#6F7C91;font-size:14px;}"
+        "#emptyTip{background:#F3F7FD;border:none;border-radius:12px;color:#5E6F88;font-size:12px;padding:9px;}"));
+    auto *emptyLayout = new QVBoxLayout(m_emptyState);
+    emptyLayout->setContentsMargins(24, 28, 24, 24);
+    emptyLayout->setSpacing(12);
+    emptyLayout->setAlignment(Qt::AlignCenter);
+    auto *iconHalo = new QFrame(m_emptyState);
+    iconHalo->setObjectName(QStringLiteral("emptyIconHalo"));
+    iconHalo->setFixedSize(116, 116);
+    auto *iconLayout = new QVBoxLayout(iconHalo);
+    iconLayout->setContentsMargins(26, 26, 26, 26);
+    auto *icon = new QLabel(iconHalo);
+    icon->setAlignment(Qt::AlignCenter);
+    icon->setPixmap(QPixmap(QStringLiteral(":/icons/station_charge_active.png"))
+                        .scaled(64, 64, Qt::KeepAspectRatio,
+                                Qt::SmoothTransformation));
+    iconLayout->addWidget(icon);
+    auto *iconRow = new QHBoxLayout;
+    iconRow->addStretch();
+    iconRow->addWidget(iconHalo);
+    iconRow->addStretch();
+    emptyLayout->addLayout(iconRow);
+    auto *emptyTitle = new QLabel(tr("还没有充电任务"), m_emptyState);
+    emptyTitle->setObjectName(QStringLiteral("emptyTitle"));
+    emptyTitle->setAlignment(Qt::AlignCenter);
+    emptyLayout->addWidget(emptyTitle);
+    auto *description = new QLabel(
+        tr("扫描充电桩二维码，即可开始充电"), m_emptyState);
+    description->setObjectName(QStringLiteral("emptyDescription"));
+    description->setAlignment(Qt::AlignCenter);
+    description->setWordWrap(true);
+    emptyLayout->addWidget(description);
+    auto *tip = new QLabel(
+        tr("开始后可在这里查看进度，并切换多个充电任务"), m_emptyState);
+    tip->setObjectName(QStringLiteral("emptyTip"));
+    tip->setAlignment(Qt::AlignCenter);
+    tip->setWordWrap(true);
+    emptyLayout->addWidget(tip);
+    ui->rootLayout->insertWidget(1, m_emptyState);
     ui->selectedStationLabel->setAttribute(Qt::WA_TransparentForMouseEvents);
     ui->selectedChargerLabel->setAttribute(Qt::WA_TransparentForMouseEvents);
     // The collapsed combo text stays transparent because the two labels render
@@ -145,6 +191,18 @@ void ChargingSessionWindow::render(const ChargingSessionViewState &state)
                                                 : unknown ? tr("确认充电结果")
                                                           : tr("充电进行"));
     ui->progressContainer->setVisible(hasSession);
+    m_emptyState->setVisible(!hasSession && !loading);
+    for (QWidget *metric : {static_cast<QWidget *>(ui->energyCaption),
+                            static_cast<QWidget *>(ui->energyValueLabel),
+                            static_cast<QWidget *>(ui->durationCaption),
+                            static_cast<QWidget *>(ui->durationValueLabel),
+                            static_cast<QWidget *>(ui->amountCaption),
+                            static_cast<QWidget *>(ui->amountValueLabel),
+                            static_cast<QWidget *>(ui->line1),
+                            static_cast<QWidget *>(ui->line2)})
+        metric->setVisible(hasSession);
+    ui->sessionSwitchHintLabel->setVisible(hasSession);
+    ui->sessionCard->setVisible(hasSession);
     ui->chargingProgressRing->setIndeterminate(state.progressPercent < 0);
     ui->chargingProgressRing->setActive(charging || loading || stopping || unknown);
     animateProgress(state.progressPercent < 0 ? 0 : state.progressPercent);
@@ -164,9 +222,7 @@ void ChargingSessionWindow::render(const ChargingSessionViewState &state)
     ui->energyValueLabel->setText(textOr(state.energyText, tr("-- kWh")));
     ui->durationValueLabel->setText(textOr(state.durationText, tr("--")));
     ui->amountValueLabel->setText(textOr(state.amountText, tr("--")));
-    const QString message = !hasSession && state.message.isEmpty()
-                                ? tr("当前没有进行中的充电，请先扫码启动充电。")
-                                : state.message;
+    const QString message = state.message;
     ui->sessionStateLabel->setText(message);
     ui->sessionStateLabel->setVisible(!message.isEmpty());
     ui->sessionRefreshButton->setVisible(state.canRefresh);
@@ -175,6 +231,8 @@ void ChargingSessionWindow::render(const ChargingSessionViewState &state)
     ui->stopChargingButton->setText(stopping ? tr("正在结束…")
                                               : unknown ? tr("确认结束结果")
                                                         : tr("结束充电"));
+    ui->scanChargingButton->setText(hasSession ? tr("扫码充电")
+                                                  : tr("扫码开始充电"));
     applySelectedSession(state.orderId);
 }
 

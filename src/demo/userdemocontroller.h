@@ -8,6 +8,7 @@
 #include "presentation/contracts/chargingsessionviewstate.h"
 #include "presentation/contracts/paymentviewstates.h"
 #include "presentation/contracts/orderlistviewstate.h"
+#include "presentation/contracts/orderdetailviewstate.h"
 #include "modules/charger/chargertypes.h"
 
 #include <QObject>
@@ -30,10 +31,15 @@ class QrCodeScannerWindow;
 class SettlementWindow;
 class PaymentWindow;
 class OrderListWindow;
+class OrderDetailWindow;
+class FrequentStationsWindow;
+class ProfileTextWindow;
+class PasswordChangeWindow;
 class QWidget;
 struct DemoUserData
 {
     QString nickname;
+    QString password;
     AccountStatus status = AccountStatus::Normal;
     bool failFirstLogin = false;
     QString firstLoginFailureCode;
@@ -54,6 +60,7 @@ public:
                        ProfileEditWindow *profileEdit,
                        MainWindow *mainWindow,
                        QObject *parent = nullptr);
+    ~UserDemoController() override;
 
     void showInitialPage();
 
@@ -86,6 +93,10 @@ private:
     SettlementWindow *m_settlement;
     PaymentWindow *m_payment;
     OrderListWindow *m_orderList;
+    OrderDetailWindow *m_orderDetail;
+    FrequentStationsWindow *m_frequentStations;
+    ProfileTextWindow *m_profileText;
+    PasswordChangeWindow *m_passwordChange;
     ChargeConfirmationViewState m_chargeConfirmationState;
     QList<ChargingSessionViewState> m_chargingSessionStates;
     QList<ChargingSessionViewState> m_chargingSessionDemoTemplates;
@@ -103,6 +114,9 @@ private:
     QString m_reservationOutcome;
     bool m_walletOpenedFromConfirmation = false;
     bool m_profileEditOpenedFromMain = false;
+    bool m_usernameFirstSetup = false;
+    QString m_pendingUsername;
+    QString m_pendingUsernamePassword;
     bool m_scannerOpenedFromCharging = false;
     bool m_scannerOpenedFromOrders = false;
     QString m_currentAccountKey;
