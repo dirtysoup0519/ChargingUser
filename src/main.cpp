@@ -126,11 +126,27 @@ void configureWebEngineProcess(const char *executablePath)
     }
 }
 
+void configureWebEngineDiagnostics()
+{
+    if (qEnvironmentVariableIsEmpty("CHARGING_TENCENT_DISABLE_GPU")) {
+        return;
+    }
+    const QByteArray current = qgetenv("QTWEBENGINE_CHROMIUM_FLAGS");
+    if (!current.contains("--disable-gpu")) {
+        const QByteArray flags = current.isEmpty()
+                                     ? QByteArrayLiteral("--disable-gpu")
+                                     : current + " --disable-gpu";
+        qputenv("QTWEBENGINE_CHROMIUM_FLAGS", flags);
+    }
+    qInfo() << "Tencent map diagnostics: software WebEngine rendering enabled.";
+}
+
 } // namespace
 
 int main(int argc, char *argv[])
 {
     configureWebEngineProcess(argv[0]);
+    configureWebEngineDiagnostics();
     QApplication app(argc, argv);
     app.setApplicationName(QStringLiteral("智充"));
     app.setApplicationVersion(QStringLiteral("1.0"));
@@ -219,6 +235,13 @@ int main(int argc, char *argv[])
                         .toString(QStringLiteral("北京市"))
                         .trimmed();
     }
+    qInfo().noquote() << QStringLiteral("Tencent map config: key=%1, region=%2, source=%3")
+                             .arg(mapKey.isEmpty() ? QStringLiteral("missing")
+                                                   : QStringLiteral("present"),
+                                  mapRegion,
+                                  qEnvironmentVariable("TENCENT_MAP_KEY").trimmed().isEmpty()
+                                      ? QStringLiteral("config/tencent-map.local.json or default")
+                                      : QStringLiteral("TENCENT_MAP_KEY"));
     mapService.setApiKey(mapKey);
     mapService.setSearchRegion(mapRegion);
 
