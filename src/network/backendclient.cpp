@@ -144,6 +144,10 @@ void BackendClient::handleConnected()
     // 旧连接的残留半包不得进入新连接
     m_handler->reset();
     setState(ConnectionState::Connected);
+    // 连接建立立即发一次心跳：部分服务端实现会把"连上后长时间无数据"的
+    // 连接当作死连接关闭（远程联调实测 10.194.99.223 数秒即踢）。提前
+    // 发送 107 证明客户端存活，随后仍按 30s 周期保活。
+    m_transport->send(MassageHandler::makeHeartbeat());
     m_heartbeatTimer->start();
 }
 
