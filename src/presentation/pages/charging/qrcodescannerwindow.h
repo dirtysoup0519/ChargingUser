@@ -37,5 +37,6 @@ private:
     QMediaCaptureSession *m_captureSession = nullptr;
     QVideoSink *m_videoSink = nullptr;
     bool m_receivedCameraFrame = false;
+    bool m_convertedCameraFrame = false;
 #endif
 };

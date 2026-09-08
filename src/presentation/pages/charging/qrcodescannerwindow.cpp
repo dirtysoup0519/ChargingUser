@@ -12,7 +12,29 @@
 #include <QPixmap>
 #include <QTimer>
 #include <QVideoFrame>
+#include <QVideoFrameFormat>
 #include <QVideoSink>
+#endif
+
+#ifdef CHARGINGUSER_ENABLE_QT_MULTIMEDIA
+namespace {
+QImage imageFromVideoFrame(const QVideoFrame &source)
+{
+    QImage image = source.toImage();
+    if (!image.isNull()) return image;
+
+    QVideoFrame frame(source);
+    if (!frame.map(QVideoFrame::ReadOnly)) return {};
+    const QImage::Format imageFormat =
+        QVideoFrameFormat::imageFormatFromPixelFormat(frame.pixelFormat());
+    if (imageFormat != QImage::Format_Invalid) {
+        image = QImage(frame.bits(0), frame.width(), frame.height(),
+                       frame.bytesPerLine(0), imageFormat).copy();
+    }
+    frame.unmap();
+    return image;
+}
+}
 #endif
 
 QrCodeScannerWindow::QrCodeScannerWindow(QWidget *parent)
@@ -48,9 +70,11 @@ QrCodeScannerWindow::QrCodeScannerWindow(QWidget *parent)
         m_captureSession->setVideoSink(m_videoSink);
         connect(m_videoSink, &QVideoSink::videoFrameChanged, this,
                 [this](const QVideoFrame &frame) {
-            const QImage image = frame.toImage();
-            if (image.isNull() || !m_state.cameraPermissionGranted) return;
             m_receivedCameraFrame = true;
+            if (!m_state.cameraPermissionGranted) return;
+            const QImage image = imageFromVideoFrame(frame);
+            if (image.isNull()) return;
+            m_convertedCameraFrame = true;
             ui->previewPlaceholder->setPixmap(QPixmap::fromImage(image).scaled(
                 ui->previewPlaceholder->size(), Qt::KeepAspectRatioByExpanding,
                 Qt::SmoothTransformation));
@@ -115,10 +139,13 @@ void QrCodeScannerWindow::render(const ScanViewState &state)
         if (showPreview && !m_camera->isActive())
         {
             m_receivedCameraFrame = false;
+            m_convertedCameraFrame = false;
             m_camera->start();
             QTimer::singleShot(3000, this, [this] {
-                if (!m_camera || !m_camera->isActive() || m_receivedCameraFrame) return;
-                ui->stateLabel->setText(tr("摄像头已打开，但 3 秒内没有收到画面帧"));
+                if (!m_camera || !m_camera->isActive() || m_convertedCameraFrame) return;
+                ui->stateLabel->setText(m_receivedCameraFrame
+                    ? tr("摄像头有视频帧，但当前像素格式无法转换")
+                    : tr("摄像头已打开，但 3 秒内没有收到画面帧"));
             });
         }
         if (!showPreview && m_camera->isActive())
