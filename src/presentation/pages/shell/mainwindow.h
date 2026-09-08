@@ -2,6 +2,7 @@
 
 #include <QWidget>
 
+#include "presentation/contracts/chargingsessionviewstate.h"
 #include "presentation/contracts/mapviewstates.h"
 #include "profileviewstate.h"
 
@@ -31,6 +32,8 @@ public:
     void renderPrimaryPage(PrimaryPage page);
     void renderProfile(const ProfileViewState &state);
     void renderHome(const HomeMapViewState &state);
+    void renderChargingSession(const ChargingSessionViewState &state);
+    void renderChargingSessions(const ChargingSessionCollectionViewState &state);
     void renderSecondaryPage(QWidget *page);
 
 signals:
@@ -47,13 +50,24 @@ signals:
     void profileEditRequested();
     void rechargePageRequested();
     void ordersPageRequested();
+    // Legacy DEMO entry names retained for compatibility with UserDemoController.
     void frequentStationsRequested();
     void feedbackRequested();
     void aboutRequested();
+    // Formal real-network entry names used by src/main.cpp.
+    void commonStationsPageRequested();
+    void helpFeedbackPageRequested();
+    void aboutPageRequested();
     void logoutRequested();
     void activeReservationRequested(const QString &reservationId,
                                     const QString &stationId,
                                     const QString &chargerId);
+    void scanChargingRequested();
+    void activeSessionsRequested();
+    void activeSessionSelected(const QString &orderId);
+    void chargingRefreshRequested();
+    void stopChargingRequested();
+    void recoverStopResultRequested();
 
 protected:
     bool eventFilter(QObject *watched, QEvent *event) override;

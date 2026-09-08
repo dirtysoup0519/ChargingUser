@@ -3,6 +3,7 @@
 #include <QHBoxLayout>
 #include <QLabel>
 #include <QPushButton>
+#include <QVariant>
 #include <QScrollArea>
 #include <QStyle>
 #include <QVBoxLayout>
@@ -33,7 +34,7 @@ OrderListWindow::OrderListWindow(QWidget *parent) : QWidget(parent)
     header->addWidget(back); header->addWidget(title,1); header->addWidget(placeholder); root->addLayout(header);
     auto *filters = new QHBoxLayout; filters->setSpacing(8);
     m_allButton = new QPushButton(tr("全部"), this); m_chargingButton = new QPushButton(tr("充电订单"), this); m_reservationButton = new QPushButton(tr("预约订单"), this);
-    for (QPushButton *button : {m_allButton,m_chargingButton,m_reservationButton}) { button->setProperty("filter", true); button->setCheckable(true); button->setMinimumHeight(36); filters->addWidget(button); }
+    for (QPushButton *button : {m_allButton,m_chargingButton,m_reservationButton}) { button->setProperty("filter", QVariant(true)); button->setCheckable(true); button->setMinimumHeight(36); filters->addWidget(button); }
     m_allButton->setChecked(true); root->addLayout(filters);
     auto *scroll = new QScrollArea(this); scroll->setWidgetResizable(true); scroll->setFrameShape(QFrame::NoFrame); scroll->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
     auto *host = new QWidget(scroll); m_cardsLayout = new QVBoxLayout(host); m_cardsLayout->setContentsMargins(0,2,0,2); m_cardsLayout->setSpacing(10);
@@ -58,13 +59,18 @@ void OrderListWindow::rebuild()
         if (m_filter==Filter::Charging && order.type!=OrderBusinessType::Charging) continue;
         if (m_filter==Filter::Reservation && order.type!=OrderBusinessType::Reservation) continue;
         ++shown; auto *card=new QFrame; card->setObjectName("orderCard"); auto *box=new QVBoxLayout(card); box->setContentsMargins(14,12,14,12); box->setSpacing(7);
-        auto *top=new QHBoxLayout; auto *kind=new QLabel(order.type==OrderBusinessType::Charging?tr("充电订单"):tr("预约订单"),card); kind->setObjectName("orderKind"); auto *status=new QLabel(order.statusText,card); status->setObjectName("orderStatus"); status->setProperty("tone",order.statusTone); top->addWidget(kind); top->addStretch(); top->addWidget(status); box->addLayout(top);
+        const QString kindText = order.type == OrderBusinessType::Charging ? tr("充电订单")
+                                  : order.type == OrderBusinessType::Reservation ? tr("预约订单")
+                                  : tr("钱包充值");
+        auto *top=new QHBoxLayout; auto *kind=new QLabel(kindText,card); kind->setObjectName("orderKind"); auto *status=new QLabel(order.statusText,card); status->setObjectName("orderStatus"); status->setProperty("tone", QVariant(order.statusTone)); top->addWidget(kind); top->addStretch(); top->addWidget(status); box->addLayout(top);
         auto *station=new QLabel(order.stationName,card); station->setObjectName("orderStation"); station->setWordWrap(true); box->addWidget(station);
-        auto *meta=new QLabel(tr("%1号桩  ·  %2").arg(order.chargerCode,order.createdAtText),card); meta->setObjectName("orderMeta"); box->addWidget(meta);
+        auto *meta=new QLabel(order.type == OrderBusinessType::Recharge
+                                  ? order.createdAtText
+                                  : tr("%1号桩  ·  %2").arg(order.chargerCode,order.createdAtText),card); meta->setObjectName("orderMeta"); box->addWidget(meta);
         auto *summary=new QLabel(order.summaryText,card); summary->setObjectName("orderSummary"); summary->setWordWrap(true); box->addWidget(summary);
         auto *bottom=new QHBoxLayout; auto *amount=new QLabel(order.amountText,card); amount->setObjectName("orderAmount"); bottom->addWidget(amount); bottom->addStretch();
         auto *details=new QPushButton(tr("查看详情"),card); details->setObjectName("orderAction"); connect(details,&QPushButton::clicked,this,[this,order]{emit orderActionRequested(order.businessId,order.type,OrderListAction::ViewDetails);}); bottom->addWidget(details);
-        if(order.action!=OrderListAction::None && order.action!=OrderListAction::ViewDetails){auto *action=new QPushButton(order.actionText,card); action->setObjectName("orderAction"); action->setProperty("primary",order.action==OrderListAction::ContinuePayment); connect(action,&QPushButton::clicked,this,[this,order]{emit orderActionRequested(order.businessId,order.type,order.action);}); bottom->addWidget(action);} box->addLayout(bottom); m_cardsLayout->addWidget(card);
+        if(order.action!=OrderListAction::None && order.action!=OrderListAction::ViewDetails){auto *action=new QPushButton(order.actionText,card); action->setObjectName("orderAction"); action->setProperty("primary", QVariant(order.action==OrderListAction::ContinuePayment)); connect(action,&QPushButton::clicked,this,[this,order]{emit orderActionRequested(order.businessId,order.type,order.action);}); bottom->addWidget(action);} box->addLayout(bottom); m_cardsLayout->addWidget(card);
     }
     m_emptyLabel = new QLabel(tr("暂无订单")); m_emptyLabel->setAlignment(Qt::AlignCenter); m_emptyLabel->setStyleSheet("color:#8A96A8;padding:48px;"); m_cardsLayout->addWidget(m_emptyLabel);
     m_cardsLayout->addStretch();

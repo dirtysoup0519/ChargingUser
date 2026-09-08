@@ -66,12 +66,15 @@ void RealChargingNetworkApi::loadConfirmation(const RequestContext &context,
                                               const QString &stationId,
                                               const QString &chargerId)
 {
-    if (stationId.trimmed().isEmpty() || chargerId.trimmed().isEmpty()
+    if (chargerId.trimmed().isEmpty()
         || !begin(PendingKind::ConfirmationStation, context)) return;
     m_pending->stationId = stationId.trimmed();
     m_pending->chargerId = chargerId.trimmed();
-    QJsonObject payload{{QStringLiteral("stationName"), m_pending->stationId},
-                        {QStringLiteral("requestId"), context.requestId}};
+    QJsonObject payload{{QStringLiteral("requestId"), context.requestId}};
+    if (m_pending->stationId.isEmpty())
+        payload.insert(QStringLiteral("chargerCode"), m_pending->chargerId);
+    else
+        payload.insert(QStringLiteral("stationName"), m_pending->stationId);
     if (!m_backend->sendFrame(STATION_QRY_REQ, payload)) {
         failPending(QStringLiteral("send-failed"),
                     QStringLiteral("充电确认查询发送失败。"), true);
@@ -172,14 +175,17 @@ void RealChargingNetworkApi::handleFrame(int msgType, const QJsonObject &payload
         for (const QJsonValue &value : stations) {
             if (!value.isObject()) continue;
             const QJsonObject station = value.toObject();
-            if (stringField(station, {"stationName", "name"})
-                != m_pending->stationId) continue;
+            const QString responseStationId =
+                stringField(station, {"stationName", "name"});
+            if (!m_pending->stationId.isEmpty()
+                && responseStationId != m_pending->stationId) continue;
             const QJsonArray chargers = station.value(QStringLiteral("chargers")).toArray();
             for (const QJsonValue &chargerValue : chargers) {
                 if (!chargerValue.isObject()) continue;
                 const QJsonObject charger = chargerValue.toObject();
                 if (stringField(charger, {"chargerCode", "chargerId"})
                     == m_pending->chargerId) {
+                    m_pending->stationId = responseStationId;
                     m_pending->station = station;
                     m_pending->charger = charger;
                     m_pending->kind = PendingKind::ConfirmationUser;
@@ -248,7 +254,8 @@ void RealChargingNetworkApi::handleFrame(int msgType, const QJsonObject &payload
         result.orderId = payload.value(QStringLiteral("orderNo")).toString();
         result.stationId = pending.stationId;
         result.chargerId = pending.chargerId;
-        result.priceCentsPerKwh = centsField(payload, "priceCents", "price").value_or(0);
+        result.priceCentsPerKwhSnapshot =
+            centsField(payload, "priceCents", "price").value_or(0);
         const QString started = payload.value(QStringLiteral("startedAt")).toString();
         result.startedAtUtc = QDateTime::fromString(started, Qt::ISODate).toUTC();
         finishPending();

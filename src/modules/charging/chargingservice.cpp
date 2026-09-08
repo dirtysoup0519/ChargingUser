@@ -20,8 +20,8 @@ void ChargingService::loadConfirmation(const RequestContext &context,
                                        const QString &stationId,
                                        const QString &chargerId)
 {
-    if (!context.isValid() || context.isMutation() || stationId.isEmpty()
-        || chargerId.isEmpty()) {
+    // 扫码查询允许 stationId 为空；所属站点必须由 119/229 权威应答解析。
+    if (!context.isValid() || context.isMutation() || chargerId.isEmpty()) {
         fail(context, QStringLiteral("charging-invalid-confirmation-query"),
              QStringLiteral("充电确认查询参数无效。"));
         return;

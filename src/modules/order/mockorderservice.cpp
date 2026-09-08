@@ -48,6 +48,22 @@ void MockOrderService::queryActiveOrders(const RequestContext &context)
     });
 }
 
+void MockOrderService::queryOrderHistory(const RequestContext &context)
+{
+    if (!context.isValid() || context.isMutation()) {
+        fail(context, QStringLiteral("order-invalid-query"),
+             QStringLiteral("订单历史查询参数无效。"));
+        return;
+    }
+    QTimer::singleShot(0, this, [this, context] {
+        if (m_cancelled.remove(context.requestId)) return;
+        QVector<ChargingOrder> orders;
+        for (const ChargingOrder &order : m_orders)
+            orders.append(order);
+        emit orderHistoryReady(context, orders);
+    });
+}
+
 void MockOrderService::queryOrderDetail(const RequestContext &context,
                                         const QString &orderId)
 {

@@ -12,7 +12,7 @@ namespace {
 
 ClientError makeError(const QString &requestId, const QString &operationId,
                       const QString &code, const QString &message,
-                      bool retryable)
+                      bool retryable, bool resultUnknown = false)
 {
     // 订单查询为只读：永不携带 resultUnknown；operationId 仅透传（正常为空）。
     ClientError error;
@@ -21,7 +21,7 @@ ClientError makeError(const QString &requestId, const QString &operationId,
     error.code = code;
     error.displayMessage = message;
     error.retryable = retryable;
-    error.resultUnknown = false;
+    error.resultUnknown = resultUnknown;
     return error;
 }
 
@@ -101,6 +101,16 @@ void RealOrderService::setRequestTimeoutMs(int timeoutMs)
 void RealOrderService::queryActiveOrder(const RequestContext &context)
 {
     startQuery(QueryKind::ActiveOrder, context, QString());
+}
+
+void RealOrderService::queryActiveOrders(const RequestContext &context)
+{
+    startQuery(QueryKind::ActiveOrders, context, QString());
+}
+
+void RealOrderService::queryOrderHistory(const RequestContext &context)
+{
+    startQuery(QueryKind::OrderHistory, context, QString());
 }
 
 void RealOrderService::queryOrderDetail(const RequestContext &context,
@@ -403,6 +413,31 @@ void RealOrderService::handleFrame(int msgType, const QJsonObject &payload)
             return;
         }
 
+        if (pending.kind == QueryKind::ActiveOrders) {
+            QVector<ChargingOrder> activeOrders;
+            for (const QJsonValue &value : data.toArray()) {
+                if (!value.isObject()) continue;
+                const ChargingOrder order = parseOrderRecord(value.toObject());
+                if (order.status == OrderStatus::Charging
+                    || order.status == OrderStatus::PendingSettlement) {
+                    activeOrders.append(order);
+                }
+            }
+            emit activeOrdersReady(context, activeOrders);
+            return;
+        }
+
+        if (pending.kind == QueryKind::OrderHistory) {
+            QVector<ChargingOrder> history;
+            for (const QJsonValue &value : data.toArray()) {
+                if (!value.isObject()) continue;
+                const ChargingOrder order = parseOrderRecord(value.toObject());
+                if (!order.orderId.isEmpty()) history.append(order);
+            }
+            emit orderHistoryReady(context, history);
+            return;
+        }
+
         // 活动订单：Charging 优先于 PendingSettlement，最多返回一条。
         std::optional<ChargingOrder> active;
         for (const QJsonValue &value : data.toArray()) {
@@ -553,7 +588,7 @@ void RealOrderService::handleTimeout()
     failPending(QStringLiteral("request-timeout"),
                 mutation ? QStringLiteral("停止结果未知，请查询原订单状态，勿重复停止。")
                          : QStringLiteral("Request timed out."),
-                !mutation);
+                !mutation, mutation);
 }
 
 void RealOrderService::finishPending()
@@ -567,7 +602,7 @@ void RealOrderService::finishPending()
 }
 
 void RealOrderService::failPending(const QString &code, const QString &message,
-                                   bool retryable)
+                                   bool retryable, bool resultUnknown)
 {
     if (!m_pending) {
         return;
@@ -579,13 +614,15 @@ void RealOrderService::failPending(const QString &code, const QString &message,
         pending.timer->deleteLater();
     }
     emit requestFailed(makeError(pending.requestId, pending.operationId,
-                                 code, message, retryable));
+                                 code, message, retryable, resultUnknown));
 }
 
 void RealOrderService::failAllPending(const QString &code, const QString &message)
 {
     while (m_pending) {
-        failPending(code, message, true);
+        const bool mutation = m_pending->kind == QueryKind::StopOrderLookup
+                              || m_pending->kind == QueryKind::StopRequest;
+        failPending(code, message, !mutation, mutation);
     }
 }
 

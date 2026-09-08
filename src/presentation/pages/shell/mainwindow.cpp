@@ -136,14 +136,46 @@ MainWindow::MainWindow(QWidget *parent) : QWidget(parent), ui(new Ui::MainWindow
         if (!item) return;
         switch (ui->profileMenuList->row(item)) {
         case 0: emit ordersPageRequested(); break;
-        case 1: emit frequentStationsRequested(); break;
-        case 2: emit feedbackRequested(); break;
-        case 3: emit aboutRequested(); break;
+        case 1:
+            emit frequentStationsRequested();
+            emit commonStationsPageRequested();
+            break;
+        case 2:
+            emit feedbackRequested();
+            emit helpFeedbackPageRequested();
+            break;
+        case 3:
+            emit aboutRequested();
+            emit aboutPageRequested();
+            break;
         default: break;
         }
     });
     connect(ui->btnLogout, &QPushButton::clicked,
             this, &MainWindow::logoutRequested);
+    connect(ui->chargingSessionWidget, &ChargingSessionWindow::scanChargingRequested,
+            this, &MainWindow::scanChargingRequested);
+    connect(ui->chargingSessionWidget, &ChargingSessionWindow::activeSessionsRequested,
+            this, &MainWindow::activeSessionsRequested);
+    connect(ui->chargingSessionWidget, &ChargingSessionWindow::activeSessionSelected,
+            this, &MainWindow::activeSessionSelected);
+    connect(ui->chargingSessionWidget, &ChargingSessionWindow::refreshRequested,
+            this, &MainWindow::chargingRefreshRequested);
+    connect(ui->chargingSessionWidget, &ChargingSessionWindow::stopChargingRequested,
+            this, &MainWindow::stopChargingRequested);
+    connect(ui->chargingSessionWidget, &ChargingSessionWindow::recoverStopResultRequested,
+            this, &MainWindow::recoverStopResultRequested);
+}
+
+void MainWindow::renderChargingSession(const ChargingSessionViewState &state)
+{
+    ui->chargingSessionWidget->render(state);
+}
+
+void MainWindow::renderChargingSessions(
+    const ChargingSessionCollectionViewState &state)
+{
+    ui->chargingSessionWidget->renderSessions(state);
 }
 
 void MainWindow::setMapKey(const QString &key)

@@ -20,13 +20,18 @@
 #include "modules/user/iuserservice.h"
 #include "modules/map/tencentmapservice.h"
 #include "presentation/contracts/reservationviewstates.h"
+#include "presentation/contracts/orderlistviewstate.h"
 #include "presentation/pages/auth/loginwindow.h"
 #include "presentation/pages/charging/chargeconfirmationwindow.h"
+#include "presentation/pages/charging/chargingsessionwindow.h"
+#include "presentation/pages/charging/paymentwindow.h"
 #include "presentation/pages/charging/qrcodescannerwindow.h"
 #include "presentation/pages/charging/reservationconfirmationwindow.h"
+#include "presentation/pages/charging/settlementwindow.h"
 #include "presentation/pages/home/navigationwindow.h"
 #include "presentation/pages/home/stationdetailwindow.h"
 #include "presentation/pages/profile/profileeditwindow.h"
+#include "presentation/pages/profile/orderlistwindow.h"
 #include "presentation/pages/profile/walletrechargewindow.h"
 #include "presentation/pages/shell/mainwindow.h"
 #include "protocol.h"
@@ -40,15 +45,73 @@
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
+#include <QFileDialog>
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QJsonParseError>
+#include <QMessageBox>
+#include <QImage>
+#include <QUrlQuery>
 #include <QRegularExpression>
 #include <QStringList>
 #include <QUuid>
 
+#include <algorithm>
+
+#ifdef CHARGINGUSER_ENABLE_ZXING
+#include <ZXing/BarcodeFormat.h>
+#include <ZXing/ImageView.h>
+#include <ZXing/ReadBarcode.h>
+#include <ZXing/ReaderOptions.h>
+#endif
+
 namespace
 {
+
+QString decodeQrImage(const QString &path, QString *error)
+{
+#ifdef CHARGINGUSER_ENABLE_ZXING
+    QImage image(path);
+    if (image.isNull()) {
+        *error = QStringLiteral("无法读取所选图片。");
+        return {};
+    }
+    image = image.convertToFormat(QImage::Format_Grayscale8);
+    const ZXing::ImageView view(image.constBits(), image.width(), image.height(),
+                                ZXing::ImageFormat::Lum, image.bytesPerLine());
+    ZXing::ReaderOptions options;
+    options.setFormats(ZXing::BarcodeFormat::QRCode);
+    options.setTryHarder(true);
+    const ZXing::Barcode barcode = ZXing::ReadBarcode(view, options);
+    if (!barcode.isValid()) {
+        *error = QStringLiteral("图片中没有识别到有效二维码。");
+        return {};
+    }
+    return QString::fromStdString(barcode.text());
+#else
+    Q_UNUSED(path)
+    *error = QStringLiteral("当前构建未检测到 ZXing 二维码解析库。");
+    return {};
+#endif
+}
+
+QString chargerCodeFromQr(const QString &raw)
+{
+    const QString value = raw.trimmed();
+    if (value.isEmpty() || value.size() > 512) return {};
+    QJsonParseError parseError;
+    const QJsonDocument json = QJsonDocument::fromJson(value.toUtf8(), &parseError);
+    if (parseError.error == QJsonParseError::NoError && json.isObject()) {
+        return json.object().value(QStringLiteral("chargerCode")).toString().trimmed();
+    }
+    const QUrl url(value);
+    if (url.isValid() && !url.scheme().isEmpty()) {
+        const QString code = QUrlQuery(url).queryItemValue(QStringLiteral("chargerCode")).trimmed();
+        if (!code.isEmpty()) return code;
+    }
+    static const QRegularExpression safeCode(QStringLiteral("^[A-Za-z0-9_.:-]{1,64}$"));
+    return safeCode.match(value).hasMatch() ? value : QString();
+}
 
 QString connectionStateName(ConnectionState state)
 {
@@ -120,11 +183,27 @@ void configureWebEngineProcess(const char *executablePath)
     }
 }
 
+void configureWebEngineDiagnostics()
+{
+    if (qEnvironmentVariableIsEmpty("CHARGING_TENCENT_DISABLE_GPU")) {
+        return;
+    }
+    const QByteArray current = qgetenv("QTWEBENGINE_CHROMIUM_FLAGS");
+    if (!current.contains("--disable-gpu")) {
+        const QByteArray flags = current.isEmpty()
+                                     ? QByteArrayLiteral("--disable-gpu")
+                                     : current + " --disable-gpu";
+        qputenv("QTWEBENGINE_CHROMIUM_FLAGS", flags);
+    }
+    qInfo() << "Tencent map diagnostics: software WebEngine rendering enabled.";
+}
+
 } // namespace
 
 int main(int argc, char *argv[])
 {
     configureWebEngineProcess(argv[0]);
+    configureWebEngineDiagnostics();
     QApplication app(argc, argv);
     app.setApplicationName(QStringLiteral("智充"));
     app.setApplicationVersion(QStringLiteral("1.0"));
@@ -213,6 +292,13 @@ int main(int argc, char *argv[])
                         .toString(QStringLiteral("北京市"))
                         .trimmed();
     }
+    qInfo().noquote() << QStringLiteral("Tencent map config: key=%1, region=%2, source=%3")
+                             .arg(mapKey.isEmpty() ? QStringLiteral("missing")
+                                                   : QStringLiteral("present"),
+                                  mapRegion,
+                                  qEnvironmentVariable("TENCENT_MAP_KEY").trimmed().isEmpty()
+                                      ? QStringLiteral("config/tencent-map.local.json or default")
+                                      : QStringLiteral("TENCENT_MAP_KEY"));
     mapService.setApiKey(mapKey);
     mapService.setSearchRegion(mapRegion);
 
@@ -245,18 +331,39 @@ int main(int argc, char *argv[])
     ChargingUiBinder chargeBinder(&chargingService);
     ChargeConfirmationWindow chargeConfirmation(&mainWindow);
     WalletRechargeWindow walletRecharge(&mainWindow);
+    OrderListWindow orderList(&mainWindow);
     ReservationConfirmationWindow reservationConfirmation(&mainWindow);
     QrCodeScannerWindow qrScanner(&mainWindow);
     mainWindow.registerSecondaryPage(&chargeConfirmation);
     mainWindow.registerSecondaryPage(&walletRecharge);
+    mainWindow.registerSecondaryPage(&orderList);
     mainWindow.registerSecondaryPage(&reservationConfirmation);
     mainWindow.registerSecondaryPage(&qrScanner);
+
+    // 合同 §3：会话页与结算页接入（充电启动/活动恢复到达，G/H 阶段展示载体）。
+    ChargingSessionWindow sessionWindow(&mainWindow);
+    SettlementWindow settlementWindow(&mainWindow);
+    mainWindow.registerSecondaryPage(&sessionWindow);
+    mainWindow.registerSecondaryPage(&settlementWindow);
     if (!mapKey.isEmpty()) {
         mainWindow.setMapKey(mapKey);
     }
     IUserUiBinder *binder = assembly.userUiBinder();
     IUserService *userService = assembly.userService();
     bool profileEditOpenedFromMain = false;
+    enum class WalletEntryPoint { Profile, ChargeConfirmation };
+    enum class ScanEntryPoint { PrimaryCharging, Session };
+    ScanEntryPoint scanEntryPoint = ScanEntryPoint::PrimaryCharging;
+    bool confirmationOpenedFromScanner = false;
+    WalletEntryPoint walletEntryPoint = WalletEntryPoint::Profile;
+    bool orderListOpen = false;
+    bool settlementOpenedFromOrderList = false;
+    OrderListViewState orderListBaseState;
+    const auto openWallet = [&](WalletEntryPoint entryPoint) {
+        walletEntryPoint = entryPoint;
+        walletBinder.activate();
+        mainWindow.renderSecondaryPage(&walletRecharge);
+    };
 
     const auto showOnly = [&login, &profileEdit, &mainWindow](QWidget *target) {
         login.setVisible(target == &login);
@@ -319,7 +426,24 @@ int main(int argc, char *argv[])
 
     // ===== 阶段 B：充电确认链路（详情 → 确认 → 钱包/会话）=====
     QObject::connect(&stationDetail, &StationDetailWindow::chargeConfirmationRequested,
-                     &chargeBinder, &IChargingUiBinder::chargeConfirmationRequested);
+                     &app, [&](const QString &stationId, const QString &chargerId) {
+        confirmationOpenedFromScanner = false;
+        chargeBinder.chargeConfirmationRequested(stationId, chargerId);
+    });
+    // 兼容详情页旧版意图信号：正式入口统一转入当前选桩链路。
+    QObject::connect(&stationDetail, &StationDetailWindow::navigationRequested,
+                     &app, [&] {
+        mapBinder.routePreviewRequested(TravelMode::Driving);
+    });
+    QObject::connect(&stationDetail, &StationDetailWindow::chargeRequested,
+                     &app, [&] {
+        const StationDetailViewState state = mapBinder.currentStationDetailState();
+        if (!state.stationId.isEmpty() && !state.selectedChargerId.isEmpty()) {
+            confirmationOpenedFromScanner = false;
+            chargeBinder.chargeConfirmationRequested(state.stationId,
+                                                     state.selectedChargerId);
+        }
+    });
     QObject::connect(&chargeBinder, &IChargingUiBinder::confirmationStateChanged,
                      &chargeConfirmation, &ChargeConfirmationWindow::render);
     QObject::connect(&chargeBinder, &IChargingUiBinder::confirmationPageRequested,
@@ -329,8 +453,13 @@ int main(int argc, char *argv[])
     });
     QObject::connect(&chargeBinder, &IChargingUiBinder::stationDetailPageRequested,
                      &app, [&] {
-        stationDetail.render(mapBinder.currentStationDetailState());
-        mainWindow.renderSecondaryPage(&stationDetail);
+        if (confirmationOpenedFromScanner) {
+            confirmationOpenedFromScanner = false;
+            mainWindow.renderPrimaryPage(MainWindow::PrimaryPage::Charging);
+        } else {
+            stationDetail.render(mapBinder.currentStationDetailState());
+            mainWindow.renderSecondaryPage(&stationDetail);
+        }
     });
     QObject::connect(&chargeConfirmation, &ChargeConfirmationWindow::backRequested,
                      &chargeBinder, &IChargingUiBinder::backRequested);
@@ -344,24 +473,175 @@ int main(int argc, char *argv[])
     // 钱包页可达：余额来自确认页快照，充值动作属阶段 E。
     QObject::connect(&chargeBinder, &IChargingUiBinder::rechargePageRequested,
                      &app, [&] {
-        walletBinder.activate();
-        mainWindow.renderSecondaryPage(&walletRecharge);
+        openWallet(WalletEntryPoint::ChargeConfirmation);
     });
     // 修复来源：eb31164 误用不存在的 rechargePageRequested 信号，导致真实入口
     // 无法编译；ChargeConfirmationWindow 实际声明的信号是 rechargeRequested()。
     QObject::connect(&chargeConfirmation, &ChargeConfirmationWindow::rechargeRequested,
                      &app, [&] {
-        walletBinder.activate();
-        mainWindow.renderSecondaryPage(&walletRecharge);
+        openWallet(WalletEntryPoint::ChargeConfirmation);
     });
     QObject::connect(&mainWindow, &MainWindow::rechargePageRequested,
                      &app, [&] {
+        openWallet(WalletEntryPoint::Profile);
+    });
+    QObject::connect(&mainWindow, &MainWindow::ordersPageRequested,
+                     &app, [&] {
+        orderListOpen = true;
+        orderListBaseState = {};
+        orderList.render(OrderListViewState{{}, QStringLiteral("正在加载订单…")});
+        mainWindow.renderSecondaryPage(&orderList);
         walletBinder.activate();
-        mainWindow.renderSecondaryPage(&walletRecharge);
+        orderService.queryOrderHistory(
+            {QUuid::createUuid().toString(QUuid::WithoutBraces), {}});
+    });
+    const auto showProfileNotice = [&](const QString &title, const QString &text) {
+        QMessageBox::information(&mainWindow, title, text);
+    };
+    QObject::connect(&mainWindow, &MainWindow::commonStationsPageRequested,
+                     &app, [&] { showProfileNotice(QStringLiteral("常用充电站"),
+                                                    QStringLiteral("常用充电站功能接入中。")); });
+    QObject::connect(&mainWindow, &MainWindow::helpFeedbackPageRequested,
+                     &app, [&] { showProfileNotice(QStringLiteral("帮助与反馈"),
+                                                    QStringLiteral("帮助与反馈功能接入中。")); });
+    QObject::connect(&mainWindow, &MainWindow::aboutPageRequested,
+                     &app, [&] { showProfileNotice(QStringLiteral("关于智充"),
+                                                    QStringLiteral("智充实训版")); });
+    QObject::connect(&stationDetail, &StationDetailWindow::chargerSelected,
+                     &mapBinder, &IMapUiBinder::chargerSelected);
+    // 预约状态变化由服务端/预约 Binder 决定；详情页事件必须有明确反馈，不能静默无响应。
+    QObject::connect(&stationDetail,
+                     &StationDetailWindow::reservationExpiredRefreshRequested,
+                     &app, [&] {
+        mapBinder.stationRefreshRequested();
+    });
+    const auto reservationCancelUnavailable = [&](const QString &) {
+        QMessageBox::information(&stationDetail, QStringLiteral("取消预约"),
+                                 QStringLiteral("当前正式服务端尚未提供取消预约接口。"));
+    };
+    QObject::connect(&stationDetail,
+                     &StationDetailWindow::cancelReservationRequested,
+                     &app, reservationCancelUnavailable);
+    QObject::connect(&stationDetail,
+                     &StationDetailWindow::cancelReservationRetryRequested,
+                     &app, reservationCancelUnavailable);
+    QObject::connect(&stationDetail,
+                     &StationDetailWindow::activeReservationRequested,
+                     &app, [&](const QString &, const QString &stationId, const QString &) {
+        if (!stationId.trimmed().isEmpty())
+            mapBinder.stationDetailsRequested(stationId);
+    });
+    const auto appendRechargeOrders = [&](OrderListViewState state) {
+        const WalletViewState wallet = walletBinder.currentState();
+        for (const WalletTransaction &transaction : wallet.recentTransactions) {
+            if (transaction.type != WalletTransactionType::Recharge) continue;
+            OrderListItemView item;
+            item.businessId = transaction.transactionId;
+            item.type = OrderBusinessType::Recharge;
+            item.stationName = QStringLiteral("钱包账户");
+            item.createdAtText = transaction.createdAtUtc.isValid()
+                ? transaction.createdAtUtc.toLocalTime().toString(Qt::ISODate)
+                : QStringLiteral("时间未知");
+            item.amountText = QStringLiteral("¥%1").arg(transaction.amountCents / 100.0, 0, 'f', 2);
+            item.statusText = QStringLiteral("已完成");
+            item.statusTone = QStringLiteral("success");
+            item.summaryText = transaction.transactionId.isEmpty()
+                ? QStringLiteral("钱包充值流水")
+                : QStringLiteral("流水号 %1").arg(transaction.transactionId);
+            item.action = OrderListAction::None;
+            state.orders.append(item);
+        }
+        return state;
+    };
+    const auto renderChargingOrders = [&](const QVector<ChargingOrder> &orders) {
+        OrderListViewState state;
+        for (const ChargingOrder &order : orders) {
+            OrderListItemView item;
+            item.businessId = order.orderId;
+            item.stationId = order.stationId;
+            item.chargerId = order.chargerId;
+            item.type = OrderBusinessType::Charging;
+            item.stationName = order.stationName;
+            item.chargerCode = order.chargerCode;
+            item.createdAtText = order.startedAtUtc.isValid()
+                                     ? order.startedAtUtc.toLocalTime().toString(Qt::ISODate)
+                                     : QStringLiteral("时间未知");
+            item.amountText = QStringLiteral("¥%1").arg(order.amountCents / 100.0, 0, 'f', 2);
+            item.energyText = QStringLiteral("%1 kWh").arg(order.energyKwh, 0, 'f', 2);
+            item.statusText = order.status == OrderStatus::Charging
+                                  ? QStringLiteral("充电中")
+                                  : order.status == OrderStatus::PendingSettlement
+                                  ? QStringLiteral("待结算")
+                                  : order.status == OrderStatus::Settled
+                                  ? QStringLiteral("已支付")
+                                  : order.status == OrderStatus::Cancelled
+                                  ? QStringLiteral("已取消") : QStringLiteral("状态未知");
+            item.statusTone = order.status == OrderStatus::Charging
+                                  ? QStringLiteral("warning")
+                                  : order.status == OrderStatus::Settled
+                                  ? QStringLiteral("success") : QStringLiteral("neutral");
+            item.summaryText = QStringLiteral("电量 %1").arg(item.energyText);
+            item.action = order.status == OrderStatus::Charging ? OrderListAction::ViewCharging
+                          : order.status == OrderStatus::PendingSettlement
+                          ? OrderListAction::ContinuePayment : OrderListAction::ViewDetails;
+            item.actionText = order.status == OrderStatus::Charging ? QStringLiteral("查看")
+                            : order.status == OrderStatus::PendingSettlement
+                            ? QStringLiteral("去结算") : QStringLiteral("查看详情");
+            state.orders.append(item);
+        }
+        state = appendRechargeOrders(state);
+        orderListBaseState = state;
+        state.message = state.orders.isEmpty() ? QStringLiteral("暂无订单") : QString();
+        orderList.render(state);
+    };
+    QObject::connect(&orderService, &IOrderService::activeOrdersReady,
+                     &app, [&](const RequestContext &, const QVector<ChargingOrder> &orders) {
+        renderChargingOrders(orders);
+    });
+    QObject::connect(&orderService, &IOrderService::orderHistoryReady,
+                     &app, [&](const RequestContext &, const QVector<ChargingOrder> &orders) {
+        renderChargingOrders(orders);
+    });
+    QObject::connect(&orderList, &OrderListWindow::backRequested,
+                     &app, [&] {
+        orderListOpen = false;
+        mainWindow.renderPrimaryPage(MainWindow::PrimaryPage::Profile);
+    });
+    QObject::connect(&walletBinder, &WalletUiBinder::stateChanged,
+                     &app, [&](const WalletViewState &wallet) {
+        if (!orderListOpen || wallet.recentTransactions.isEmpty()) return;
+        OrderListViewState state = appendRechargeOrders(orderListBaseState);
+        orderList.render(state);
+    });
+    QObject::connect(&orderList, &OrderListWindow::refreshRequested,
+                     &app, [&] {
+        orderService.queryOrderHistory(
+            {QUuid::createUuid().toString(QUuid::WithoutBraces), {}});
+    });
+    QObject::connect(&orderList, &OrderListWindow::orderActionRequested,
+                     &app, [&](const QString &orderId, OrderBusinessType type,
+                               OrderListAction action) {
+        if (type != OrderBusinessType::Charging || orderId.trimmed().isEmpty()) {
+            showProfileNotice(QStringLiteral("订单"),
+                              QStringLiteral("该订单类型暂未接入详情页。"));
+            return;
+        }
+        if (action == OrderListAction::ViewCharging) {
+            sessionBinder.sessionRequested(orderId);
+            mainWindow.renderSecondaryPage(&sessionWindow);
+            return;
+        }
+        settlementOpenedFromOrderList = true;
+        orderService.queryOrderDetail(
+            {QUuid::createUuid().toString(QUuid::WithoutBraces), {}}, orderId);
     });
     QObject::connect(&walletRecharge, &WalletRechargeWindow::backRequested,
                      &app, [&] {
-        mainWindow.renderSecondaryPage(&chargeConfirmation);
+        if (walletEntryPoint == WalletEntryPoint::ChargeConfirmation) {
+            mainWindow.renderSecondaryPage(&chargeConfirmation);
+        } else {
+            mainWindow.renderPrimaryPage(MainWindow::PrimaryPage::Profile);
+        }
     });
     // 阶段 E：钱包页面使用服务端余额与流水；充值结果未知时由 Binder 锁定重试。
     QObject::connect(&walletBinder, &WalletUiBinder::stateChanged,
@@ -370,6 +650,161 @@ int main(int argc, char *argv[])
                      &walletBinder, &WalletUiBinder::rechargeRequested);
     QObject::connect(&walletBinder, &WalletUiBinder::profileRefreshRequested,
                      userService, &IUserService::refreshCurrentUser);
+
+    // 合同 §3.1：会话页双向接线（意图 → Binder，状态 → 渲染）。
+    QObject::connect(&sessionBinder,
+                     &IChargingSessionUiBinder::sessionStateChanged,
+                     &sessionWindow, &ChargingSessionWindow::render);
+    QObject::connect(&sessionBinder,
+                     &IChargingSessionUiBinder::sessionStateChanged,
+                     &mainWindow, &MainWindow::renderChargingSession);
+    QObject::connect(&sessionBinder,
+                     &IChargingSessionUiBinder::activeSessionsStateChanged,
+                     &sessionWindow, &ChargingSessionWindow::renderSessions);
+    QObject::connect(&sessionBinder,
+                     &IChargingSessionUiBinder::activeSessionsStateChanged,
+                     &mainWindow, &MainWindow::renderChargingSessions);
+    QObject::connect(&sessionWindow, &ChargingSessionWindow::refreshRequested,
+                     &sessionBinder, &IChargingSessionUiBinder::refreshRequested);
+    QObject::connect(&sessionWindow, &ChargingSessionWindow::stopChargingRequested,
+                     &sessionBinder, &IChargingSessionUiBinder::stopChargingRequested);
+    QObject::connect(&sessionWindow,
+                     &ChargingSessionWindow::recoverStopResultRequested,
+                     &sessionBinder, &IChargingSessionUiBinder::recoverStopResultRequested);
+    QObject::connect(&sessionWindow,
+                     &ChargingSessionWindow::activeSessionsRequested,
+                     &sessionBinder, &IChargingSessionUiBinder::activeSessionsRequested);
+    QObject::connect(&sessionWindow,
+                     &ChargingSessionWindow::activeSessionSelected,
+                     &sessionBinder, &IChargingSessionUiBinder::activeSessionSelected);
+    // 主窗口内嵌会话页与二级会话页共享同一 Binder，保证两个入口按钮行为一致。
+    QObject::connect(&mainWindow, &MainWindow::chargingRefreshRequested,
+                     &sessionBinder, &IChargingSessionUiBinder::refreshRequested);
+    QObject::connect(&mainWindow, &MainWindow::stopChargingRequested,
+                     &sessionBinder, &IChargingSessionUiBinder::stopChargingRequested);
+    QObject::connect(&mainWindow, &MainWindow::recoverStopResultRequested,
+                     &sessionBinder, &IChargingSessionUiBinder::recoverStopResultRequested);
+    QObject::connect(&mainWindow, &MainWindow::activeSessionsRequested,
+                     &sessionBinder, &IChargingSessionUiBinder::activeSessionsRequested);
+    QObject::connect(&mainWindow, &MainWindow::activeSessionSelected,
+                     &sessionBinder, &IChargingSessionUiBinder::activeSessionSelected);
+    const auto openScanner = [&](ScanEntryPoint entryPoint) {
+        scanEntryPoint = entryPoint;
+        ScanViewState scanState;
+        scanState.status = qrScanner.cameraAvailable() ? ScanStatus::RequestingPermission : ScanStatus::Error;
+        scanState.message = qrScanner.cameraAvailable()
+            ? QStringLiteral("点击允许摄像头后开始实时扫码")
+            : QStringLiteral("当前设备没有可用摄像头，请从相册选择二维码。");
+        scanState.cameraAvailable = qrScanner.cameraAvailable();
+        scanState.cameraPermissionGranted = false;
+        scanState.canImportImage = true;
+        scanState.canRetry = false;
+        qrScanner.render(scanState);
+        mainWindow.renderSecondaryPage(&qrScanner);
+    };
+    QObject::connect(&mainWindow, &MainWindow::scanChargingRequested,
+                     &app, [&] { openScanner(ScanEntryPoint::PrimaryCharging); });
+    QObject::connect(&sessionWindow, &ChargingSessionWindow::scanChargingRequested,
+                     &app, [&] { openScanner(ScanEntryPoint::Session); });
+    const auto handleDetectedQr = [&](const QString &raw) {
+        ScanViewState state;
+        state.canImportImage = true;
+        const QString chargerCode = chargerCodeFromQr(raw);
+        if (chargerCode.isEmpty()) {
+            state.status = ScanStatus::Error;
+            state.message = QStringLiteral("二维码内容不包含合法的 chargerCode。");
+            state.canRetry = true;
+            qrScanner.render(state);
+            return;
+        }
+        state.status = ScanStatus::Validating;
+        state.chargerDisplayText = chargerCode;
+        state.message = QStringLiteral("二维码识别成功，正在加载充电确认信息…");
+        state.canImportImage = false;
+        qrScanner.render(state);
+        confirmationOpenedFromScanner = true;
+        chargeBinder.chargeConfirmationByChargerCodeRequested(chargerCode);
+    };
+    QObject::connect(&qrScanner, &QrCodeScannerWindow::qrCodeDetected,
+                     &app, handleDetectedQr);
+    QObject::connect(&qrScanner, &QrCodeScannerWindow::cameraPermissionRequested,
+                     &app, [&] {
+        ScanViewState state;
+        state.status = qrScanner.cameraAvailable() ? ScanStatus::Scanning : ScanStatus::Error;
+        state.cameraAvailable = qrScanner.cameraAvailable();
+        state.cameraPermissionGranted = state.cameraAvailable;
+        state.message = state.cameraAvailable ? QStringLiteral("对准二维码后将自动识别")
+                                               : QStringLiteral("当前设备没有可用摄像头，请从相册选择二维码。");
+        state.canImportImage = true;
+        qrScanner.render(state);
+    });
+    QObject::connect(&qrScanner, &QrCodeScannerWindow::scanRetryRequested,
+                     &app, [&] {
+        ScanViewState state;
+        state.cameraAvailable = qrScanner.cameraAvailable();
+        state.cameraPermissionGranted = state.cameraAvailable;
+        state.status = state.cameraAvailable ? ScanStatus::Scanning : ScanStatus::Error;
+        state.message = state.cameraAvailable ? QStringLiteral("正在重新打开摄像头…")
+                                               : QStringLiteral("当前没有可用摄像头扫码适配器。");
+        state.canImportImage = true;
+        qrScanner.render(state);
+    });
+    QObject::connect(&qrScanner, &QrCodeScannerWindow::imageImportRequested,
+                     &app, [&] {
+        const QString path = QFileDialog::getOpenFileName(
+            &qrScanner, QStringLiteral("选择二维码图片"), QString(),
+            QStringLiteral("图片 (*.png *.jpg *.jpeg *.bmp)"));
+        if (path.isEmpty()) return;
+        ScanViewState state;
+        state.canImportImage = true;
+        QString decodeError;
+        const QString raw = decodeQrImage(path, &decodeError);
+        if (raw.isEmpty()) {
+            state.status = ScanStatus::Error;
+            state.message = decodeError;
+            state.canRetry = true;
+            qrScanner.render(state);
+            return;
+        }
+        handleDetectedQr(raw);
+    });
+    QObject::connect(&qrScanner, &QrCodeScannerWindow::torchToggleRequested,
+                     &app, [&](bool) {
+        ScanViewState state;
+        state.status = ScanStatus::Error;
+        state.message = QStringLiteral("当前设备不支持扫码手电筒控制。");
+        state.canImportImage = true;
+        qrScanner.render(state);
+    });
+
+    // 合同 §3.2：充电启动成功 → 携带真实 orderId 进入会话页。
+    QObject::connect(&chargeBinder, &IChargingUiBinder::chargingSessionRequested,
+                     &app, [&](const StartChargingResult &result) {
+        sessionBinder.sessionRequested(result.orderId);
+        mainWindow.renderSecondaryPage(&sessionWindow);
+    });
+
+    // 合同 §3.5：结算页接线（展示 → 支付意图 → 刷新）。
+    QObject::connect(&settlementBinder, &SettlementUiBinder::stateChanged,
+                     &settlementWindow, &SettlementWindow::render);
+    QObject::connect(&settlementWindow, &SettlementWindow::paymentRequested,
+                     &app, [&](const QString &) {
+        settlementBinder.payRequested();
+    });
+    QObject::connect(&settlementWindow, &SettlementWindow::backRequested,
+                     &app, [&] {
+        if (settlementOpenedFromOrderList) {
+            settlementOpenedFromOrderList = false;
+            mainWindow.renderSecondaryPage(&orderList);
+        } else {
+            sessionWindow.render(sessionBinder.currentState());
+            mainWindow.renderSecondaryPage(&sessionWindow);
+        }
+    });
+    QObject::connect(&settlementBinder, &SettlementUiBinder::orderRefreshRequested,
+                     &app, [&] {
+        // 结算页刷新=按当前展示订单重查权威状态，导航保持在结算页。
+    });
 
     // 阶段 D：登录成功 → 注入身份并自动恢复活动订单（充电中/待结算）。
     QObject::connect(&network, &RealUserNetworkApi::loginSucceeded,
@@ -385,8 +820,7 @@ int main(int argc, char *argv[])
             QUuid::createUuid().toString(QUuid::WithoutBraces), {}};
         orderService.queryActiveOrder(recoveryContext);
     });
-    // 活动订单存在时交由会话 Binder 拉取详情（会话页 UI 待交付，
-    // 状态可通过 sessionBinder.currentState() 获取，不丢恢复结果）。
+    // 活动订单存在时交由会话 Binder 拉取详情；待支付订单直达结算页（合同 §3.4）。
     QObject::connect(&orderService, &IOrderService::activeOrderReady,
                      &app, [&](const RequestContext &,
                                const std::optional<ChargingOrder> &active) {
@@ -394,19 +828,26 @@ int main(int argc, char *argv[])
             sessionBinder.sessionRequested(active->orderId);
             if (active->status == OrderStatus::PendingSettlement) {
                 settlementBinder.showOrder(*active);
+                mainWindow.renderSecondaryPage(&settlementWindow);
             }
         }
     });
+    // 合同 §3.3：停止充电成功 → 携带结算单进入结算页。
     QObject::connect(&orderService, &IOrderService::chargingStopped,
                      &app, [&](const RequestContext &,
                                const StopChargingResult &result) {
         settlementBinder.showOrder(result.order);
+        mainWindow.renderSecondaryPage(&settlementWindow);
     });
     QObject::connect(&orderService, &IOrderService::orderDetailReady,
                      &app, [&](const RequestContext &,
                                const ChargingOrder &order) {
-        if (order.status == OrderStatus::PendingSettlement) {
+        if (order.status == OrderStatus::Charging) {
+            sessionBinder.sessionRequested(order.orderId);
+            mainWindow.renderSecondaryPage(&sessionWindow);
+        } else {
             settlementBinder.showOrder(order);
+            mainWindow.renderSecondaryPage(&settlementWindow);
         }
     });
     QObject::connect(&pushDispatcher, &ServerPushDispatcher::balanceChanged,
@@ -463,7 +904,10 @@ int main(int argc, char *argv[])
     });
     QObject::connect(&qrScanner, &QrCodeScannerWindow::backRequested,
                      &app, [&] {
-        mainWindow.renderSecondaryPage(&stationDetail);
+        if (scanEntryPoint == ScanEntryPoint::Session)
+            mainWindow.renderSecondaryPage(&sessionWindow);
+        else
+            mainWindow.renderPrimaryPage(MainWindow::PrimaryPage::Charging);
     });
 
     QObject::connect(&mapBinder, &IMapUiBinder::homeStateChanged,

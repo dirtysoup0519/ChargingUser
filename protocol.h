@@ -53,7 +53,7 @@
 /* 服务器默认地址（客户端与服务器设置页均可配置覆盖）。
  * 客户端工程拷贝本文件后：把 SERVER_IP 改成服务器所在机器的局域网 IP 即可全工程生效；
  * 服务器端：settings 界面 IP 留空 = 绑定全部网卡（局域网测试必选，127.0.0.1 只能本机连）。 */
-#define SERVER_IP   "127.0.0.1"
+#define SERVER_IP   "10.194.99.223"
 #define SERVER_PORT "12345"
 
 /* 数据库表名（协议 msg 中 table 字段使用） */
@@ -111,7 +111,7 @@
 /* 请求类型 1开头 */
 #define GETDATA             100     // 通用查询 {table,cond} -> 200 {data:[...]}（user 表脱敏去 password）
 #define LOGIN_REQ           101     // 登录 {username,password,role}（管理员 & 兼容）
-#define LOGOUT_REQ          102     // 退出登录（预留）
+#define LOGOUT_REQ          102     // 退出登录（v2.6.3：清除会话身份，连接保留，重登恢复）
 #define START_CHARGING_REQ  108     // 开始充电（手机用户）{username, chargerCode}
 #define STOP_CHARGING_REQ   109     // 停止充电 {chargerCode, username?}
 #define CHGDATA_REQ         105     // 充电数据实时上报（电桩->服务器）{chargerCode, kwh, username?, stationName?}
@@ -134,6 +134,7 @@
 /* 返回类型 2开头 */
 #define DATA                200     // 通用查询结果（预留）
 #define LOGIN_ACK           201     // 登录成功 {username,role}
+#define LOGOUT_ACK          202     // 退出登录成功 {ok,username}（会话身份清除，连接保留）
 #define START_CHARGING_ACK  208     // 开始充电成功 {orderNo, price, priceCents, startedAt}
 #define STOP_CHARGING_ACK   209     // 停止充电成功 {orderNo, amount, amountCents, paymentDeadline}
 #define ADDSUCCESS          210     // 新增成功

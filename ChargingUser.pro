@@ -1,5 +1,16 @@
 QT += widgets network
 
+qtHaveModule(multimedia):qtHaveModule(multimediawidgets) {
+    QT += multimedia multimediawidgets
+    DEFINES += CHARGINGUSER_ENABLE_QT_MULTIMEDIA
+}
+
+packagesExist(zxing) {
+    CONFIG += link_pkgconfig
+    PKGCONFIG += zxing
+    DEFINES += CHARGINGUSER_ENABLE_ZXING
+}
+
 # WebEngine/WebChannel are optional: local Qt kits without these modules must
 # still start with the existing painter-based fallback map.
 qtHaveModule(webenginewidgets):qtHaveModule(webchannel) {

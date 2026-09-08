@@ -29,6 +29,12 @@ contains(CONFIG, real_network) {
         $$PROJECT_ROOT/src/network/backendclient.h \
         $$PROJECT_ROOT/src/network/clientsocketworker.h \
         $$PROJECT_ROOT/src/network/clientsocketthreadmanager.h \
+        $$PROJECT_ROOT/src/modules/charger/ichargerservice.h \
+        $$PROJECT_ROOT/src/modules/charging/ichargingnetworkapi.h \
+        $$PROJECT_ROOT/src/modules/order/iorderservice.h \
+        $$PROJECT_ROOT/src/modules/reservation/ireservationservice.h \
+        $$PROJECT_ROOT/src/modules/user/iusernetworkapi.h \
+        $$PROJECT_ROOT/src/modules/wallet/iwalletnetworkapi.h \
         $$PROJECT_ROOT/src/network/realusernetworkapi.h \
         $$PROJECT_ROOT/src/network/realchargerservice.h \
         $$PROJECT_ROOT/src/network/realchargingnetworkapi.h \

@@ -45,6 +45,8 @@ public:
 
 public slots:
     void queryActiveOrder(const RequestContext &context) override;
+    void queryActiveOrders(const RequestContext &context) override;
+    void queryOrderHistory(const RequestContext &context) override;
     void queryOrderDetail(const RequestContext &context,
                           const QString &orderId) override;
     void stopCharging(const RequestContext &context,
@@ -62,6 +64,8 @@ private:
     enum class QueryKind
     {
         ActiveOrder,
+        ActiveOrders,
+        OrderHistory,
         OrderDetail,
         StopOrderLookup,
         StopRequest,
@@ -82,7 +86,7 @@ private:
                     const QString &orderId);
     void finishPending();
     void failPending(const QString &code, const QString &message,
-                     bool retryable);
+                     bool retryable, bool resultUnknown = false);
     void failAllPending(const QString &code, const QString &message);
     void emitFailed(const RequestContext &context, const QString &code,
                     const QString &message, bool retryable);

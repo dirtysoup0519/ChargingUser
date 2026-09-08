@@ -16,6 +16,8 @@ public slots:
     virtual void queryActiveOrder(const RequestContext &context) = 0;
     /** Returns every active order for accounts that may charge concurrently. */
     virtual void queryActiveOrders(const RequestContext &context) = 0;
+    /** Returns the current user's historical and active orders. */
+    virtual void queryOrderHistory(const RequestContext &context) = 0;
     virtual void queryOrderDetail(const RequestContext &context,
                                   const QString &orderId) = 0;
     virtual void stopCharging(const RequestContext &context,
@@ -27,6 +29,8 @@ signals:
     void activeOrderReady(const RequestContext &context,
                           const std::optional<ChargingOrder> &order);
     void activeOrdersReady(const RequestContext &context,
+                           const QVector<ChargingOrder> &orders);
+    void orderHistoryReady(const RequestContext &context,
                            const QVector<ChargingOrder> &orders);
     void orderDetailReady(const RequestContext &context,
                           const ChargingOrder &order);

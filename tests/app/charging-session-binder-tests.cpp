@@ -11,11 +11,18 @@ public:
     QVector<RequestContext> detailRequests;
     QVector<RequestContext> stopRequests;
     QVector<RequestContext> resultQueries;
+    QVector<RequestContext> activeOrdersQueries;
     QStringList orderIds;
     QStringList operationIds;
     QStringList cancellations;
 
     void queryActiveOrder(const RequestContext &) override {}
+    // 合同新增：多活动订单查询（会话页多会话选择），测试桩记录调用即可。
+    void queryActiveOrders(const RequestContext &context) override
+    {
+        activeOrdersQueries.append(context);
+    }
+    void queryOrderHistory(const RequestContext &) override {}
     void queryOrderDetail(const RequestContext &context,
                           const QString &orderId) override
     {

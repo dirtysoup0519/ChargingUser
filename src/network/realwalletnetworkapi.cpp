@@ -97,6 +97,9 @@ void RealWalletNetworkApi::recharge(const RequestContext &context,
 {
     if (amountCents <= 0 || !begin(PendingKind::Recharge, context)) return;
     QJsonObject payload{{QStringLiteral("username"), m_username},
+                        // 兼容联调服务端按元字段校验的实现；分字段仍是权威值。
+                        {QStringLiteral("amount"),
+                         static_cast<double>(amountCents) / 100.0},
                         {QStringLiteral("amountCents"),
                          static_cast<double>(amountCents)},
                         {QStringLiteral("requestId"), context.requestId},

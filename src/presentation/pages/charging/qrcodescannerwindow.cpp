@@ -3,6 +3,64 @@
 
 #include <QPushButton>
 #include <QStyle>
+#include <QHideEvent>
+
+#ifdef CHARGINGUSER_ENABLE_QT_MULTIMEDIA
+#include <QCamera>
+#include <QDateTime>
+#include <QMediaDevices>
+#include <QMediaCaptureSession>
+#include <QPixmap>
+#include <QTimer>
+#include <QVideoFrame>
+#include <QVideoFrameFormat>
+#include <QVideoSink>
+#endif
+
+#ifdef CHARGINGUSER_ENABLE_ZXING
+#include <ZXing/BarcodeFormat.h>
+#include <ZXing/ImageView.h>
+#include <ZXing/ReadBarcode.h>
+#include <ZXing/ReaderOptions.h>
+#endif
+
+#ifdef CHARGINGUSER_ENABLE_QT_MULTIMEDIA
+namespace {
+QImage imageFromVideoFrame(const QVideoFrame &source)
+{
+    QImage image = source.toImage();
+    if (!image.isNull()) return image;
+
+    QVideoFrame frame(source);
+    if (!frame.map(QVideoFrame::ReadOnly)) return {};
+    const QImage::Format imageFormat =
+        QVideoFrameFormat::imageFormatFromPixelFormat(frame.pixelFormat());
+    if (imageFormat != QImage::Format_Invalid) {
+        image = QImage(frame.bits(0), frame.width(), frame.height(),
+                       frame.bytesPerLine(0), imageFormat).copy();
+    }
+    frame.unmap();
+    return image;
+}
+
+QString decodeQrFrame(const QImage &source)
+{
+#ifdef CHARGINGUSER_ENABLE_ZXING
+    const QImage image = source.convertToFormat(QImage::Format_Grayscale8);
+    const ZXing::ImageView view(image.constBits(), image.width(), image.height(),
+                                ZXing::ImageFormat::Lum, image.bytesPerLine());
+    ZXing::ReaderOptions options;
+    options.setFormats(ZXing::BarcodeFormat::QRCode);
+    options.setTryHarder(true);
+    const ZXing::Barcode barcode = ZXing::ReadBarcode(view, options);
+    return barcode.isValid() ? QString::fromStdString(barcode.text()) : QString();
+#else
+    Q_UNUSED(source)
+    return {};
+#endif
+}
+}
+#endif
 
 QrCodeScannerWindow::QrCodeScannerWindow(QWidget *parent)
     : QWidget(parent), ui(new Ui::QrCodeScannerWindow)
@@ -21,7 +79,119 @@ QrCodeScannerWindow::QrCodeScannerWindow(QWidget *parent)
     render(ScanViewState{});
 }
 
-QrCodeScannerWindow::~QrCodeScannerWindow() { delete ui; }
+QrCodeScannerWindow::~QrCodeScannerWindow()
+{
+#ifdef CHARGINGUSER_ENABLE_QT_MULTIMEDIA
+    destroyCameraPipeline();
+#endif
+    delete ui;
+}
+
+bool QrCodeScannerWindow::cameraAvailable() const
+{
+#ifdef CHARGINGUSER_ENABLE_QT_MULTIMEDIA
+    return !QMediaDevices::videoInputs().isEmpty();
+#else
+    return false;
+#endif
+}
+
+void QrCodeScannerWindow::hideEvent(QHideEvent *event)
+{
+#ifdef CHARGINGUSER_ENABLE_QT_MULTIMEDIA
+    destroyCameraPipeline();
+#endif
+    QWidget::hideEvent(event);
+}
+
+#ifdef CHARGINGUSER_ENABLE_QT_MULTIMEDIA
+void QrCodeScannerWindow::createCameraPipeline()
+{
+    if (m_camera) return;
+    const auto cameras = QMediaDevices::videoInputs();
+    if (cameras.isEmpty()) return;
+
+    m_camera = new QCamera(cameras.front(), this);
+    m_captureSession = new QMediaCaptureSession(this);
+    m_videoSink = new QVideoSink(this);
+    m_captureSession->setCamera(m_camera);
+    m_captureSession->setVideoSink(m_videoSink);
+    connect(m_videoSink, &QVideoSink::videoFrameChanged, this,
+            [this](const QVideoFrame &frame) {
+        m_receivedCameraFrame = true;
+        if (!m_state.cameraPermissionGranted) return;
+        const QImage image = imageFromVideoFrame(frame);
+        if (image.isNull()) return;
+        m_convertedCameraFrame = true;
+        ui->previewPlaceholder->setPixmap(QPixmap::fromImage(image).scaled(
+            ui->previewPlaceholder->size(), Qt::KeepAspectRatioByExpanding,
+            Qt::SmoothTransformation));
+        const qint64 now = QDateTime::currentMSecsSinceEpoch();
+        if (m_qrDetectionLocked || now - m_lastDecodeAtMs < 300) return;
+        m_lastDecodeAtMs = now;
+        const QString rawText = decodeQrFrame(image);
+        if (rawText.isEmpty()) return;
+        m_qrDetectionLocked = true;
+        if (m_camera) m_camera->stop();
+        emit qrCodeDetected(rawText);
+    }, Qt::QueuedConnection);
+    connect(m_camera, &QCamera::errorOccurred, this,
+            [this](QCamera::Error, const QString &description) {
+        ui->stateLabel->setText(description.isEmpty()
+                                    ? tr("摄像头启动失败")
+                                    : tr("摄像头错误：%1").arg(description));
+        emit cameraStatusChanged(false, false);
+    });
+}
+
+void QrCodeScannerWindow::destroyCameraPipeline()
+{
+    ++m_cameraGeneration;
+    if (m_camera) m_camera->stop();
+    if (m_captureSession) {
+        m_captureSession->setVideoSink(nullptr);
+        m_captureSession->setCamera(nullptr);
+    }
+    delete m_videoSink;
+    delete m_captureSession;
+    delete m_camera;
+    m_videoSink = nullptr;
+    m_captureSession = nullptr;
+    m_camera = nullptr;
+    m_receivedCameraFrame = false;
+    m_convertedCameraFrame = false;
+    m_qrDetectionLocked = false;
+    m_lastDecodeAtMs = 0;
+}
+
+void QrCodeScannerWindow::startCamera(bool allowRestart)
+{
+    createCameraPipeline();
+    if (!m_camera) return;
+    m_receivedCameraFrame = false;
+    m_convertedCameraFrame = false;
+    m_qrDetectionLocked = false;
+    const int generation = m_cameraGeneration;
+    m_camera->start();
+    QTimer::singleShot(3500, this, [this, generation, allowRestart] {
+        if (!m_camera || generation != m_cameraGeneration || m_convertedCameraFrame) return;
+        if (m_receivedCameraFrame) {
+            ui->stateLabel->setText(tr("摄像头有视频帧，但当前像素格式无法转换"));
+            return;
+        }
+        if (!allowRestart) {
+            ui->stateLabel->setText(tr("摄像头重建后仍未收到画面，请检查虚拟机 USB 摄像头连接"));
+            return;
+        }
+        ui->stateLabel->setText(tr("正在释放并重建摄像头…"));
+        destroyCameraPipeline();
+        QTimer::singleShot(2500, this, [this] {
+            if (!m_state.cameraPermissionGranted || !isVisible()) return;
+            startCamera(false);
+        });
+    });
+}
+#endif
 
 void QrCodeScannerWindow::render(const ScanViewState &state)
 {
@@ -48,6 +218,18 @@ void QrCodeScannerWindow::render(const ScanViewState &state)
     ui->previewPlaceholder->setText(state.cameraAvailable
                                          ? tr("摄像头画面接入区域")
                                          : tr("未检测到摄像头\n可从相册选择二维码"));
+#ifdef CHARGINGUSER_ENABLE_QT_MULTIMEDIA
+    const bool showPreview = state.cameraPermissionGranted
+        && (state.status == ScanStatus::OpeningCamera || state.status == ScanStatus::Scanning);
+    ui->previewPlaceholder->setVisible(true);
+    if (showPreview) {
+        ui->previewPlaceholder->setText(QString());
+        if (!m_camera || !m_camera->isActive()) startCamera(true);
+    } else {
+        ui->previewPlaceholder->setPixmap(QPixmap());
+        destroyCameraPipeline();
+    }
+#endif
     ui->permissionButton->setVisible(!state.cameraPermissionGranted
                                      && state.cameraAvailable);
     ui->retryButton->setVisible(state.canRetry);
