@@ -5,6 +5,7 @@
 #include "app/iuseruibinder.h"
 #include "app/walletuibinder.h"
 #include "app/settlementuibinder.h"
+#include "app/reservationuibinder.h"
 #include "modules/charging/chargingservice.h"
 #include "network/backendclient.h"
 #include "network/qtnetworktransport.h"
@@ -12,6 +13,7 @@
 #include "network/realchargingnetworkapi.h"
 #include "network/realorderservice.h"
 #include "network/realwalletnetworkapi.h"
+#include "network/realreservationservice.h"
 #include "network/realusernetworkapi.h"
 #include "modules/wallet/walletservice.h"
 #include "modules/user/iuserservice.h"
@@ -195,6 +197,8 @@ int main(int argc, char *argv[])
     WalletService walletService(&walletNetwork);
     WalletUiBinder walletBinder(&walletService);
     SettlementUiBinder settlementBinder(&walletService);
+    RealReservationService reservationService(&backend);
+    ReservationUiBinder reservationBinder(&reservationService);
 
     const QJsonObject mapConfig = loadTencentMapConfig();
     QString mapKey = qEnvironmentVariable("TENCENT_MAP_KEY").trimmed();
@@ -371,6 +375,7 @@ int main(int argc, char *argv[])
         orderService.setIdentity(result.session.profile.userId);
         walletNetwork.setIdentity(result.session.profile.userId);
         chargingNetwork.setIdentity(result.session.profile.userId);
+        reservationService.setIdentity(result.session.profile.userId);
         walletBinder.setAccountId(result.session.profile.userId);
         walletBinder.activate();
         RequestContext recoveryContext{
@@ -395,19 +400,30 @@ int main(int argc, char *argv[])
         settlementBinder.showOrder(result.order);
     });
 
-    // ===== 阶段 B：预约/扫码页可达（业务 Binder 属阶段 J，渲染诚实失败态）=====
+    // ===== 预约真实网络链路：页面仅负责渲染，协议与状态由 Binder/Service 承担 =====
     QObject::connect(&stationDetail,
                      &StationDetailWindow::reservationConfirmationRequested,
                      &app, [&](const QString &stationId, const QString &chargerId) {
-        ReservationConfirmationViewState state;
+        ReservationConfirmationViewState state = reservationBinder.currentState();
         state.stationId = stationId;
         state.chargerId = chargerId;
-        state.status = ReservationConfirmationStatus::Error;
-        state.canRetry = true;
-        state.message = QStringLiteral("预约服务适配器尚未接入，功能开发中");
+        state.status = ReservationConfirmationStatus::Ready;
+        state.canReserve = true;
+        state.durationSeconds = 7200;
+        state.durationText = QStringLiteral("2 小时");
+        state.depositText = QStringLiteral("¥20.00");
+        state.depositPolicyText = QStringLiteral("预约保持 2 小时，过期规则由服务端结算");
         reservationConfirmation.render(state);
         mainWindow.renderSecondaryPage(&reservationConfirmation);
     });
+    QObject::connect(&reservationConfirmation,
+                     &ReservationConfirmationWindow::reserveRequested,
+                     &reservationBinder, &ReservationUiBinder::reserveRequested);
+    QObject::connect(&reservationConfirmation,
+                     &ReservationConfirmationWindow::reservationRefreshRequested,
+                     &reservationBinder, &ReservationUiBinder::refreshRequested);
+    QObject::connect(&reservationBinder, &ReservationUiBinder::stateChanged,
+                     &reservationConfirmation, &ReservationConfirmationWindow::render);
     QObject::connect(&reservationConfirmation,
                      &ReservationConfirmationWindow::backRequested,
                      &app, [&] {

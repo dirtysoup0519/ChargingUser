@@ -10,6 +10,7 @@ HEADERS += \
     $$PWD/ichargingsessionuibinder.h \
     $$PWD/chargingsessionuibinder.h \
     $$PWD/settlementuibinder.h \
+    $$PWD/reservationuibinder.h \
     $$PWD/walletuibinder.h \
     $$PWD/iuseruibinder.h \
     $$PWD/useruibinder.h \
@@ -20,6 +21,7 @@ SOURCES += \
     $$PWD/charginguibinder.cpp \
     $$PWD/chargingsessionuibinder.cpp \
     $$PWD/settlementuibinder.cpp \
+    $$PWD/reservationuibinder.cpp \
     $$PWD/walletuibinder.cpp \
     $$PWD/useruibinder.cpp \
     $$PWD/application.cpp
