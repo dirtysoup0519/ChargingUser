@@ -58,6 +58,11 @@ signals:
                                     const QString &stationId,
                                     const QString &chargerId);
     void scanChargingRequested();
+    void activeSessionsRequested();
+    void activeSessionSelected(const QString &orderId);
+    void chargingRefreshRequested();
+    void stopChargingRequested();
+    void recoverStopResultRequested();
 
 protected:
     bool eventFilter(QObject *watched, QEvent *event) override;

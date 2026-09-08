@@ -427,6 +427,20 @@ int main(int argc, char *argv[])
         confirmationOpenedFromScanner = false;
         chargeBinder.chargeConfirmationRequested(stationId, chargerId);
     });
+    // 兼容详情页旧版意图信号：正式入口统一转入当前选桩链路。
+    QObject::connect(&stationDetail, &StationDetailWindow::navigationRequested,
+                     &app, [&] {
+        mapBinder.routePreviewRequested(TravelMode::Driving);
+    });
+    QObject::connect(&stationDetail, &StationDetailWindow::chargeRequested,
+                     &app, [&] {
+        const StationDetailViewState state = mapBinder.currentStationDetailState();
+        if (!state.stationId.isEmpty() && !state.selectedChargerId.isEmpty()) {
+            confirmationOpenedFromScanner = false;
+            chargeBinder.chargeConfirmationRequested(state.stationId,
+                                                     state.selectedChargerId);
+        }
+    });
     QObject::connect(&chargeBinder, &IChargingUiBinder::confirmationStateChanged,
                      &chargeConfirmation, &ChargeConfirmationWindow::render);
     QObject::connect(&chargeBinder, &IChargingUiBinder::confirmationPageRequested,
@@ -587,6 +601,17 @@ int main(int argc, char *argv[])
                      &sessionBinder, &IChargingSessionUiBinder::activeSessionsRequested);
     QObject::connect(&sessionWindow,
                      &ChargingSessionWindow::activeSessionSelected,
+                     &sessionBinder, &IChargingSessionUiBinder::activeSessionSelected);
+    // 主窗口内嵌会话页与二级会话页共享同一 Binder，保证两个入口按钮行为一致。
+    QObject::connect(&mainWindow, &MainWindow::chargingRefreshRequested,
+                     &sessionBinder, &IChargingSessionUiBinder::refreshRequested);
+    QObject::connect(&mainWindow, &MainWindow::stopChargingRequested,
+                     &sessionBinder, &IChargingSessionUiBinder::stopChargingRequested);
+    QObject::connect(&mainWindow, &MainWindow::recoverStopResultRequested,
+                     &sessionBinder, &IChargingSessionUiBinder::recoverStopResultRequested);
+    QObject::connect(&mainWindow, &MainWindow::activeSessionsRequested,
+                     &sessionBinder, &IChargingSessionUiBinder::activeSessionsRequested);
+    QObject::connect(&mainWindow, &MainWindow::activeSessionSelected,
                      &sessionBinder, &IChargingSessionUiBinder::activeSessionSelected);
     const auto openScanner = [&](ScanEntryPoint entryPoint) {
         scanEntryPoint = entryPoint;

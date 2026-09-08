@@ -146,6 +146,16 @@ MainWindow::MainWindow(QWidget *parent) : QWidget(parent), ui(new Ui::MainWindow
             this, &MainWindow::logoutRequested);
     connect(ui->chargingSessionWidget, &ChargingSessionWindow::scanChargingRequested,
             this, &MainWindow::scanChargingRequested);
+    connect(ui->chargingSessionWidget, &ChargingSessionWindow::activeSessionsRequested,
+            this, &MainWindow::activeSessionsRequested);
+    connect(ui->chargingSessionWidget, &ChargingSessionWindow::activeSessionSelected,
+            this, &MainWindow::activeSessionSelected);
+    connect(ui->chargingSessionWidget, &ChargingSessionWindow::refreshRequested,
+            this, &MainWindow::chargingRefreshRequested);
+    connect(ui->chargingSessionWidget, &ChargingSessionWindow::stopChargingRequested,
+            this, &MainWindow::stopChargingRequested);
+    connect(ui->chargingSessionWidget, &ChargingSessionWindow::recoverStopResultRequested,
+            this, &MainWindow::recoverStopResultRequested);
 }
 
 void MainWindow::renderChargingSession(const ChargingSessionViewState &state)
