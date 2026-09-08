@@ -503,6 +503,28 @@ int main(int argc, char *argv[])
                                                     QStringLiteral("智充实训版")); });
     QObject::connect(&stationDetail, &StationDetailWindow::chargerSelected,
                      &mapBinder, &IMapUiBinder::chargerSelected);
+    // 预约状态变化由服务端/预约 Binder 决定；详情页事件必须有明确反馈，不能静默无响应。
+    QObject::connect(&stationDetail,
+                     &StationDetailWindow::reservationExpiredRefreshRequested,
+                     &app, [&] {
+        mapBinder.stationRefreshRequested();
+    });
+    const auto reservationCancelUnavailable = [&](const QString &) {
+        QMessageBox::information(&stationDetail, QStringLiteral("取消预约"),
+                                 QStringLiteral("当前正式服务端尚未提供取消预约接口。"));
+    };
+    QObject::connect(&stationDetail,
+                     &StationDetailWindow::cancelReservationRequested,
+                     &app, reservationCancelUnavailable);
+    QObject::connect(&stationDetail,
+                     &StationDetailWindow::cancelReservationRetryRequested,
+                     &app, reservationCancelUnavailable);
+    QObject::connect(&stationDetail,
+                     &StationDetailWindow::activeReservationRequested,
+                     &app, [&](const QString &, const QString &stationId, const QString &) {
+        if (!stationId.trimmed().isEmpty())
+            mapBinder.stationDetailsRequested(stationId);
+    });
     QObject::connect(&orderService, &IOrderService::activeOrdersReady,
                      &app, [&](const RequestContext &, const QVector<ChargingOrder> &orders) {
         OrderListViewState state;
