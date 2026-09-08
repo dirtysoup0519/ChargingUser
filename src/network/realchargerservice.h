@@ -16,14 +16,12 @@ class BackendClient;
 class QTimer;
 
 /**
- * IChargerService 的真实适配器（服务端协议 v2.4，GETDATA 通用通道）。
+ * IChargerService 的真实适配器（服务端协议 v2.6，站点专用查询通道）。
  *
  * 协议现实约束：
- * - 服务端没有站点/电桩专用消息，站点数据走 `100 GETDATA {table,cond}` →
- *   `200 DATA {data:[...]}` 通用查询，本适配器取 station 与 charger 两张表；
- * - `200 DATA` 应答不带表名，并发请求的应答无法区分归属，因此**全局同时
- *   只允许一个在途查询**（比合同"同类串行"更保守），每个查询内部按
- *   "先 station 表、后 charger 表"两步推进，FIFO 顺序天然消歧；
+ * - 站点数据走 `119 STATION_QRY_REQ` → `229 STATION_QRY_ACK`，每个站点
+ *   内嵌 chargers，避免与订单、钱包共用 `200 DATA` 造成跨适配器误归属；
+ * - 服务端暂未稳定回显 requestId，因此同类查询仍保持单在途；
  * - 协议无 requestId 回传约定：请求按合同 §11 v1.1/v1.2 保守规则关联，
  *   载荷仍携带 requestId 以便服务端未来支持回显时自动升级。
  *
@@ -72,7 +70,6 @@ private:
         QString operationId;
         QString stationId;      // 仅 Detail 用：目标站点（= stationName）
         StationQuery query;     // 仅 List 用：过滤与分页参数
-        bool waitingStations = true;
         QJsonArray stationRecords;
         QJsonArray chargerRecords;
         int skippedRecords = 0; // 宽容解析跳过的脏行数（诊断用）
@@ -81,7 +78,6 @@ private:
 
     bool startQuery(QueryKind kind, const RequestContext &context,
                     const StationQuery &query, const QString &stationId);
-    void requestTable(const QString &table);
     void finishQuery();
     void failPending(const QString &code, const QString &message, bool retryable);
     void failAllPending(const QString &code, const QString &message);
@@ -90,10 +86,9 @@ private:
 
     void publishPage(const PendingRequest &pending);
     void publishDetail(const PendingRequest &pending);
-    bool advanceAfterStations();
     void handleTimeout();
 
-    static QJsonObject makeGetdata(const QString &table, const QString &requestId);
+    static QJsonObject makeStationQuery(const PendingRequest &pending);
     static QString stationField(const QJsonObject &record);
     static std::optional<GeoPoint> parsePoint(const QJsonObject &record);
     static std::optional<qint64> parsePriceCents(const QJsonObject &record);
@@ -111,6 +106,6 @@ private:
 
     BackendClient *m_backend;
     int m_requestTimeoutMs = 10000;
-    /** 全局单在途查询：200 DATA 无表名回显，并发查询的应答无法区分归属。 */
+    /** 同类单在途查询：229 当前没有可靠 requestId 回显。 */
     std::optional<PendingRequest> m_pending;
 };

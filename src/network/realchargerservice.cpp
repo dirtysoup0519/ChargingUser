@@ -143,8 +143,7 @@ void RealChargerService::cancel(const QString &requestId)
 bool RealChargerService::startQuery(QueryKind kind, const RequestContext &context,
                                     const StationQuery &query, const QString &stationId)
 {
-    // 200 DATA 无表名/请求回显，并发查询应答无法区分：全局串行是协议现实下
-    // 最保守的归属策略（合同 §4.5）。
+    // 229 暂无可靠 requestId 回显，同类查询保持单在途。
     if (m_pending) {
         emitFailed(context, QStringLiteral("charger-request-in-flight"),
                    QStringLiteral("Another station query is still in progress."),
@@ -170,25 +169,19 @@ bool RealChargerService::startQuery(QueryKind kind, const RequestContext &contex
     pending.timer = timer;
     m_pending = pending;
 
-    requestTable(QStringLiteral("station"));
+    m_backend->sendFrame(STATION_QRY_REQ, makeStationQuery(*m_pending));
     timer->start(m_requestTimeoutMs);
     return true;
 }
 
-void RealChargerService::requestTable(const QString &table)
+QJsonObject RealChargerService::makeStationQuery(const PendingRequest &pending)
 {
-    m_backend->sendFrame(GETDATA, makeGetdata(table, m_pending->requestId));
-}
-
-QJsonObject RealChargerService::makeGetdata(const QString &table,
-                                            const QString &requestId)
-{
-    // cond 留空取全表（实训规模数据量可控），按 stationName 客户端侧过滤；
-    // requestId 随载荷发送：服务端当前不回显，未来支持时可自动升级关联。
     QJsonObject payload;
-    payload.insert(QStringLiteral("table"), table);
-    payload.insert(QStringLiteral("cond"), QJsonObject());
-    payload.insert(QStringLiteral("requestId"), requestId);
+    if (pending.kind == QueryKind::StationDetail) {
+        payload.insert(QStringLiteral("stationName"), pending.stationId);
+    }
+    // 新服务端可回显时直接获得强关联；旧 v2.6 服务端会安全忽略附加字段。
+    payload.insert(QStringLiteral("requestId"), pending.requestId);
     return payload;
 }
 
@@ -202,7 +195,7 @@ void RealChargerService::handleFrame(int msgType, const QJsonObject &payload)
         }
         return;
     }
-    if (msgType != DATA || !m_pending) {
+    if (msgType != STATION_QRY_ACK || !m_pending) {
         return;
     }
 
@@ -212,42 +205,39 @@ void RealChargerService::handleFrame(int msgType, const QJsonObject &payload)
         return;
     }
 
-    const QJsonValue dataValue = payload.value(QStringLiteral("data"));
-    if (!dataValue.isArray()) {
+    const QJsonValue stationsValue = payload.value(QStringLiteral("stations"));
+    if (!stationsValue.isArray()) {
         failPending(QStringLiteral("bad-response"),
                     QStringLiteral("Server response was malformed."), true);
         return;
     }
-    const QJsonArray records = dataValue.toArray();
-    if (m_pending->waitingStations) {
-        m_pending->stationRecords = records;
-        advanceAfterStations();
-    } else {
-        m_pending->chargerRecords = records;
-        finishQuery();
-    }
-}
 
-bool RealChargerService::advanceAfterStations()
-{
+    m_pending->stationRecords = stationsValue.toArray();
     if (m_pending->kind == QueryKind::StationDetail) {
-        // 详情查询：station 表里找不到目标站点就早失败，省一次 charger 往返。
         const QString target = m_pending->stationId;
         const bool found = std::any_of(
             m_pending->stationRecords.cbegin(), m_pending->stationRecords.cend(),
             [&target](const QJsonValue &value) {
-                return value.isObject() && stationField(value.toObject()) == target;
+                return value.isObject()
+                       && stationField(value.toObject()) == target;
             });
         if (!found) {
             failPending(QStringLiteral("charger-station-not-found"),
                         QStringLiteral("Requested station does not exist."), false);
-            return false;
+            return;
         }
     }
-
-    m_pending->waitingStations = false;
-    requestTable(QStringLiteral("charger"));
-    return true;
+    for (const QJsonValue &stationValue : std::as_const(m_pending->stationRecords)) {
+        if (!stationValue.isObject()) {
+            continue;
+        }
+        const QJsonArray chargers =
+            stationValue.toObject().value(QStringLiteral("chargers")).toArray();
+        for (const QJsonValue &chargerValue : chargers) {
+            m_pending->chargerRecords.append(chargerValue);
+        }
+    }
+    finishQuery();
 }
 
 void RealChargerService::finishQuery()
@@ -372,7 +362,7 @@ void RealChargerService::publishDetail(const PendingRequest &pending)
 {
     const RequestContext context{pending.requestId, pending.operationId};
 
-    // 目标站点记录在 advanceAfterStations 已确认存在，这里按权威键取出。
+    // 专用查询在站点不存在时通常返回 300；仍防御性处理空数组。
     const QString target = pending.stationId;
     QJsonObject stationRecord;
     for (const QJsonValue &value : std::as_const(pending.stationRecords)) {
@@ -380,6 +370,11 @@ void RealChargerService::publishDetail(const PendingRequest &pending)
             stationRecord = value.toObject();
             break;
         }
+    }
+    if (stationRecord.isEmpty()) {
+        emitFailed(context, QStringLiteral("charger-station-not-found"),
+                   QStringLiteral("Requested station does not exist."), false);
+        return;
     }
 
     StationDetail detail;
@@ -391,8 +386,7 @@ void RealChargerService::publishDetail(const PendingRequest &pending)
     detail.summary.priceCentsPerKwh = parsePriceCents(stationRecord);
     detail.updatedAtUtc = QDateTime::currentDateTimeUtc();
 
-    // charger 表按 stationName 归属过滤：协议对 100 的 cond 支持未知，
-    // 客户端过滤在"服务端忽略 cond 返回全表"时依然正确。
+    // 229 内嵌电桩仍按 stationName 防御性过滤，避免脏数据串入其他站点。
     int available = 0;
     for (const QJsonValue &value : std::as_const(pending.chargerRecords)) {
         if (!value.isObject()) {
