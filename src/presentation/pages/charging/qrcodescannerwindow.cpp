@@ -3,6 +3,7 @@
 
 #include <QPushButton>
 #include <QStyle>
+#include <QHideEvent>
 
 #ifdef CHARGINGUSER_ENABLE_QT_MULTIMEDIA
 #include <QCamera>
@@ -50,47 +51,111 @@ QrCodeScannerWindow::QrCodeScannerWindow(QWidget *parent)
     connect(ui->torchButton, &QPushButton::clicked, this, [this] {
         emit torchToggleRequested(!m_state.torchEnabled);
     });
-#ifdef CHARGINGUSER_ENABLE_QT_MULTIMEDIA
-    const auto cameras = QMediaDevices::videoInputs();
-    if (!cameras.isEmpty()) {
-        m_camera = new QCamera(cameras.front(), this);
-        m_captureSession = new QMediaCaptureSession(this);
-        m_videoSink = new QVideoSink(this);
-        m_captureSession->setCamera(m_camera);
-        m_captureSession->setVideoSink(m_videoSink);
-        connect(m_videoSink, &QVideoSink::videoFrameChanged, this,
-                [this](const QVideoFrame &frame) {
-            m_receivedCameraFrame = true;
-            if (!m_state.cameraPermissionGranted) return;
-            const QImage image = imageFromVideoFrame(frame);
-            if (image.isNull()) return;
-            m_convertedCameraFrame = true;
-            ui->previewPlaceholder->setPixmap(QPixmap::fromImage(image).scaled(
-                ui->previewPlaceholder->size(), Qt::KeepAspectRatioByExpanding,
-                Qt::SmoothTransformation));
-        }, Qt::QueuedConnection);
-        connect(m_camera, &QCamera::errorOccurred, this,
-                [this](QCamera::Error, const QString &description) {
-            ui->stateLabel->setText(description.isEmpty()
-                                        ? tr("摄像头启动失败")
-                                        : tr("摄像头错误：%1").arg(description));
-            emit cameraStatusChanged(false, false);
-        });
-    }
-#endif
     render(ScanViewState{});
 }
 
-QrCodeScannerWindow::~QrCodeScannerWindow() { delete ui; }
+QrCodeScannerWindow::~QrCodeScannerWindow()
+{
+#ifdef CHARGINGUSER_ENABLE_QT_MULTIMEDIA
+    destroyCameraPipeline();
+#endif
+    delete ui;
+}
 
 bool QrCodeScannerWindow::cameraAvailable() const
 {
 #ifdef CHARGINGUSER_ENABLE_QT_MULTIMEDIA
-    return m_camera != nullptr;
+    return !QMediaDevices::videoInputs().isEmpty();
 #else
     return false;
 #endif
 }
+
+void QrCodeScannerWindow::hideEvent(QHideEvent *event)
+{
+#ifdef CHARGINGUSER_ENABLE_QT_MULTIMEDIA
+    destroyCameraPipeline();
+#endif
+    QWidget::hideEvent(event);
+}
+
+#ifdef CHARGINGUSER_ENABLE_QT_MULTIMEDIA
+void QrCodeScannerWindow::createCameraPipeline()
+{
+    if (m_camera) return;
+    const auto cameras = QMediaDevices::videoInputs();
+    if (cameras.isEmpty()) return;
+
+    m_camera = new QCamera(cameras.front(), this);
+    m_captureSession = new QMediaCaptureSession(this);
+    m_videoSink = new QVideoSink(this);
+    m_captureSession->setCamera(m_camera);
+    m_captureSession->setVideoSink(m_videoSink);
+    connect(m_videoSink, &QVideoSink::videoFrameChanged, this,
+            [this](const QVideoFrame &frame) {
+        m_receivedCameraFrame = true;
+        if (!m_state.cameraPermissionGranted) return;
+        const QImage image = imageFromVideoFrame(frame);
+        if (image.isNull()) return;
+        m_convertedCameraFrame = true;
+        ui->previewPlaceholder->setPixmap(QPixmap::fromImage(image).scaled(
+            ui->previewPlaceholder->size(), Qt::KeepAspectRatioByExpanding,
+            Qt::SmoothTransformation));
+    }, Qt::QueuedConnection);
+    connect(m_camera, &QCamera::errorOccurred, this,
+            [this](QCamera::Error, const QString &description) {
+        ui->stateLabel->setText(description.isEmpty()
+                                    ? tr("摄像头启动失败")
+                                    : tr("摄像头错误：%1").arg(description));
+        emit cameraStatusChanged(false, false);
+    });
+}
+
+void QrCodeScannerWindow::destroyCameraPipeline()
+{
+    ++m_cameraGeneration;
+    if (m_camera) m_camera->stop();
+    if (m_captureSession) {
+        m_captureSession->setVideoSink(nullptr);
+        m_captureSession->setCamera(nullptr);
+    }
+    delete m_videoSink;
+    delete m_captureSession;
+    delete m_camera;
+    m_videoSink = nullptr;
+    m_captureSession = nullptr;
+    m_camera = nullptr;
+    m_receivedCameraFrame = false;
+    m_convertedCameraFrame = false;
+}
+
+void QrCodeScannerWindow::startCamera(bool allowRestart)
+{
+    createCameraPipeline();
+    if (!m_camera) return;
+    m_receivedCameraFrame = false;
+    m_convertedCameraFrame = false;
+    const int generation = m_cameraGeneration;
+    m_camera->start();
+    QTimer::singleShot(3500, this, [this, generation, allowRestart] {
+        if (!m_camera || generation != m_cameraGeneration || m_convertedCameraFrame) return;
+        if (m_receivedCameraFrame) {
+            ui->stateLabel->setText(tr("摄像头有视频帧，但当前像素格式无法转换"));
+            return;
+        }
+        if (!allowRestart) {
+            ui->stateLabel->setText(tr("摄像头重建后仍未收到画面，请检查虚拟机 USB 摄像头连接"));
+            return;
+        }
+        ui->stateLabel->setText(tr("正在释放并重建摄像头…"));
+        destroyCameraPipeline();
+        QTimer::singleShot(2500, this, [this] {
+            if (!m_state.cameraPermissionGranted || !isVisible()) return;
+            startCamera(false);
+        });
+    });
+}
+#endif
 
 void QrCodeScannerWindow::render(const ScanViewState &state)
 {
@@ -118,45 +183,15 @@ void QrCodeScannerWindow::render(const ScanViewState &state)
                                          ? tr("摄像头画面接入区域")
                                          : tr("未检测到摄像头\n可从相册选择二维码"));
 #ifdef CHARGINGUSER_ENABLE_QT_MULTIMEDIA
-    if (m_videoSink) {
-        const bool showPreview = state.cameraPermissionGranted
-            && (state.status == ScanStatus::OpeningCamera || state.status == ScanStatus::Scanning);
-        ui->previewPlaceholder->setVisible(true);
-        if (showPreview)
-            ui->previewPlaceholder->setText(QString());
-        else
-            ui->previewPlaceholder->setPixmap(QPixmap());
-        if (showPreview && !m_camera->isActive())
-        {
-            m_receivedCameraFrame = false;
-            m_convertedCameraFrame = false;
-            m_cameraRestartCount = 0;
-            m_camera->start();
-            QTimer::singleShot(3000, this, [this] {
-                if (!m_camera || !m_camera->isActive() || m_convertedCameraFrame) return;
-                if (m_receivedCameraFrame) {
-                    ui->stateLabel->setText(tr("摄像头有视频帧，但当前像素格式无法转换"));
-                    return;
-                }
-                ui->stateLabel->setText(tr("摄像头正在重新连接…"));
-                m_camera->stop();
-                ++m_cameraRestartCount;
-                QTimer::singleShot(1800, this, [this] {
-                    if (!m_camera || !m_state.cameraPermissionGranted) return;
-                    m_receivedCameraFrame = false;
-                    m_convertedCameraFrame = false;
-                    m_camera->start();
-                    QTimer::singleShot(4000, this, [this] {
-                        if (!m_camera || m_convertedCameraFrame) return;
-                        ui->stateLabel->setText(m_receivedCameraFrame
-                            ? tr("摄像头有视频帧，但当前像素格式无法转换")
-                            : tr("摄像头重连后仍未收到画面，请关闭其他摄像头程序后重试"));
-                    });
-                });
-            });
-        }
-        if (!showPreview && m_camera->isActive())
-            m_camera->stop();
+    const bool showPreview = state.cameraPermissionGranted
+        && (state.status == ScanStatus::OpeningCamera || state.status == ScanStatus::Scanning);
+    ui->previewPlaceholder->setVisible(true);
+    if (showPreview) {
+        ui->previewPlaceholder->setText(QString());
+        if (!m_camera || !m_camera->isActive()) startCamera(true);
+    } else {
+        ui->previewPlaceholder->setPixmap(QPixmap());
+        destroyCameraPipeline();
     }
 #endif
     ui->permissionButton->setVisible(!state.cameraPermissionGranted

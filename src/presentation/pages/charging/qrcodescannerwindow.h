@@ -6,6 +6,7 @@
 
 #ifdef CHARGINGUSER_ENABLE_QT_MULTIMEDIA
 class QCamera;
+class QHideEvent;
 class QMediaCaptureSession;
 class QVideoSink;
 #endif
@@ -29,6 +30,9 @@ signals:
     void torchToggleRequested(bool enabled);
     void cameraStatusChanged(bool available, bool permissionGranted);
 
+protected:
+    void hideEvent(QHideEvent *event) override;
+
 private:
     Ui::QrCodeScannerWindow *ui;
     ScanViewState m_state;
@@ -38,6 +42,10 @@ private:
     QVideoSink *m_videoSink = nullptr;
     bool m_receivedCameraFrame = false;
     bool m_convertedCameraFrame = false;
-    int m_cameraRestartCount = 0;
+    int m_cameraGeneration = 0;
+
+    void createCameraPipeline();
+    void destroyCameraPipeline();
+    void startCamera(bool allowRestart);
 #endif
 };
