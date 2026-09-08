@@ -50,12 +50,68 @@
 #include <QJsonObject>
 #include <QJsonParseError>
 #include <QMessageBox>
+#include <QImage>
+#include <QUrlQuery>
 #include <QRegularExpression>
 #include <QStringList>
 #include <QUuid>
 
+#include <algorithm>
+
+#ifdef CHARGINGUSER_ENABLE_ZXING
+#include <ZXing/BarcodeFormat.h>
+#include <ZXing/ImageView.h>
+#include <ZXing/ReadBarcode.h>
+#include <ZXing/ReaderOptions.h>
+#endif
+
 namespace
 {
+
+QString decodeQrImage(const QString &path, QString *error)
+{
+#ifdef CHARGINGUSER_ENABLE_ZXING
+    QImage image(path);
+    if (image.isNull()) {
+        *error = QStringLiteral("无法读取所选图片。");
+        return {};
+    }
+    image = image.convertToFormat(QImage::Format_Grayscale8);
+    const ZXing::ImageView view(image.constBits(), image.width(), image.height(),
+                                ZXing::ImageFormat::Lum, image.bytesPerLine());
+    ZXing::ReaderOptions options;
+    options.setFormats(ZXing::BarcodeFormat::QRCode);
+    options.setTryHarder(true);
+    const ZXing::Barcode barcode = ZXing::ReadBarcode(view, options);
+    if (!barcode.isValid()) {
+        *error = QStringLiteral("图片中没有识别到有效二维码。");
+        return {};
+    }
+    return QString::fromStdString(barcode.text());
+#else
+    Q_UNUSED(path)
+    *error = QStringLiteral("当前构建未检测到 ZXing 二维码解析库。");
+    return {};
+#endif
+}
+
+QString chargerCodeFromQr(const QString &raw)
+{
+    const QString value = raw.trimmed();
+    if (value.isEmpty() || value.size() > 512) return {};
+    QJsonParseError parseError;
+    const QJsonDocument json = QJsonDocument::fromJson(value.toUtf8(), &parseError);
+    if (parseError.error == QJsonParseError::NoError && json.isObject()) {
+        return json.object().value(QStringLiteral("chargerCode")).toString().trimmed();
+    }
+    const QUrl url(value);
+    if (url.isValid() && !url.scheme().isEmpty()) {
+        const QString code = QUrlQuery(url).queryItemValue(QStringLiteral("chargerCode")).trimmed();
+        if (!code.isEmpty()) return code;
+    }
+    static const QRegularExpression safeCode(QStringLiteral("^[A-Za-z0-9_.:-]{1,64}$"));
+    return safeCode.match(value).hasMatch() ? value : QString();
+}
 
 QString connectionStateName(ConnectionState state)
 {
@@ -525,10 +581,51 @@ int main(int argc, char *argv[])
             QStringLiteral("图片 (*.png *.jpg *.jpeg *.bmp)"));
         if (path.isEmpty()) return;
         ScanViewState state;
-        state.status = ScanStatus::Error;
-        state.message = QStringLiteral("已选择图片，但当前版本尚未接入二维码解析器：%1").arg(path);
         state.canImportImage = true;
+        QString decodeError;
+        const QString raw = decodeQrImage(path, &decodeError);
+        if (raw.isEmpty()) {
+            state.status = ScanStatus::Error;
+            state.message = decodeError;
+            state.canRetry = true;
+            qrScanner.render(state);
+            return;
+        }
+        const QString chargerCode = chargerCodeFromQr(raw);
+        if (chargerCode.isEmpty()) {
+            state.status = ScanStatus::Error;
+            state.message = QStringLiteral("二维码内容不包含合法的 chargerCode。");
+            state.canRetry = true;
+            qrScanner.render(state);
+            return;
+        }
+        const StationDetailViewState detail = mapBinder.currentStationDetailState();
+        const auto charger = std::find_if(detail.chargers.cbegin(), detail.chargers.cend(),
+                                          [&chargerCode](const ChargerListItemView &item) {
+            return item.chargerId.compare(chargerCode, Qt::CaseInsensitive) == 0;
+        });
+        if (detail.status != MapLoadStatus::Ready || charger == detail.chargers.cend()) {
+            state.status = ScanStatus::Error;
+            state.message = QStringLiteral("服务端当前站点数据中找不到该电桩，请返回站点详情刷新后重试。");
+            state.canRetry = true;
+            qrScanner.render(state);
+            return;
+        }
+        if (!charger->canCharge) {
+            state.status = ScanStatus::Error;
+            state.message = charger->disabledReason.isEmpty()
+                                ? QStringLiteral("该电桩当前不可启动充电。")
+                                : charger->disabledReason;
+            state.canRetry = true;
+            qrScanner.render(state);
+            return;
+        }
+        state.status = ScanStatus::Validating;
+        state.chargerDisplayText = chargerCode;
+        state.message = QStringLiteral("二维码识别成功，正在加载充电确认信息…");
+        state.canImportImage = false;
         qrScanner.render(state);
+        chargeBinder.chargeConfirmationRequested(detail.stationId, charger->chargerId);
     });
     QObject::connect(&qrScanner, &QrCodeScannerWindow::torchToggleRequested,
                      &app, [&](bool) {
