@@ -22,8 +22,11 @@
 #include "presentation/contracts/reservationviewstates.h"
 #include "presentation/pages/auth/loginwindow.h"
 #include "presentation/pages/charging/chargeconfirmationwindow.h"
+#include "presentation/pages/charging/chargingsessionwindow.h"
+#include "presentation/pages/charging/paymentwindow.h"
 #include "presentation/pages/charging/qrcodescannerwindow.h"
 #include "presentation/pages/charging/reservationconfirmationwindow.h"
+#include "presentation/pages/charging/settlementwindow.h"
 #include "presentation/pages/home/navigationwindow.h"
 #include "presentation/pages/home/stationdetailwindow.h"
 #include "presentation/pages/profile/profileeditwindow.h"
@@ -251,6 +254,12 @@ int main(int argc, char *argv[])
     mainWindow.registerSecondaryPage(&walletRecharge);
     mainWindow.registerSecondaryPage(&reservationConfirmation);
     mainWindow.registerSecondaryPage(&qrScanner);
+
+    // 合同 §3：会话页与结算页接入（充电启动/活动恢复到达，G/H 阶段展示载体）。
+    ChargingSessionWindow sessionWindow(&mainWindow);
+    SettlementWindow settlementWindow(&mainWindow);
+    mainWindow.registerSecondaryPage(&sessionWindow);
+    mainWindow.registerSecondaryPage(&settlementWindow);
     if (!mapKey.isEmpty()) {
         mainWindow.setMapKey(mapKey);
     }
@@ -379,6 +388,55 @@ int main(int argc, char *argv[])
     QObject::connect(&walletBinder, &WalletUiBinder::profileRefreshRequested,
                      userService, &IUserService::refreshCurrentUser);
 
+    // 合同 §3.1：会话页双向接线（意图 → Binder，状态 → 渲染）。
+    QObject::connect(&sessionBinder,
+                     &IChargingSessionUiBinder::sessionStateChanged,
+                     &sessionWindow, &ChargingSessionWindow::render);
+    QObject::connect(&sessionBinder,
+                     &IChargingSessionUiBinder::activeSessionsStateChanged,
+                     &sessionWindow, &ChargingSessionWindow::renderSessions);
+    QObject::connect(&sessionWindow, &ChargingSessionWindow::refreshRequested,
+                     &sessionBinder, &IChargingSessionUiBinder::refreshRequested);
+    QObject::connect(&sessionWindow, &ChargingSessionWindow::stopChargingRequested,
+                     &sessionBinder, &IChargingSessionUiBinder::stopChargingRequested);
+    QObject::connect(&sessionWindow,
+                     &ChargingSessionWindow::recoverStopResultRequested,
+                     &sessionBinder, &IChargingSessionUiBinder::recoverStopResultRequested);
+    QObject::connect(&sessionWindow,
+                     &ChargingSessionWindow::activeSessionsRequested,
+                     &sessionBinder, &IChargingSessionUiBinder::activeSessionsRequested);
+    QObject::connect(&sessionWindow,
+                     &ChargingSessionWindow::activeSessionSelected,
+                     &sessionBinder, &IChargingSessionUiBinder::activeSessionSelected);
+    QObject::connect(&sessionWindow, &ChargingSessionWindow::scanChargingRequested,
+                     &app, [&] {
+        mainWindow.renderSecondaryPage(&qrScanner);
+    });
+
+    // 合同 §3.2：充电启动成功 → 携带真实 orderId 进入会话页。
+    QObject::connect(&chargeBinder, &IChargingUiBinder::chargingSessionRequested,
+                     &app, [&](const StartChargingResult &result) {
+        sessionBinder.sessionRequested(result.orderId);
+        mainWindow.renderSecondaryPage(&sessionWindow);
+    });
+
+    // 合同 §3.5：结算页接线（展示 → 支付意图 → 刷新）。
+    QObject::connect(&settlementBinder, &SettlementUiBinder::stateChanged,
+                     &settlementWindow, &SettlementWindow::render);
+    QObject::connect(&settlementWindow, &SettlementWindow::paymentRequested,
+                     &app, [&](const QString &) {
+        settlementBinder.payRequested();
+    });
+    QObject::connect(&settlementWindow, &SettlementWindow::backRequested,
+                     &app, [&] {
+        sessionWindow.render(sessionBinder.currentState());
+        mainWindow.renderSecondaryPage(&sessionWindow);
+    });
+    QObject::connect(&settlementBinder, &SettlementUiBinder::orderRefreshRequested,
+                     &app, [&] {
+        // 结算页刷新=按当前展示订单重查权威状态，导航保持在结算页。
+    });
+
     // 阶段 D：登录成功 → 注入身份并自动恢复活动订单（充电中/待结算）。
     QObject::connect(&network, &RealUserNetworkApi::loginSucceeded,
                      &app, [&](const LoginResult &result) {
@@ -393,8 +451,7 @@ int main(int argc, char *argv[])
             QUuid::createUuid().toString(QUuid::WithoutBraces), {}};
         orderService.queryActiveOrder(recoveryContext);
     });
-    // 活动订单存在时交由会话 Binder 拉取详情（会话页 UI 待交付，
-    // 状态可通过 sessionBinder.currentState() 获取，不丢恢复结果）。
+    // 活动订单存在时交由会话 Binder 拉取详情；待支付订单直达结算页（合同 §3.4）。
     QObject::connect(&orderService, &IOrderService::activeOrderReady,
                      &app, [&](const RequestContext &,
                                const std::optional<ChargingOrder> &active) {
@@ -402,19 +459,23 @@ int main(int argc, char *argv[])
             sessionBinder.sessionRequested(active->orderId);
             if (active->status == OrderStatus::PendingSettlement) {
                 settlementBinder.showOrder(*active);
+                mainWindow.renderSecondaryPage(&settlementWindow);
             }
         }
     });
+    // 合同 §3.3：停止充电成功 → 携带结算单进入结算页。
     QObject::connect(&orderService, &IOrderService::chargingStopped,
                      &app, [&](const RequestContext &,
                                const StopChargingResult &result) {
         settlementBinder.showOrder(result.order);
+        mainWindow.renderSecondaryPage(&settlementWindow);
     });
     QObject::connect(&orderService, &IOrderService::orderDetailReady,
                      &app, [&](const RequestContext &,
                                const ChargingOrder &order) {
         if (order.status == OrderStatus::PendingSettlement) {
             settlementBinder.showOrder(order);
+            mainWindow.renderSecondaryPage(&settlementWindow);
         }
     });
     QObject::connect(&pushDispatcher, &ServerPushDispatcher::balanceChanged,
