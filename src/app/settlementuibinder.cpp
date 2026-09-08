@@ -5,6 +5,7 @@
 #include "modules/wallet/iwalletservice.h"
 #include "modules/wallet/wallettypes.h"
 
+#include <QDateTime>
 #include <QUuid>
 
 SettlementUiBinder::SettlementUiBinder(IWalletService *walletService,
@@ -31,6 +32,21 @@ void SettlementUiBinder::showOrder(const ChargingOrder &order)
     m_operationId.clear();
     m_state = SettlementViewState{};
     m_state.orderId = order.orderId;
+    m_state.stationName = order.stationName;
+    m_state.chargerCode = order.chargerCode;
+    m_state.energyText = QStringLiteral("%1 kWh").arg(order.energyKwh, 0, 'f', 2);
+    m_state.paymentMethodText = QStringLiteral("钱包支付");
+    if (order.startedAtUtc.isValid()) {
+        const QDateTime end = order.endedAtUtc.value_or(QDateTime::currentDateTimeUtc());
+        const qint64 seconds = qMax<qint64>(0, order.startedAtUtc.secsTo(end));
+        m_state.chargingTimeText = QStringLiteral("%1 · %2 分钟")
+            .arg(order.startedAtUtc.toLocalTime().toString(QStringLiteral("yyyy-MM-dd hh:mm:ss")))
+            .arg(seconds / 60);
+    }
+    m_state.chargerInfoText = QStringLiteral("%1 · %2 · %3")
+        .arg(order.stationName.isEmpty() ? QStringLiteral("未知站点") : order.stationName,
+             order.chargerCode.isEmpty() ? QStringLiteral("未知电桩") : order.chargerCode,
+             m_state.energyText);
     m_state.amountText = moneyText(order.amountCents);
     if (order.paymentDeadlineUtc) {
         m_state.deadlineText = order.paymentDeadlineUtc->toLocalTime()

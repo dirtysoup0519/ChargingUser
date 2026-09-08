@@ -357,6 +357,7 @@ int main(int argc, char *argv[])
     bool confirmationOpenedFromScanner = false;
     WalletEntryPoint walletEntryPoint = WalletEntryPoint::Profile;
     bool orderListOpen = false;
+    bool settlementOpenedFromOrderList = false;
     OrderListViewState orderListBaseState;
     const auto openWallet = [&](WalletEntryPoint entryPoint) {
         walletEntryPoint = entryPoint;
@@ -570,19 +571,27 @@ int main(int argc, char *argv[])
             item.statusText = order.status == OrderStatus::Charging
                                   ? QStringLiteral("充电中")
                                   : order.status == OrderStatus::PendingSettlement
-                                        ? QStringLiteral("待结算") : QStringLiteral("进行中");
-            item.statusTone = order.status == OrderStatus::Charging ? QStringLiteral("warning")
-                                                                       : QStringLiteral("success");
+                                  ? QStringLiteral("待结算")
+                                  : order.status == OrderStatus::Settled
+                                  ? QStringLiteral("已支付")
+                                  : order.status == OrderStatus::Cancelled
+                                  ? QStringLiteral("已取消") : QStringLiteral("状态未知");
+            item.statusTone = order.status == OrderStatus::Charging
+                                  ? QStringLiteral("warning")
+                                  : order.status == OrderStatus::Settled
+                                  ? QStringLiteral("success") : QStringLiteral("neutral");
             item.summaryText = QStringLiteral("电量 %1").arg(item.energyText);
             item.action = order.status == OrderStatus::Charging ? OrderListAction::ViewCharging
-                                                                  : OrderListAction::ContinuePayment;
+                          : order.status == OrderStatus::PendingSettlement
+                          ? OrderListAction::ContinuePayment : OrderListAction::ViewDetails;
             item.actionText = order.status == OrderStatus::Charging ? QStringLiteral("查看")
-                                                                       : QStringLiteral("去结算");
+                            : order.status == OrderStatus::PendingSettlement
+                            ? QStringLiteral("去结算") : QStringLiteral("查看详情");
             state.orders.append(item);
         }
         state = appendRechargeOrders(state);
         orderListBaseState = state;
-        state.message = state.orders.isEmpty() ? QStringLiteral("暂无进行中的订单") : QString();
+        state.message = state.orders.isEmpty() ? QStringLiteral("暂无订单") : QString();
         orderList.render(state);
     };
     QObject::connect(&orderService, &IOrderService::activeOrdersReady,
@@ -622,6 +631,7 @@ int main(int argc, char *argv[])
             mainWindow.renderSecondaryPage(&sessionWindow);
             return;
         }
+        settlementOpenedFromOrderList = true;
         orderService.queryOrderDetail(
             {QUuid::createUuid().toString(QUuid::WithoutBraces), {}}, orderId);
     });
@@ -783,8 +793,13 @@ int main(int argc, char *argv[])
     });
     QObject::connect(&settlementWindow, &SettlementWindow::backRequested,
                      &app, [&] {
-        sessionWindow.render(sessionBinder.currentState());
-        mainWindow.renderSecondaryPage(&sessionWindow);
+        if (settlementOpenedFromOrderList) {
+            settlementOpenedFromOrderList = false;
+            mainWindow.renderSecondaryPage(&orderList);
+        } else {
+            sessionWindow.render(sessionBinder.currentState());
+            mainWindow.renderSecondaryPage(&sessionWindow);
+        }
     });
     QObject::connect(&settlementBinder, &SettlementUiBinder::orderRefreshRequested,
                      &app, [&] {
@@ -827,7 +842,10 @@ int main(int argc, char *argv[])
     QObject::connect(&orderService, &IOrderService::orderDetailReady,
                      &app, [&](const RequestContext &,
                                const ChargingOrder &order) {
-        if (order.status == OrderStatus::PendingSettlement) {
+        if (order.status == OrderStatus::Charging) {
+            sessionBinder.sessionRequested(order.orderId);
+            mainWindow.renderSecondaryPage(&sessionWindow);
+        } else {
             settlementBinder.showOrder(order);
             mainWindow.renderSecondaryPage(&settlementWindow);
         }
