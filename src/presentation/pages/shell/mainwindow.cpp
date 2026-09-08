@@ -144,6 +144,19 @@ MainWindow::MainWindow(QWidget *parent) : QWidget(parent), ui(new Ui::MainWindow
     });
     connect(ui->btnLogout, &QPushButton::clicked,
             this, &MainWindow::logoutRequested);
+    connect(ui->chargingSessionWidget, &ChargingSessionWindow::scanChargingRequested,
+            this, &MainWindow::scanChargingRequested);
+}
+
+void MainWindow::renderChargingSession(const ChargingSessionViewState &state)
+{
+    ui->chargingSessionWidget->render(state);
+}
+
+void MainWindow::renderChargingSessions(
+    const ChargingSessionCollectionViewState &state)
+{
+    ui->chargingSessionWidget->renderSessions(state);
 }
 
 void MainWindow::setMapKey(const QString &key)

@@ -2,6 +2,7 @@
 
 #include <QWidget>
 
+#include "presentation/contracts/chargingsessionviewstate.h"
 #include "presentation/contracts/mapviewstates.h"
 #include "profileviewstate.h"
 
@@ -31,6 +32,8 @@ public:
     void renderPrimaryPage(PrimaryPage page);
     void renderProfile(const ProfileViewState &state);
     void renderHome(const HomeMapViewState &state);
+    void renderChargingSession(const ChargingSessionViewState &state);
+    void renderChargingSessions(const ChargingSessionCollectionViewState &state);
     void renderSecondaryPage(QWidget *page);
 
 signals:
@@ -54,6 +57,7 @@ signals:
     void activeReservationRequested(const QString &reservationId,
                                     const QString &stationId,
                                     const QString &chargerId);
+    void scanChargingRequested();
 
 protected:
     bool eventFilter(QObject *watched, QEvent *event) override;

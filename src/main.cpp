@@ -352,6 +352,9 @@ int main(int argc, char *argv[])
     IUserService *userService = assembly.userService();
     bool profileEditOpenedFromMain = false;
     enum class WalletEntryPoint { Profile, ChargeConfirmation };
+    enum class ScanEntryPoint { PrimaryCharging, Session };
+    ScanEntryPoint scanEntryPoint = ScanEntryPoint::PrimaryCharging;
+    bool confirmationOpenedFromScanner = false;
     WalletEntryPoint walletEntryPoint = WalletEntryPoint::Profile;
     const auto openWallet = [&](WalletEntryPoint entryPoint) {
         walletEntryPoint = entryPoint;
@@ -420,7 +423,10 @@ int main(int argc, char *argv[])
 
     // ===== 阶段 B：充电确认链路（详情 → 确认 → 钱包/会话）=====
     QObject::connect(&stationDetail, &StationDetailWindow::chargeConfirmationRequested,
-                     &chargeBinder, &IChargingUiBinder::chargeConfirmationRequested);
+                     &app, [&](const QString &stationId, const QString &chargerId) {
+        confirmationOpenedFromScanner = false;
+        chargeBinder.chargeConfirmationRequested(stationId, chargerId);
+    });
     QObject::connect(&chargeBinder, &IChargingUiBinder::confirmationStateChanged,
                      &chargeConfirmation, &ChargeConfirmationWindow::render);
     QObject::connect(&chargeBinder, &IChargingUiBinder::confirmationPageRequested,
@@ -430,8 +436,13 @@ int main(int argc, char *argv[])
     });
     QObject::connect(&chargeBinder, &IChargingUiBinder::stationDetailPageRequested,
                      &app, [&] {
-        stationDetail.render(mapBinder.currentStationDetailState());
-        mainWindow.renderSecondaryPage(&stationDetail);
+        if (confirmationOpenedFromScanner) {
+            confirmationOpenedFromScanner = false;
+            mainWindow.renderPrimaryPage(MainWindow::PrimaryPage::Charging);
+        } else {
+            stationDetail.render(mapBinder.currentStationDetailState());
+            mainWindow.renderSecondaryPage(&stationDetail);
+        }
     });
     QObject::connect(&chargeConfirmation, &ChargeConfirmationWindow::backRequested,
                      &chargeBinder, &IChargingUiBinder::backRequested);
@@ -556,8 +567,14 @@ int main(int argc, char *argv[])
                      &IChargingSessionUiBinder::sessionStateChanged,
                      &sessionWindow, &ChargingSessionWindow::render);
     QObject::connect(&sessionBinder,
+                     &IChargingSessionUiBinder::sessionStateChanged,
+                     &mainWindow, &MainWindow::renderChargingSession);
+    QObject::connect(&sessionBinder,
                      &IChargingSessionUiBinder::activeSessionsStateChanged,
                      &sessionWindow, &ChargingSessionWindow::renderSessions);
+    QObject::connect(&sessionBinder,
+                     &IChargingSessionUiBinder::activeSessionsStateChanged,
+                     &mainWindow, &MainWindow::renderChargingSessions);
     QObject::connect(&sessionWindow, &ChargingSessionWindow::refreshRequested,
                      &sessionBinder, &IChargingSessionUiBinder::refreshRequested);
     QObject::connect(&sessionWindow, &ChargingSessionWindow::stopChargingRequested,
@@ -571,8 +588,8 @@ int main(int argc, char *argv[])
     QObject::connect(&sessionWindow,
                      &ChargingSessionWindow::activeSessionSelected,
                      &sessionBinder, &IChargingSessionUiBinder::activeSessionSelected);
-    QObject::connect(&sessionWindow, &ChargingSessionWindow::scanChargingRequested,
-                     &app, [&] {
+    const auto openScanner = [&](ScanEntryPoint entryPoint) {
+        scanEntryPoint = entryPoint;
         ScanViewState scanState;
         scanState.status = ScanStatus::Error;
         scanState.message = QStringLiteral("当前版本尚未接入摄像头扫码，请从相册选择二维码。\n若设备无摄像头，可使用服务端下发的电桩编号联调。");
@@ -582,7 +599,11 @@ int main(int argc, char *argv[])
         scanState.canRetry = false;
         qrScanner.render(scanState);
         mainWindow.renderSecondaryPage(&qrScanner);
-    });
+    };
+    QObject::connect(&mainWindow, &MainWindow::scanChargingRequested,
+                     &app, [&] { openScanner(ScanEntryPoint::PrimaryCharging); });
+    QObject::connect(&sessionWindow, &ChargingSessionWindow::scanChargingRequested,
+                     &app, [&] { openScanner(ScanEntryPoint::Session); });
     QObject::connect(&qrScanner, &QrCodeScannerWindow::cameraPermissionRequested,
                      &app, [&] {
         ScanViewState state;
@@ -624,33 +645,13 @@ int main(int argc, char *argv[])
             qrScanner.render(state);
             return;
         }
-        const StationDetailViewState detail = mapBinder.currentStationDetailState();
-        const auto charger = std::find_if(detail.chargers.cbegin(), detail.chargers.cend(),
-                                          [&chargerCode](const ChargerListItemView &item) {
-            return item.chargerId.compare(chargerCode, Qt::CaseInsensitive) == 0;
-        });
-        if (detail.status != MapLoadStatus::Ready || charger == detail.chargers.cend()) {
-            state.status = ScanStatus::Error;
-            state.message = QStringLiteral("服务端当前站点数据中找不到该电桩，请返回站点详情刷新后重试。");
-            state.canRetry = true;
-            qrScanner.render(state);
-            return;
-        }
-        if (!charger->canCharge) {
-            state.status = ScanStatus::Error;
-            state.message = charger->disabledReason.isEmpty()
-                                ? QStringLiteral("该电桩当前不可启动充电。")
-                                : charger->disabledReason;
-            state.canRetry = true;
-            qrScanner.render(state);
-            return;
-        }
         state.status = ScanStatus::Validating;
         state.chargerDisplayText = chargerCode;
         state.message = QStringLiteral("二维码识别成功，正在加载充电确认信息…");
         state.canImportImage = false;
         qrScanner.render(state);
-        chargeBinder.chargeConfirmationRequested(detail.stationId, charger->chargerId);
+        confirmationOpenedFromScanner = true;
+        chargeBinder.chargeConfirmationByChargerCodeRequested(chargerCode);
     });
     QObject::connect(&qrScanner, &QrCodeScannerWindow::torchToggleRequested,
                      &app, [&](bool) {
@@ -780,7 +781,10 @@ int main(int argc, char *argv[])
     });
     QObject::connect(&qrScanner, &QrCodeScannerWindow::backRequested,
                      &app, [&] {
-        mainWindow.renderSecondaryPage(&stationDetail);
+        if (scanEntryPoint == ScanEntryPoint::Session)
+            mainWindow.renderSecondaryPage(&sessionWindow);
+        else
+            mainWindow.renderPrimaryPage(MainWindow::PrimaryPage::Charging);
     });
 
     QObject::connect(&mapBinder, &IMapUiBinder::homeStateChanged,
