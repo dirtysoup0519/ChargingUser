@@ -6,6 +6,7 @@
 #include "modules/wallet/wallettypes.h"
 
 #include <QRegularExpression>
+#include <QStringList>
 #include <QUuid>
 
 WalletUiBinder::WalletUiBinder(IWalletService *service, QObject *parent)
@@ -79,9 +80,11 @@ void WalletUiBinder::handleWalletReady(const RequestContext &context,
     m_operationId.clear();
     m_state.status = WalletPageStatus::Ready;
     m_state.balanceText = moneyText(snapshot.balanceCents);
+    m_state.recentTransactions = snapshot.recentTransactions;
     m_state.message = snapshot.recentTransactions.isEmpty()
                           ? QStringLiteral("余额已同步，暂无钱包流水。")
-                          : QStringLiteral("余额与最近钱包流水已同步。");
+                          : QStringLiteral("余额与最近钱包流水已同步。\n%1")
+                                .arg(transactionText(snapshot.recentTransactions));
     m_state.canSubmit = true;
     publish();
 }
@@ -92,12 +95,15 @@ void WalletUiBinder::handleOperationSucceeded(const RequestContext &context,
     if (context.requestId != m_requestId || context.operationId != m_operationId) return;
     m_requestId.clear();
     m_operationId.clear();
-    m_state.status = WalletPageStatus::Succeeded;
+    m_state.status = WalletPageStatus::Loading;
     m_state.balanceText = moneyText(result.balanceCents);
-    m_state.message = QStringLiteral("充值成功，余额已更新。");
-    m_state.canSubmit = true;
+    m_state.recentTransactions.clear();
+    m_state.message = QStringLiteral("充值成功，正在重新同步余额和钱包流水…");
+    m_state.canSubmit = false;
+    m_requestId = QUuid::createUuid().toString(QUuid::WithoutBraces);
     publish();
     emit profileRefreshRequested();
+    m_service->queryWallet({m_requestId, {}});
 }
 
 void WalletUiBinder::handleFailure(const ClientError &error)
@@ -123,6 +129,28 @@ void WalletUiBinder::publish()
 QString WalletUiBinder::moneyText(qint64 cents)
 {
     return QStringLiteral("¥%1").arg(cents / 100.0, 0, 'f', 2);
+}
+
+QString WalletUiBinder::transactionText(const QVector<WalletTransaction> &transactions)
+{
+    QStringList lines;
+    for (const WalletTransaction &transaction : transactions) {
+        QString type = QStringLiteral("其他");
+        if (transaction.type == WalletTransactionType::Recharge) {
+            type = QStringLiteral("充值");
+        } else if (transaction.type == WalletTransactionType::Payment) {
+            type = QStringLiteral("支付");
+        } else if (transaction.type == WalletTransactionType::Refund) {
+            type = QStringLiteral("退款");
+        }
+        const QString time = transaction.createdAtUtc.isValid()
+                                 ? transaction.createdAtUtc.toLocalTime()
+                                       .toString(QStringLiteral("MM-dd hh:mm"))
+                                 : QStringLiteral("时间未知");
+        lines.append(QStringLiteral("%1  %2  %3")
+                         .arg(time, type, moneyText(transaction.amountCents)));
+    }
+    return lines.join(QStringLiteral("\n"));
 }
 
 bool WalletUiBinder::parseAmountCents(const QString &text, qint64 *amountCents)

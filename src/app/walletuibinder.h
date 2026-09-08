@@ -3,12 +3,14 @@
 #include "presentation/contracts/walletviewstate.h"
 
 #include <QObject>
+#include <QVector>
 
 class ClientError;
 class IWalletService;
 class MoneyOperationResult;
 class RequestContext;
 class WalletSnapshot;
+struct WalletTransaction;
 
 class WalletUiBinder final : public QObject
 {
@@ -37,6 +39,7 @@ private slots:
 private:
     void publish();
     static QString moneyText(qint64 cents);
+    static QString transactionText(const QVector<WalletTransaction> &transactions);
     static bool parseAmountCents(const QString &text, qint64 *amountCents);
 
     IWalletService *m_service;

@@ -1,5 +1,7 @@
 #pragma once
 
+#include "modules/wallet/wallettypes.h"
+
 #include <QMetaType>
 #include <QString>
 
@@ -19,6 +21,7 @@ struct WalletViewState
     WalletPageStatus status = WalletPageStatus::Idle;
     QString balanceText;
     QString message;
+    QVector<WalletTransaction> recentTransactions;
     bool canSubmit = false;
 };
 

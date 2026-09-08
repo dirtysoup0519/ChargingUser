@@ -1,3 +1,4 @@
+#include "app/walletuibinder.h"
 #include "modules/wallet/iwalletnetworkapi.h"
 #include "modules/wallet/mockwalletservice.h"
 #include "modules/wallet/walletservice.h"
@@ -14,10 +15,20 @@ public:
     int rechargeCalls = 0;
     int paymentCalls = 0;
     int resultQueryCalls = 0;
+    RequestContext lastQueryContext;
+    RequestContext lastRechargeContext;
 
     WalletBackendCapabilities capabilities() const override { return advertised; }
-    void queryWallet(const RequestContext &) override { ++queryCalls; }
-    void recharge(const RequestContext &, qint64) override { ++rechargeCalls; }
+    void queryWallet(const RequestContext &context) override
+    {
+        ++queryCalls;
+        lastQueryContext = context;
+    }
+    void recharge(const RequestContext &context, qint64) override
+    {
+        ++rechargeCalls;
+        lastRechargeContext = context;
+    }
     void payOrder(const RequestContext &, const QString &) override { ++paymentCalls; }
     void queryOperationResult(const RequestContext &, const QString &) override
     { ++resultQueryCalls; }
@@ -82,6 +93,39 @@ private slots:
         service.recharge({QStringLiteral("recharge-1"), QStringLiteral("op-1")}, 1000);
         QCOMPARE(failed.count(), 1);
         QCOMPARE(succeeded.count(), 0);
+    }
+
+    void binderRejectsInvalidAmountAndRefreshesAfterRecharge()
+    {
+        ControlledWalletNetwork network;
+        network.advertised.walletSnapshotQuery = true;
+        network.advertised.rechargeMessage = true;
+        WalletService service(&network);
+        WalletUiBinder binder(&service);
+        binder.setAccountId(QStringLiteral("user-1"));
+        binder.activate();
+        QCOMPARE(network.queryCalls, 1);
+
+        WalletSnapshot snapshot;
+        snapshot.accountId = QStringLiteral("user-1");
+        snapshot.balanceCents = 1000;
+        network.walletReady({QStringLiteral("wallet-1"), {}}, snapshot);
+        QVERIFY(binder.currentState().canSubmit);
+
+        binder.rechargeRequested(QStringLiteral("1.001"));
+        QCOMPARE(network.rechargeCalls, 0);
+        QCOMPARE(binder.currentState().status, WalletPageStatus::Error);
+
+        binder.rechargeRequested(QStringLiteral("12.34"));
+        QCOMPARE(network.rechargeCalls, 1);
+        binder.rechargeRequested(QStringLiteral("12.34"));
+        QCOMPARE(network.rechargeCalls, 1);
+
+        MoneyOperationResult result;
+        result.balanceCents = 2234;
+        network.moneyOperationSucceeded(lastRechargeContext, result);
+        QCOMPARE(network.queryCalls, 2);
+        QCOMPARE(binder.currentState().status, WalletPageStatus::Loading);
     }
 };
 

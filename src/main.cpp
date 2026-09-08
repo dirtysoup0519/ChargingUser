@@ -347,6 +347,11 @@ int main(int argc, char *argv[])
         walletBinder.activate();
         mainWindow.renderSecondaryPage(&walletRecharge);
     });
+    QObject::connect(&mainWindow, &MainWindow::rechargePageRequested,
+                     &app, [&] {
+        walletBinder.activate();
+        mainWindow.renderSecondaryPage(&walletRecharge);
+    });
     QObject::connect(&walletRecharge, &WalletRechargeWindow::backRequested,
                      &app, [&] {
         mainWindow.renderSecondaryPage(&chargeConfirmation);
