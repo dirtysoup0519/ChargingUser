@@ -14,6 +14,7 @@
 #include "network/realorderservice.h"
 #include "network/realwalletnetworkapi.h"
 #include "network/realreservationservice.h"
+#include "network/serverpushdispatcher.h"
 #include "network/realusernetworkapi.h"
 #include "modules/wallet/walletservice.h"
 #include "modules/user/iuserservice.h"
@@ -199,6 +200,7 @@ int main(int argc, char *argv[])
     SettlementUiBinder settlementBinder(&walletService);
     RealReservationService reservationService(&backend);
     ReservationUiBinder reservationBinder(&reservationService);
+    ServerPushDispatcher pushDispatcher(&backend);
 
     const QJsonObject mapConfig = loadTencentMapConfig();
     QString mapKey = qEnvironmentVariable("TENCENT_MAP_KEY").trimmed();
@@ -376,6 +378,7 @@ int main(int argc, char *argv[])
         walletNetwork.setIdentity(result.session.profile.userId);
         chargingNetwork.setIdentity(result.session.profile.userId);
         reservationService.setIdentity(result.session.profile.userId);
+        pushDispatcher.setIdentity(result.session.profile.userId);
         walletBinder.setAccountId(result.session.profile.userId);
         walletBinder.activate();
         RequestContext recoveryContext{
@@ -398,6 +401,34 @@ int main(int argc, char *argv[])
                      &app, [&](const RequestContext &,
                                const StopChargingResult &result) {
         settlementBinder.showOrder(result.order);
+    });
+    QObject::connect(&orderService, &IOrderService::orderDetailReady,
+                     &app, [&](const RequestContext &,
+                               const ChargingOrder &order) {
+        if (order.status == OrderStatus::PendingSettlement) {
+            settlementBinder.showOrder(order);
+        }
+    });
+    QObject::connect(&pushDispatcher, &ServerPushDispatcher::balanceChanged,
+                     &walletBinder, &WalletUiBinder::activate);
+    QObject::connect(&pushDispatcher, &ServerPushDispatcher::balanceChanged,
+                     userService, &IUserService::refreshCurrentUser);
+    QObject::connect(&pushDispatcher, &ServerPushDispatcher::paymentNotice,
+                     &app, [&](const QString &orderId) {
+        if (!orderId.isEmpty()) {
+            orderService.queryOrderDetail(
+                {QUuid::createUuid().toString(QUuid::WithoutBraces), {}}, orderId);
+        }
+    });
+    QObject::connect(&pushDispatcher, &ServerPushDispatcher::chargingProgress,
+                     &app, [&](const ChargingProgressNotice &notice) {
+        if (!notice.orderId.isEmpty()) sessionBinder.sessionRequested(notice.orderId);
+    });
+    QObject::connect(&pushDispatcher, &ServerPushDispatcher::chargingFault,
+                     &app, [&](const ChargingFaultNotice &notice) {
+        if (!notice.orderId.isEmpty()) sessionBinder.sessionRequested(notice.orderId);
+        orderService.queryActiveOrder(
+            {QUuid::createUuid().toString(QUuid::WithoutBraces), {}});
     });
 
     // ===== 预约真实网络链路：页面仅负责渲染，协议与状态由 Binder/Service 承担 =====
