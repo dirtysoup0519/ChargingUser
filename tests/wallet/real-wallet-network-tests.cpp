@@ -120,6 +120,7 @@ void RealWalletNetworkTests::rechargeSendsCentsAndHandlesAck()
     const QJsonObject payload = framePayload(m_transport->sentFrames.first());
     QCOMPARE(payload.value(QStringLiteral("username")).toString(),
              QStringLiteral("U13800138000"));
+    QCOMPARE(payload.value(QStringLiteral("amount")).toDouble(), 50.0);
     QCOMPARE(payload.value(QStringLiteral("amountCents")).toInt(), 5000);
 
     feed(m_transport, RECHARGE_ACK,

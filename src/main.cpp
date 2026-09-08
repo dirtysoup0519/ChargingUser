@@ -257,6 +257,13 @@ int main(int argc, char *argv[])
     IUserUiBinder *binder = assembly.userUiBinder();
     IUserService *userService = assembly.userService();
     bool profileEditOpenedFromMain = false;
+    enum class WalletEntryPoint { Profile, ChargeConfirmation };
+    WalletEntryPoint walletEntryPoint = WalletEntryPoint::Profile;
+    const auto openWallet = [&](WalletEntryPoint entryPoint) {
+        walletEntryPoint = entryPoint;
+        walletBinder.activate();
+        mainWindow.renderSecondaryPage(&walletRecharge);
+    };
 
     const auto showOnly = [&login, &profileEdit, &mainWindow](QWidget *target) {
         login.setVisible(target == &login);
@@ -344,24 +351,25 @@ int main(int argc, char *argv[])
     // 钱包页可达：余额来自确认页快照，充值动作属阶段 E。
     QObject::connect(&chargeBinder, &IChargingUiBinder::rechargePageRequested,
                      &app, [&] {
-        walletBinder.activate();
-        mainWindow.renderSecondaryPage(&walletRecharge);
+        openWallet(WalletEntryPoint::ChargeConfirmation);
     });
     // 修复来源：eb31164 误用不存在的 rechargePageRequested 信号，导致真实入口
     // 无法编译；ChargeConfirmationWindow 实际声明的信号是 rechargeRequested()。
     QObject::connect(&chargeConfirmation, &ChargeConfirmationWindow::rechargeRequested,
                      &app, [&] {
-        walletBinder.activate();
-        mainWindow.renderSecondaryPage(&walletRecharge);
+        openWallet(WalletEntryPoint::ChargeConfirmation);
     });
     QObject::connect(&mainWindow, &MainWindow::rechargePageRequested,
                      &app, [&] {
-        walletBinder.activate();
-        mainWindow.renderSecondaryPage(&walletRecharge);
+        openWallet(WalletEntryPoint::Profile);
     });
     QObject::connect(&walletRecharge, &WalletRechargeWindow::backRequested,
                      &app, [&] {
-        mainWindow.renderSecondaryPage(&chargeConfirmation);
+        if (walletEntryPoint == WalletEntryPoint::ChargeConfirmation) {
+            mainWindow.renderSecondaryPage(&chargeConfirmation);
+        } else {
+            mainWindow.renderPrimaryPage(MainWindow::PrimaryPage::Profile);
+        }
     });
     // 阶段 E：钱包页面使用服务端余额与流水；充值结果未知时由 Binder 锁定重试。
     QObject::connect(&walletBinder, &WalletUiBinder::stateChanged,

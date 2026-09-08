@@ -57,6 +57,8 @@ int reqTypeForKind(RealUserNetworkApi::PendingKind kind)
         return GETDATA;
     case RealUserNetworkApi::PendingKind::UpdateNickname:
         return PROFILE_UPD_REQ;
+    case RealUserNetworkApi::PendingKind::Logout:
+        return LOGOUT_REQ;
     }
     return 0;
 }
@@ -139,24 +141,11 @@ void RealUserNetworkApi::updateNickname(const QString &userId,
 
 void RealUserNetworkApi::logout(const RequestContext &context)
 {
-    // 合同 §11：102 尽力发送、不等待应答，会话由调用方本地清理
+    // v2.6.3：本地会话由 UserService 立即清理，但网络操作须等待 202，
+    // 以保证同一 TCP 连接上的后续登录不会抢在服务端清除旧身份之前。
     QJsonObject payload;
     payload.insert(QStringLiteral("requestId"), context.requestId);
-
-    OperationResult result;
-    result.requestId = context.requestId;
-    result.operationId = context.operationId;
-
-    if (m_backend->sendFrame(LOGOUT_REQ, payload)) {
-        emit logoutSucceeded(result);
-    } else {
-        // 会话已由调用方本地清理，此错误仅作提示，retryable=false 表示无重试意义；
-        // 但必须带 requestId，否则上层 Logout 在途请求无法释放，会阻塞后续登录
-        emit requestFailed(failedRequestError(context,
-                                              QStringLiteral("not-connected"),
-                                              QStringLiteral("Not connected to server."),
-                                              false));
-    }
+    startRequest(PendingKind::Logout, payload, context, QString());
 }
 
 bool RealUserNetworkApi::startRequest(PendingKind kind, const QJsonObject &payload,
@@ -169,7 +158,7 @@ bool RealUserNetworkApi::startRequest(PendingKind kind, const QJsonObject &paylo
         emit requestFailed(failedRequestError(context,
                                               QStringLiteral("not-connected"),
                                               QStringLiteral("Not connected to server."),
-                                              true));
+                                              kind != PendingKind::Logout));
         return false;
     }
 
@@ -188,7 +177,7 @@ bool RealUserNetworkApi::startRequest(PendingKind kind, const QJsonObject &paylo
         emit requestFailed(failedRequestError(context,
                                               QStringLiteral("send-failed"),
                                               QStringLiteral("Failed to send request."),
-                                              true));
+                                              kind != PendingKind::Logout));
         return false;
     }
 
@@ -225,6 +214,8 @@ void RealUserNetworkApi::handleFrame(int msgType, const QJsonObject &payload)
         kind = PendingKind::QueryProfile;
     } else if (msgType == PROFILE_UPD_ACK) {
         kind = PendingKind::UpdateNickname;
+    } else if (msgType == LOGOUT_ACK) {
+        kind = PendingKind::Logout;
     } else {
         return;   // 未知消息码不得污染会话（合同 §8 测试基线）
     }
@@ -323,6 +314,13 @@ void RealUserNetworkApi::handleFrame(int msgType, const QJsonObject &payload)
         emit nicknameUpdateSucceeded(result);
         break;
     }
+    case PendingKind::Logout: {
+        OperationResult result;
+        result.requestId = request.requestId;
+        result.operationId = request.operationId;
+        emit logoutSucceeded(result);
+        break;
+    }
     }
 }
 
@@ -373,6 +371,14 @@ ClientError RealUserNetworkApi::makeTimeoutError(PendingKind kind,
         error.operationId = pending.operationId;
         return error;
     }
+    if (kind == PendingKind::Logout) {
+        ClientError error = makeError(QStringLiteral("request-timeout"),
+                                      QStringLiteral("Logout confirmation timed out."),
+                                      false);
+        error.requestId = pending.requestId;
+        error.operationId = pending.operationId;
+        return error;
+    }
     ClientError error = makeError(QStringLiteral("request-timeout"),
                                   QStringLiteral("Request timed out."),
                                   true);
@@ -404,8 +410,10 @@ void RealUserNetworkApi::failAllPending(const QString &code, const QString &mess
         // 释放对应在途请求，用户会被“请求进行中”永久卡住（审查问题 1）。
         // 断线时变更操作的结果不可知（服务端可能已生效），按结果未知处理，
         // 不得标成普通可重试错误（合同 §11 v1.2）。
-        ClientError error = makeError(code, message,
-                                      pending->kind != PendingKind::UpdateNickname);
+        ClientError error = makeError(
+            code, message,
+            pending->kind != PendingKind::UpdateNickname
+                && pending->kind != PendingKind::Logout);
         error.requestId = pending->requestId;
         error.operationId = pending->operationId;
         if (pending->kind == PendingKind::UpdateNickname) {
@@ -507,6 +515,8 @@ bool RealUserNetworkApi::successPayloadValid(PendingKind kind,
     case PendingKind::UpdateNickname:
         return payload.value(QStringLiteral("ok")).toBool(false)
                && username == requestedUserId;
+    case PendingKind::Logout:
+        return payload.value(QStringLiteral("ok")).toBool(false);
     }
     return false;
 }

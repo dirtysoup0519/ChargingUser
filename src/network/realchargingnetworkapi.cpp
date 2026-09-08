@@ -248,7 +248,8 @@ void RealChargingNetworkApi::handleFrame(int msgType, const QJsonObject &payload
         result.orderId = payload.value(QStringLiteral("orderNo")).toString();
         result.stationId = pending.stationId;
         result.chargerId = pending.chargerId;
-        result.priceCentsPerKwh = centsField(payload, "priceCents", "price").value_or(0);
+        result.priceCentsPerKwhSnapshot =
+            centsField(payload, "priceCents", "price").value_or(0);
         const QString started = payload.value(QStringLiteral("startedAt")).toString();
         result.startedAtUtc = QDateTime::fromString(started, Qt::ISODate).toUTC();
         finishPending();

@@ -5,7 +5,7 @@
  *  - 登录应答优先按 requestId 匹配，无回显时按类型回退
  *  - 218 是重启确认，不得误解析为用户资料应答
  *  - 3xx 映射业务错误码；断线使在途请求失败
- *  - 退出登录尽力发送，不等待应答
+ *  - 退出登录等待 v2.6.3 的 202 应答
  */
 #include "massagehandler.h"
 #include "network/backendclient.h"
@@ -133,7 +133,7 @@ private slots:
     void nicknameUpdateUsesProfileUpdate();
     void disconnectFailsPendingRequests();
     void restartAckIsIgnoredByUserAdapter();
-    void logoutSendsImmediatelyWithoutAck();
+    void logoutWaitsForAck();
     void sendFailureReportsRequestFailed();
     void reconnectsAfterInitialConnectFailure();
     void malformedLoginResponseDoesNotPolluteSession();
@@ -498,7 +498,7 @@ void NetworkAdapterTests::nicknameAckWithoutOkIsRejected()
 
 #endif
 
-void NetworkAdapterTests::logoutSendsImmediatelyWithoutAck()
+void NetworkAdapterTests::logoutWaitsForAck()
 {
     MockTransport transport;
     BackendClient backend(&transport);
@@ -509,7 +509,7 @@ void NetworkAdapterTests::logoutSendsImmediatelyWithoutAck()
     QSignalSpy failures(&api, &IUserNetworkApi::requestFailed);
     api.logout(makeContext(QStringLiteral("req-8")));
 
-    QCOMPARE(successes.count(), 1);
+    QCOMPARE(successes.count(), 0);
     QCOMPARE(failures.count(), 0);
 
     const auto frames = businessFrames(transport.m_sentFrames);
@@ -517,6 +517,12 @@ void NetworkAdapterTests::logoutSendsImmediatelyWithoutAck()
     QCOMPARE(frames.first().first, LOGOUT_REQ);
     QCOMPARE(frames.first().second.value(QLatin1String("requestId")).toString(),
              QStringLiteral("req-8"));
+
+    QJsonObject ack{{QStringLiteral("ok"), true},
+                    {QStringLiteral("username"), QStringLiteral("U13800138000")}};
+    transport.simulateIncoming(MassageHandler::pack(LOGOUT_ACK, ack));
+    QCOMPARE(successes.count(), 1);
+    QCOMPARE(failures.count(), 0);
 }
 
 void NetworkAdapterTests::sendFailureReportsRequestFailed()
