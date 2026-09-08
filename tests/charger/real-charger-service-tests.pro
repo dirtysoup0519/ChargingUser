@@ -13,8 +13,11 @@ INCLUDEPATH += $$PROJECT_ROOT $$PROJECT_ROOT/src $$PROJECT_ROOT/src/network
 include($$PROJECT_ROOT/src/network/network.pri)
 include($$PROJECT_ROOT/src/modules/charger/charger.pri)
 
-# network.pri 里的 RealUserNetworkApi 需要 IUserNetworkApi 的 moc，
-# 正式构建由 user.pri 提供；本测试不需要 user 域，单独补 moc 输入。
-HEADERS += $$PROJECT_ROOT/src/modules/user/iusernetworkapi.h
+# network.pri 的 RealUserNetworkApi/RealOrderService 分别继承 IUserNetworkApi
+# 与 IOrderService（charger/order/user 域接口）：本测试不需要这些模块其余
+# 部分，单独补 moc 输入。
+HEADERS += \
+    $$PROJECT_ROOT/src/modules/user/iusernetworkapi.h \
+    $$PROJECT_ROOT/src/modules/order/iorderservice.h
 
 SOURCES += real-charger-service-tests.cpp
