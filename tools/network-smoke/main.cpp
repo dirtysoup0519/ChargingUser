@@ -1,11 +1,13 @@
 #include "massagehandler.h"
-#include "network/qtnetworktransport.h"
+#include "network/clientsocketthreadmanager.h"
 #include "protocol.h"
 
 #include <QCommandLineOption>
 #include <QCommandLineParser>
 #include <QCoreApplication>
 #include <QDebug>
+#include <QJsonArray>
+#include <QJsonDocument>
 #include <QJsonObject>
 #include <QRegularExpression>
 #include <QTextStream>
@@ -31,26 +33,25 @@ class NetworkSmokeRunner final : public QObject
 
 public:
     NetworkSmokeRunner(const QString &host, quint16 port, int timeoutMs,
-                       const QString &phone, QObject *parent = nullptr)
+                       const QString &phone, bool queryStations,
+                       QObject *parent = nullptr)
         : QObject(parent)
-        , m_transport(host, port, this)
-        , m_handler(this)
+        , m_channel(host, port, this)
         , m_timeoutMs(timeoutMs)
         , m_phone(phone)
+        , m_queryStations(queryStations)
         , m_hostForLog(host)
         , m_portForLog(port)
     {
         m_timeoutTimer.setSingleShot(true);
 
-        connect(&m_transport, &INetworkTransport::connected,
-                this, &NetworkSmokeRunner::handleConnected);
-        connect(&m_transport, &INetworkTransport::disconnected,
-                this, &NetworkSmokeRunner::handleDisconnected);
-        connect(&m_transport, &INetworkTransport::transportError,
-                this, &NetworkSmokeRunner::handleTransportError);
-        connect(&m_transport, &INetworkTransport::dataReceived,
-                &m_handler, &MassageHandler::feed);
-        connect(&m_handler, &MassageHandler::frameReady,
+        connect(&m_channel, &IBackendChannel::connectionStateChanged,
+                this, &NetworkSmokeRunner::handleConnectionStateChanged);
+        connect(&m_channel, &IBackendChannel::networkError,
+                this, &NetworkSmokeRunner::handleNetworkError);
+        connect(&m_channel, &IBackendChannel::frameSendFailed,
+                this, &NetworkSmokeRunner::handleSendFailed);
+        connect(&m_channel, &IBackendChannel::frameReceived,
                 this, &NetworkSmokeRunner::handleFrame);
         connect(&m_timeoutTimer, &QTimer::timeout, this, [this] {
             fail(TimedOut,
@@ -72,7 +73,7 @@ public:
                        .arg(maskPhone(m_phone));
         }
         m_timeoutTimer.start(m_timeoutMs);
-        m_transport.connectToServer();
+        m_channel.start();
     }
 
 private:
@@ -80,7 +81,8 @@ private:
     {
         Connecting,
         WaitingHeartbeat,
-        WaitingPhoneLogin
+        WaitingPhoneLogin,
+        WaitingStationQuery
     };
 
     static QString maskPhone(const QString &phone)
@@ -110,41 +112,49 @@ private:
             return QStringLiteral("waiting for HEARTBEAT_ACK (230)");
         case State::WaitingPhoneLogin:
             return QStringLiteral("waiting for PHONE_LOGIN_ACK (217)");
+        case State::WaitingStationQuery:
+            return QStringLiteral("waiting for station DATA (200)");
         }
         return QStringLiteral("waiting for server response");
     }
 
-    void handleConnected()
+    void handleConnectionStateChanged(ConnectionState state)
     {
         if (m_finished) {
             return;
         }
-        qInfo() << "Connected.";
-        m_state = State::WaitingHeartbeat;
-        if (!m_transport.send(MassageHandler::makeHeartbeat())) {
-            fail(SendFailure, QStringLiteral("Failed to queue HEARTBEAT_REQ (107)."));
+        if (state == ConnectionState::Connecting) {
             return;
         }
+        if (state != ConnectionState::Connected) {
+            fail(TransportFailure,
+                 QStringLiteral("Connection entered a non-connected state while %1.")
+                     .arg(stateDescription()));
+            return;
+        }
+        qInfo() << "Connected.";
+        m_state = State::WaitingHeartbeat;
+        m_channel.sendFrame(HEARTBEAT);
         qInfo() << "Sent message type=107 payloadBytes=0.";
     }
 
-    void handleDisconnected()
+    void handleNetworkError(const QString &message)
     {
-        if (!m_finished) {
+        if (!m_finished)
             fail(TransportFailure,
-                 QStringLiteral("Connection closed while %1.").arg(stateDescription()));
-        }
+                 QStringLiteral("Network error: %1").arg(sanitizeReason(message)));
     }
 
-    void handleTransportError(const QString &message)
+    void handleSendFailed(int messageType, const QString &message)
     {
-        if (!m_finished) {
-            fail(TransportFailure,
-                 QStringLiteral("Transport error: %1").arg(sanitizeReason(message)));
-        }
+        if (!m_finished)
+            fail(SendFailure,
+                 QStringLiteral("Failed to send type=%1: %2")
+                     .arg(messageType)
+                     .arg(sanitizeReason(message)));
     }
 
-    void handleFrame(int msgType, const QByteArray &payload)
+    void handleFrame(int msgType, const QJsonObject &payload)
     {
         if (m_finished) {
             return;
@@ -152,15 +162,16 @@ private:
 
         qInfo().noquote() << QStringLiteral("Received message type=%1 payloadBytes=%2.")
                                  .arg(msgType)
-                                 .arg(payload.size());
+                                 .arg(QJsonDocument(payload)
+                                          .toJson(QJsonDocument::Compact)
+                                          .size());
 
-        if (msgType >= DATA_NOEXIST && msgType <= PARAM_ERROR) {
-            const QJsonObject errorPayload = MassageHandler::fromPayload(payload);
-            QString reason = errorPayload.value(QStringLiteral("err")).toString();
+        if (msgType >= 300 && msgType < 400) {
+            QString reason = payload.value(QStringLiteral("err")).toString();
             if (reason.isEmpty()) {
-                reason = errorPayload.value(QStringLiteral("reason")).toString();
+                reason = payload.value(QStringLiteral("reason")).toString();
             }
-            const QString code = errorPayload.value(QStringLiteral("code")).toString();
+            const QString code = payload.value(QStringLiteral("code")).toString();
             fail(ProtocolFailure,
                  QStringLiteral("Server error type=%1 code=%2 reason=%3")
                      .arg(msgType)
@@ -181,28 +192,45 @@ private:
             request.insert(QStringLiteral("phone"), m_phone);
             request.insert(QStringLiteral("requestId"),
                            QUuid::createUuid().toString(QUuid::WithoutBraces));
-            const QByteArray loginFrame = MassageHandler::pack(PHONE_LOGIN_REQ, request);
             m_state = State::WaitingPhoneLogin;
-            if (!m_transport.send(loginFrame)) {
-                fail(SendFailure,
-                     QStringLiteral("Failed to queue PHONE_LOGIN_REQ (116)."));
-                return;
-            }
+            m_channel.sendFrame(PHONE_LOGIN_REQ, request);
             qInfo().noquote()
-                << QStringLiteral("Sent message type=116 payloadBytes=%1 for %2; payload not logged.")
-                       .arg(loginFrame.size() - FRAME_HEAD_LEN)
+                << QStringLiteral("Sent message type=116 for %1; payload not logged.")
                        .arg(maskPhone(m_phone));
             return;
         }
 
         if (m_state == State::WaitingPhoneLogin && msgType == PHONE_LOGIN_ACK) {
-            const QJsonObject response = MassageHandler::fromPayload(payload);
-            if (response.value(QStringLiteral("username")).toString().isEmpty()) {
+            if (payload.value(QStringLiteral("username")).toString().isEmpty()) {
                 fail(ProtocolFailure,
                      QStringLiteral("PHONE_LOGIN_ACK (217) is missing username."));
                 return;
             }
-            succeed(QStringLiteral("Heartbeat and phone-login round trips completed."));
+            if (!m_queryStations) {
+                succeed(QStringLiteral("Heartbeat and phone-login round trips completed."));
+                return;
+            }
+
+            QJsonObject request;
+            request.insert(QStringLiteral("table"), QString::fromLatin1(TBL_STATION));
+            request.insert(QStringLiteral("cond"), QJsonObject());
+            request.insert(QStringLiteral("requestId"),
+                           QUuid::createUuid().toString(QUuid::WithoutBraces));
+            m_state = State::WaitingStationQuery;
+            m_channel.sendFrame(GETDATA, request);
+            qInfo() << "Sent read-only station query type=100; payload not logged.";
+            return;
+        }
+
+        if (m_state == State::WaitingStationQuery && msgType == DATA) {
+            const QJsonValue data = payload.value(QStringLiteral("data"));
+            if (!data.isArray()) {
+                fail(ProtocolFailure,
+                     QStringLiteral("Station DATA (200) is missing data array."));
+                return;
+            }
+            succeed(QStringLiteral("Heartbeat, login, and station query completed; rows=%1.")
+                        .arg(data.toArray().size()));
             return;
         }
 
@@ -231,15 +259,15 @@ private:
         } else {
             qInfo().noquote() << message;
         }
-        m_transport.disconnectFromServer();
+        m_channel.stop();
         QCoreApplication::exit(exitCode);
     }
 
-    QtNetworkTransport m_transport;
-    MassageHandler m_handler;
+    ClientSocketThreadManager m_channel;
     QTimer m_timeoutTimer;
     int m_timeoutMs;
     QString m_phone;
+    bool m_queryStations = false;
     QString m_hostForLog;
     quint16 m_portForLog = 0;
     State m_state = State::Connecting;
@@ -275,10 +303,14 @@ int main(int argc, char *argv[])
         QStringLiteral("phone"),
         QStringLiteral("Optionally send PHONE_LOGIN_REQ after heartbeat. May auto-register an unknown number."),
         QStringLiteral("phone"));
+    const QCommandLineOption queryStationsOption(
+        QStringLiteral("query-stations"),
+        QStringLiteral("After phone login, issue a read-only GETDATA station query."));
     parser.addOption(hostOption);
     parser.addOption(portOption);
     parser.addOption(timeoutOption);
     parser.addOption(phoneOption);
+    parser.addOption(queryStationsOption);
 
     if (!parser.parse(app.arguments())) {
         qCritical().noquote() << parser.errorText();
@@ -300,6 +332,7 @@ int main(int argc, char *argv[])
     bool timeoutOk = false;
     const int timeoutMs = parser.value(timeoutOption).toInt(&timeoutOk);
     const QString phone = parser.value(phoneOption).trimmed();
+    const bool queryStations = parser.isSet(queryStationsOption);
 
     if (!parser.positionalArguments().isEmpty()) {
         qCritical() << "Unexpected positional arguments.";
@@ -325,8 +358,13 @@ int main(int argc, char *argv[])
         qCritical() << "Phone must be an 11-digit mainland China mobile number.";
         return InvalidArguments;
     }
+    if (queryStations && phone.isEmpty()) {
+        qCritical() << "--query-stations requires --phone because the server query requires a user session.";
+        return InvalidArguments;
+    }
 
-    NetworkSmokeRunner runner(host, static_cast<quint16>(portValue), timeoutMs, phone);
+    NetworkSmokeRunner runner(host, static_cast<quint16>(portValue), timeoutMs,
+                              phone, queryStations);
     runner.start();
     return app.exec();
 }
