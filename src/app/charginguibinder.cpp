@@ -125,13 +125,21 @@ void ChargingUiBinder::handleConfirmationReady(
     m_state.energyPriceText = moneyText(snapshot.priceCentsPerKwh)
                               + QStringLiteral("/kWh");
     m_state.walletBalanceText = moneyText(snapshot.walletBalanceCents);
-    m_state.canStart = snapshot.canStart && snapshot.startOperationSupported;
+    m_state.canStart = snapshot.canStart && snapshot.startOperationSupported
+                       && !snapshot.hasActiveOrder;
     m_state.canRetry = false;
     m_state.canRecharge = snapshot.canRecharge;
-    m_state.disabledReason = snapshot.canStart
-                                 && !snapshot.startOperationSupported
+    if (snapshot.hasActiveOrder) {
+        m_state.disabledReason = snapshot.activeOrderId.isEmpty()
+                                     ? QStringLiteral("当前账号已有进行中的订单。")
+                                     : QStringLiteral("当前账号已有订单 %1。")
+                                           .arg(snapshot.activeOrderId);
+    } else {
+        m_state.disabledReason = snapshot.canStart
+                                     && !snapshot.startOperationSupported
                                  ? QStringLiteral("订单启动接口待接入。")
                                  : snapshot.disabledReason;
+    }
     m_state.message.clear();
     publish();
 }

@@ -102,11 +102,19 @@ void RealChargingNetworkTests::confirmationReadsStationAndUserBalance()
          QJsonObject{{QStringLiteral("stations"), QJsonArray{station}}});
     QCOMPARE(m_transport->sentFrames.size(), 2);
     QCOMPARE(frameType(m_transport->sentFrames.last()), GETDATA);
+    QCOMPARE(framePayload(m_transport->sentFrames.last())
+                 .value(QStringLiteral("table")).toString(), QStringLiteral("user"));
 
     feed(m_transport, DATA,
          QJsonObject{{QStringLiteral("data"), QJsonArray{
              QJsonObject{{QStringLiteral("username"), QStringLiteral("U13800138000")},
                          {QStringLiteral("balanceCents"), 1234}}}}});
+    QCOMPARE(m_transport->sentFrames.size(), 3);
+    QCOMPARE(framePayload(m_transport->sentFrames.last())
+                 .value(QStringLiteral("table")).toString(), QStringLiteral("orderInfo"));
+
+    feed(m_transport, DATA,
+         QJsonObject{{QStringLiteral("data"), QJsonArray{}}});
     QCOMPARE(ready.count(), 1);
     const ChargeConfirmationSnapshot snapshot =
         ready.first().at(1).value<ChargeConfirmationSnapshot>();

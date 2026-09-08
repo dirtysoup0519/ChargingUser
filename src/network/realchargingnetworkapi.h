@@ -10,7 +10,7 @@
 class BackendClient;
 class QTimer;
 
-/** 阶段 F 真实确认适配器：119/229 查询站点电桩，100/200 补查余额。 */
+    /** 阶段 F 真实确认适配器：119/229 查询站点电桩，100/200 补查余额和活动订单。 */
 class RealChargingNetworkApi final : public IChargingNetworkApi
 {
     Q_OBJECT
@@ -39,7 +39,12 @@ private slots:
     void handleTimeout();
 
 private:
-    enum class PendingKind { ConfirmationStation, ConfirmationUser, Start };
+    enum class PendingKind {
+        ConfirmationStation,
+        ConfirmationUser,
+        ConfirmationOrders,
+        Start
+    };
     struct PendingRequest
     {
         PendingKind kind = PendingKind::ConfirmationStation;
@@ -48,18 +53,20 @@ private:
         QString chargerId;
         QJsonObject station;
         QJsonObject charger;
+        qint64 balanceCents = 0;
+        QString activeOrderId;
         QTimer *timer = nullptr;
     };
 
     bool begin(PendingKind kind, const RequestContext &context);
-    bool sendUserQuery();
+    bool sendTableQuery(const QString &table);
     void finishPending();
     void failPending(const QString &code, const QString &message,
                      bool retryable, bool resultUnknown = false);
     void emitFailure(const RequestContext &context, const QString &code,
                      const QString &message, bool retryable = false,
                      bool resultUnknown = false);
-    void publishConfirmation(const PendingRequest &pending, qint64 balanceCents);
+    void publishConfirmation(const PendingRequest &pending);
     static QString stringField(const QJsonObject &object,
                                std::initializer_list<const char *> keys);
     static bool boolField(const QJsonObject &object, const char *key);

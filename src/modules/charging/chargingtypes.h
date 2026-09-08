@@ -18,6 +18,8 @@ struct ChargeConfirmationSnapshot
     std::optional<double> powerKw;
     std::optional<qint64> priceCentsPerKwh;
     std::optional<qint64> walletBalanceCents;
+    bool hasActiveOrder = false;
+    QString activeOrderId;
     bool canStart = false;
     /** 服务端具备 operationId 幂等和结果查询能力后才能置 true。 */
     bool startOperationSupported = false;

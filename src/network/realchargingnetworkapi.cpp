@@ -142,11 +142,11 @@ bool RealChargingNetworkApi::begin(PendingKind kind, const RequestContext &conte
     return true;
 }
 
-bool RealChargingNetworkApi::sendUserQuery()
+bool RealChargingNetworkApi::sendTableQuery(const QString &table)
 {
     QJsonObject condition{{QStringLiteral("username"), m_username}};
     return m_backend->sendFrame(
-        GETDATA, QJsonObject{{QStringLiteral("table"), QStringLiteral("user")},
+        GETDATA, QJsonObject{{QStringLiteral("table"), table},
                              {QStringLiteral("cond"), condition},
                              {QStringLiteral("requestId"),
                               m_pending->context.requestId}});
@@ -183,7 +183,7 @@ void RealChargingNetworkApi::handleFrame(int msgType, const QJsonObject &payload
                     m_pending->station = station;
                     m_pending->charger = charger;
                     m_pending->kind = PendingKind::ConfirmationUser;
-                    if (!sendUserQuery()) {
+                    if (!sendTableQuery(QStringLiteral("user"))) {
                         failPending(QStringLiteral("send-failed"),
                                     QStringLiteral("余额查询发送失败。"), true);
                     }
@@ -208,13 +208,35 @@ void RealChargingNetworkApi::handleFrame(int msgType, const QJsonObject &payload
                             QStringLiteral("用户余额格式错误。"), true);
                 return;
             }
-            const PendingRequest pending = *m_pending;
-            finishPending();
-            publishConfirmation(pending, *balance);
+            m_pending->balanceCents = *balance;
+            m_pending->kind = PendingKind::ConfirmationOrders;
+            if (!sendTableQuery(QStringLiteral("orderInfo"))) {
+                failPending(QStringLiteral("send-failed"),
+                            QStringLiteral("活动订单查询发送失败。"), true);
+            }
             return;
         }
         failPending(QStringLiteral("user-not-found"),
                     QStringLiteral("未找到当前登录用户。"), false);
+        return;
+    }
+
+    if (m_pending->kind == PendingKind::ConfirmationOrders && msgType == DATA) {
+        const QJsonArray rows = payload.value(QStringLiteral("data")).toArray();
+        for (const QJsonValue &value : rows) {
+            if (!value.isObject()) continue;
+            const QJsonObject row = value.toObject();
+            if (stringField(row, {"username"}) != m_username) continue;
+            const QString status = stringField(row, {"status"});
+            if (status == QLatin1String(ORDER_CHARGING)
+                || status == QLatin1String(ORDER_PENDING_SETTLE)) {
+                m_pending->activeOrderId = stringField(row, {"orderNo", "orderId"});
+                break;
+            }
+        }
+        const PendingRequest pending = *m_pending;
+        finishPending();
+        publishConfirmation(pending);
         return;
     }
 
@@ -234,8 +256,7 @@ void RealChargingNetworkApi::handleFrame(int msgType, const QJsonObject &payload
     }
 }
 
-void RealChargingNetworkApi::publishConfirmation(const PendingRequest &pending,
-                                                 qint64 balanceCents)
+void RealChargingNetworkApi::publishConfirmation(const PendingRequest &pending)
 {
     const bool online = boolField(pending.charger, "online");
     const int businessStatus = pending.charger.value(QStringLiteral("businessStatus")).toInt(-1);
@@ -249,12 +270,18 @@ void RealChargingNetworkApi::publishConfirmation(const PendingRequest &pending,
     snapshot.powerKw = numberField(pending.charger, "powerKw");
     if (!snapshot.powerKw) snapshot.powerKw = numberField(pending.charger, "power");
     snapshot.priceCentsPerKwh = centsField(pending.station, "priceCents", "price");
-    snapshot.walletBalanceCents = balanceCents;
+    snapshot.walletBalanceCents = pending.balanceCents;
+    snapshot.hasActiveOrder = !pending.activeOrderId.isEmpty();
+    snapshot.activeOrderId = pending.activeOrderId;
     snapshot.canStart = online && businessStatus == CHARGER_IDLE;
     snapshot.startOperationSupported = capabilities().canStartChargingSafely();
     snapshot.canRecharge = true;
-    if (!snapshot.canStart) snapshot.disabledReason = online ? QStringLiteral("电桩当前不可用。")
-                                                             : QStringLiteral("电桩离线。");
+    if (snapshot.hasActiveOrder) {
+        snapshot.disabledReason = QStringLiteral("当前账号已有进行中的订单。");
+    } else if (!snapshot.canStart) {
+        snapshot.disabledReason = online ? QStringLiteral("电桩当前不可用。")
+                                         : QStringLiteral("电桩离线。");
+    }
     emit confirmationReady(pending.context, snapshot);
 }
 
