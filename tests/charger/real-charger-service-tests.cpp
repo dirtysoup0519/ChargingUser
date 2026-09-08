@@ -54,8 +54,9 @@ QJsonObject stationRecord(const QString &name, double lng, double lat, int price
 {
     return QJsonObject{{QStringLiteral("stationName"), name},
                        {QStringLiteral("address"), name + QStringLiteral("路1号")},
-                       {QStringLiteral("lng"), lng},
-                       {QStringLiteral("lat"), lat},
+                       // 管理员端/服务端 station 表使用的正式字段名。
+                       {QStringLiteral("longitude"), lng},
+                       {QStringLiteral("latitude"), lat},
                        {QStringLiteral("priceCents"), priceCents}};
 }
 
@@ -124,6 +125,8 @@ void RealChargerServiceTests::init()
     QCOMPARE(m_backend->connectionState(), ConnectionState::Connected);
 
     m_service = new RealChargerService(m_backend, this);
+    // BackendClient 连接建立时会发送协议握手/心跳帧；本组测试只统计充电桩服务发出的请求。
+    m_transport->sentFrames.clear();
 }
 
 void RealChargerServiceTests::queryStationsSendsStationThenChargerGetdata()

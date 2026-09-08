@@ -3,6 +3,10 @@ HEADERS += \
     $$PWD/walletbackendcapabilities.h \
     $$PWD/iwalletservice.h \
     $$PWD/iwalletnetworkapi.h \
-    $$PWD/walletservice.h \
-    $$PWD/mockwalletservice.h
-SOURCES += $$PWD/walletservice.cpp $$PWD/mockwalletservice.cpp
+    $$PWD/walletservice.h
+SOURCES += $$PWD/walletservice.cpp
+
+!contains(CONFIG, real_network) {
+    HEADERS += $$PWD/mockwalletservice.h
+    SOURCES += $$PWD/mockwalletservice.cpp
+}

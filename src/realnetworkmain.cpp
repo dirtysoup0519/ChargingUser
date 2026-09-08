@@ -1,17 +1,32 @@
 #include "app/application.h"
+#include "app/mapuibinder.h"
 #include "app/iuseruibinder.h"
 #include "network/backendclient.h"
 #include "network/qtnetworktransport.h"
+#include "network/realchargerservice.h"
 #include "network/realusernetworkapi.h"
+#include "modules/map/tencentmapservice.h"
 #include "presentation/pages/auth/loginwindow.h"
+#include "presentation/pages/home/navigationwindow.h"
+#include "presentation/pages/home/stationdetailwindow.h"
+#include "presentation/pages/profile/profileeditwindow.h"
+#include "presentation/pages/shell/mainwindow.h"
 #include "protocol.h"
 
 #include <QApplication>
 #include <QCommandLineOption>
 #include <QCommandLineParser>
+#include <QCoreApplication>
+#include <QDateTime>
 #include <QDebug>
+#include <QDir>
 #include <QFile>
+#include <QFileInfo>
+#include <QJsonDocument>
+#include <QJsonObject>
+#include <QJsonParseError>
 #include <QRegularExpression>
+#include <QStringList>
 
 namespace
 {
@@ -31,21 +46,6 @@ QString connectionStateName(ConnectionState state)
     return QStringLiteral("unknown");
 }
 
-QString navigationTargetName(NavigationTarget target)
-{
-    switch (target) {
-    case NavigationTarget::Login:
-        return QStringLiteral("login");
-    case NavigationTarget::ProfileEdit:
-        return QStringLiteral("profile-edit");
-    case NavigationTarget::Home:
-        return QStringLiteral("home");
-    case NavigationTarget::RestrictedHome:
-        return QStringLiteral("restricted-home");
-    }
-    return QStringLiteral("unknown");
-}
-
 bool validHost(const QString &host)
 {
     return !host.isEmpty()
@@ -53,10 +53,59 @@ bool validHost(const QString &host)
                QRegularExpression(QStringLiteral("[\\x00-\\x1f\\x7f]")));
 }
 
+QJsonObject loadTencentMapConfig()
+{
+    QStringList candidates;
+    const QString explicitPath =
+        qEnvironmentVariable("CHARGING_TENCENT_CONFIG").trimmed();
+    if (!explicitPath.isEmpty()) {
+        candidates.append(explicitPath);
+    }
+    candidates.append(
+        QDir::current().filePath(QStringLiteral("config/tencent-map.local.json")));
+    candidates.append(
+        QDir(QCoreApplication::applicationDirPath())
+            .filePath(QStringLiteral("../config/tencent-map.local.json")));
+
+    for (const QString &path : candidates) {
+        QFile file(path);
+        if (!file.open(QIODevice::ReadOnly)) {
+            continue;
+        }
+        QJsonParseError error;
+        const QJsonDocument document =
+            QJsonDocument::fromJson(file.readAll(), &error);
+        if (error.error == QJsonParseError::NoError && document.isObject()) {
+            return document.object();
+        }
+    }
+    return {};
+}
+
+void configureWebEngineProcess(const char *executablePath)
+{
+    if (!qEnvironmentVariableIsEmpty("QTWEBENGINEPROCESS_PATH")) {
+        return;
+    }
+    const QString executableDir =
+        QFileInfo(QString::fromLocal8Bit(executablePath)).absolutePath();
+    const QStringList candidates = {
+        QDir(executableDir).filePath(QStringLiteral("QtWebEngineProcess")),
+        QStringLiteral("/usr/lib/x86_64-linux-gnu/qt6/libexec/QtWebEngineProcess"),
+        QStringLiteral("/usr/lib/qt6/libexec/QtWebEngineProcess")};
+    for (const QString &candidate : candidates) {
+        if (QFileInfo::exists(candidate)) {
+            qputenv("QTWEBENGINEPROCESS_PATH", candidate.toUtf8());
+            return;
+        }
+    }
+}
+
 } // namespace
 
 int main(int argc, char *argv[])
 {
+    configureWebEngineProcess(argv[0]);
     QApplication app(argc, argv);
     app.setApplicationName(QStringLiteral("智充"));
     app.setApplicationVersion(QStringLiteral("1.0"));
@@ -115,25 +164,166 @@ int main(int argc, char *argv[])
     BackendClient backend(&transport);
     RealUserNetworkApi network(&backend);
     UserApplicationAssembly assembly(&network);
+    RealChargerService chargerService(&backend);
+    TencentMapService mapService;
+
+    const QJsonObject mapConfig = loadTencentMapConfig();
+    QString mapKey = qEnvironmentVariable("TENCENT_MAP_KEY").trimmed();
+    if (mapKey.isEmpty()) {
+        mapKey = mapConfig.value(QStringLiteral("key")).toString().trimmed();
+    }
+    QString mapRegion = qEnvironmentVariable("TENCENT_MAP_REGION").trimmed();
+    if (mapRegion.isEmpty()) {
+        mapRegion = mapConfig.value(QStringLiteral("region"))
+                        .toString(QStringLiteral("北京市"))
+                        .trimmed();
+    }
+    mapService.setApiKey(mapKey);
+    mapService.setSearchRegion(mapRegion);
+
+    const QJsonObject locationConfig =
+        mapConfig.value(QStringLiteral("defaultLocation")).toObject();
+    if (!locationConfig.isEmpty()) {
+        LocationResult fallback;
+        fallback.point.latitude =
+            locationConfig.value(QStringLiteral("latitude")).toDouble();
+        fallback.point.longitude =
+            locationConfig.value(QStringLiteral("longitude")).toDouble();
+        fallback.capturedAtUtc = QDateTime::currentDateTimeUtc();
+        fallback.source = LocationSource::Manual;
+        if (fallback.point.isValid()) {
+            mapService.setFallbackLocation(fallback);
+        }
+    }
+    MapUiBinder mapBinder(&chargerService, &mapService);
 
     LoginWindow login;
+    ProfileEditWindow profileEdit;
+    MainWindow mainWindow;
+    StationDetailWindow stationDetail(&mainWindow);
+    NavigationWindow navigation(&mainWindow);
+    mainWindow.registerSecondaryPage(&stationDetail);
+    mainWindow.registerSecondaryPage(&navigation);
+    if (!mapKey.isEmpty()) {
+        mainWindow.setMapKey(mapKey);
+    }
     IUserUiBinder *binder = assembly.userUiBinder();
+    bool profileEditOpenedFromMain = false;
+
+    const auto showOnly = [&login, &profileEdit, &mainWindow](QWidget *target) {
+        login.setVisible(target == &login);
+        profileEdit.setVisible(target == &profileEdit);
+        mainWindow.setVisible(target == &mainWindow);
+        if (target != nullptr) {
+            target->raise();
+            target->activateWindow();
+        }
+    };
 
     QObject::connect(&login, &LoginWindow::loginRequested,
                      binder, &IUserUiBinder::loginRequested);
+    QObject::connect(&profileEdit, &ProfileEditWindow::profileSaveRequested,
+                     binder, &IUserUiBinder::profileSaveRequested);
+    QObject::connect(&mainWindow, &MainWindow::logoutRequested,
+                     binder, &IUserUiBinder::logoutRequested);
     QObject::connect(binder, &IUserUiBinder::loginViewStateChanged,
                      &login, &LoginWindow::render);
-    QObject::connect(binder, &IUserUiBinder::navigationRequested,
-                     &login, [&login](NavigationTarget target) {
-        if (target == NavigationTarget::Login) {
-            login.show();
-            login.raise();
+    QObject::connect(binder, &IUserUiBinder::profileEditViewStateChanged,
+                     &profileEdit, &ProfileEditWindow::render);
+    QObject::connect(binder, &IUserUiBinder::profileViewStateChanged,
+                     &mainWindow, &MainWindow::renderProfile);
+    QObject::connect(&mainWindow, &MainWindow::primaryPageRequested,
+                     &mainWindow, &MainWindow::renderPrimaryPage);
+    QObject::connect(&mainWindow, &MainWindow::locateRequested,
+                     &mapBinder, &IMapUiBinder::locateRequested);
+    QObject::connect(&mainWindow, &MainWindow::mapReady,
+                     &mapBinder, &IMapUiBinder::mapReady);
+    QObject::connect(&mainWindow, &MainWindow::mapLoadFailed,
+                     &mapBinder, &IMapUiBinder::mapLoadFailed);
+    QObject::connect(&mainWindow, &MainWindow::stationSearchRequested,
+                     &mapBinder, &IMapUiBinder::stationSearchRequested);
+    QObject::connect(&mainWindow, &MainWindow::stationSearchRetryRequested,
+                     &mapBinder, &IMapUiBinder::stationSearchRetryRequested);
+    QObject::connect(&mainWindow, &MainWindow::stationSearchCleared,
+                     &mapBinder, &IMapUiBinder::stationSearchCleared);
+    QObject::connect(&mainWindow, &MainWindow::searchAreaRequested,
+                     &mapBinder, &IMapUiBinder::searchAreaRequested);
+    QObject::connect(&mainWindow, &MainWindow::stationSelected,
+                     &mapBinder, &IMapUiBinder::stationSelected);
+    QObject::connect(&mainWindow, &MainWindow::stationDetailsRequested,
+                     &mapBinder, &IMapUiBinder::stationDetailsRequested);
+    QObject::connect(&stationDetail, &StationDetailWindow::backRequested,
+                     &mapBinder, &IMapUiBinder::backRequested);
+    QObject::connect(&stationDetail, &StationDetailWindow::stationRefreshRequested,
+                     &mapBinder, &IMapUiBinder::stationRefreshRequested);
+    QObject::connect(&stationDetail, &StationDetailWindow::routePreviewRequested,
+                     &mapBinder, &IMapUiBinder::routePreviewRequested);
+    QObject::connect(&navigation, &NavigationWindow::backRequested,
+                     &mapBinder, &IMapUiBinder::backRequested);
+    QObject::connect(&navigation, &NavigationWindow::routeModeRequested,
+                     &mapBinder, &IMapUiBinder::routeModeRequested);
+    QObject::connect(&navigation, &NavigationWindow::manualOriginRequested,
+                     &mapBinder, &IMapUiBinder::manualOriginRequested);
+    QObject::connect(&navigation, &NavigationWindow::originCandidateSelected,
+                     &mapBinder, &IMapUiBinder::originCandidateSelected);
+    QObject::connect(&navigation, &NavigationWindow::routeRetryRequested,
+                     &mapBinder, &IMapUiBinder::routeRetryRequested);
+    QObject::connect(&mapBinder, &IMapUiBinder::homeStateChanged,
+                     &mainWindow, &MainWindow::renderHome);
+    QObject::connect(&mapBinder, &IMapUiBinder::stationDetailStateChanged,
+                     &stationDetail, &StationDetailWindow::render);
+    QObject::connect(&mapBinder, &IMapUiBinder::navigationStateChanged,
+                     &navigation, &NavigationWindow::render);
+    QObject::connect(&mapBinder, &IMapUiBinder::pageRequested,
+                     &app, [&](MapPageTarget target, const QString &) {
+        switch (target) {
+        case MapPageTarget::Home:
+            mainWindow.renderPrimaryPage(MainWindow::PrimaryPage::Home);
+            break;
+        case MapPageTarget::StationDetail:
+            stationDetail.render(mapBinder.currentStationDetailState());
+            mainWindow.renderSecondaryPage(&stationDetail);
+            break;
+        case MapPageTarget::Navigation:
+            navigation.render(mapBinder.currentNavigationState());
+            mainWindow.renderSecondaryPage(&navigation);
+            break;
+        }
+    });
+    QObject::connect(&mainWindow, &MainWindow::profileEditRequested,
+                     &mainWindow, [&] {
+        profileEditOpenedFromMain = true;
+        profileEdit.render(binder->currentProfileEditViewState());
+        showOnly(&profileEdit);
+    });
+    QObject::connect(&profileEdit, &ProfileEditWindow::backRequested,
+                     &profileEdit, [&] {
+        if (profileEditOpenedFromMain) {
+            showOnly(&mainWindow);
             return;
         }
-        // 第四阶段不伪造资料协议，也不扩大 UI 页面接线范围。
-        qWarning().noquote()
-            << QStringLiteral("Navigation target '%1' requested; real-network page handoff is not enabled yet.")
-                   .arg(navigationTargetName(target));
+        binder->logoutRequested();
+    });
+    QObject::connect(binder, &IUserUiBinder::navigationRequested,
+                     &app, [&](NavigationTarget target) {
+        switch (target) {
+        case NavigationTarget::Login:
+            login.render(binder->currentLoginViewState());
+            showOnly(&login);
+            break;
+        case NavigationTarget::ProfileEdit:
+            profileEditOpenedFromMain = false;
+            profileEdit.render(binder->currentProfileEditViewState());
+            showOnly(&profileEdit);
+            break;
+        case NavigationTarget::Home:
+        case NavigationTarget::RestrictedHome:
+            mainWindow.renderProfile(binder->currentProfileViewState());
+            mainWindow.renderPrimaryPage(MainWindow::PrimaryPage::Home);
+            showOnly(&mainWindow);
+            mapBinder.activateHome();
+            break;
+        }
     });
     QObject::connect(&backend, &BackendClient::connectionStateChanged,
                      &login, [](ConnectionState state) {
@@ -148,7 +338,13 @@ int main(int argc, char *argv[])
                      &backend, &BackendClient::shutdown);
 
     login.render(binder->currentLoginViewState());
-    login.show();
+    profileEdit.render(binder->currentProfileEditViewState());
+    mainWindow.renderProfile(binder->currentProfileViewState());
+    mainWindow.renderHome(mapBinder.currentHomeState());
+    if (mapKey.isEmpty()) {
+        mapBinder.mapLoadFailed();
+    }
+    showOnly(&login);
 
     qInfo().noquote()
         << QStringLiteral("Starting real-network entry for %1:%2.")
