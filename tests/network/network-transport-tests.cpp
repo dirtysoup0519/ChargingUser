@@ -224,7 +224,10 @@ void NetworkTransportTests::transportPreservesQueuedFrameOrder()
 
     QJsonObject payload;
     payload.insert(QStringLiteral("phone"), QStringLiteral("masked"));
+    // 连接建立时 BackendClient 会自动先发一条 107 存活心跳（远程服务端会踢
+    // 静默连接），随后才是本用例显式排队的心跳与登录帧。
     const QByteArray expected = MassageHandler::makeHeartbeat()
+                              + MassageHandler::makeHeartbeat()
                               + MassageHandler::pack(PHONE_LOGIN_REQ, payload);
 
     QVERIFY(backend.sendFrame(HEARTBEAT));
