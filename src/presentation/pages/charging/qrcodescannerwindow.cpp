@@ -68,7 +68,7 @@ QrCodeScannerWindow::QrCodeScannerWindow(QWidget *parent)
             ui->previewPlaceholder->setPixmap(QPixmap::fromImage(image).scaled(
                 ui->previewPlaceholder->size(), Qt::KeepAspectRatioByExpanding,
                 Qt::SmoothTransformation));
-        });
+        }, Qt::QueuedConnection);
         connect(m_camera, &QCamera::errorOccurred, this,
                 [this](QCamera::Error, const QString &description) {
             ui->stateLabel->setText(description.isEmpty()
