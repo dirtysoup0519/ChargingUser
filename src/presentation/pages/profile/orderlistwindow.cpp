@@ -59,9 +59,14 @@ void OrderListWindow::rebuild()
         if (m_filter==Filter::Charging && order.type!=OrderBusinessType::Charging) continue;
         if (m_filter==Filter::Reservation && order.type!=OrderBusinessType::Reservation) continue;
         ++shown; auto *card=new QFrame; card->setObjectName("orderCard"); auto *box=new QVBoxLayout(card); box->setContentsMargins(14,12,14,12); box->setSpacing(7);
-        auto *top=new QHBoxLayout; auto *kind=new QLabel(order.type==OrderBusinessType::Charging?tr("充电订单"):tr("预约订单"),card); kind->setObjectName("orderKind"); auto *status=new QLabel(order.statusText,card); status->setObjectName("orderStatus"); status->setProperty("tone", QVariant(order.statusTone)); top->addWidget(kind); top->addStretch(); top->addWidget(status); box->addLayout(top);
+        const QString kindText = order.type == OrderBusinessType::Charging ? tr("充电订单")
+                                  : order.type == OrderBusinessType::Reservation ? tr("预约订单")
+                                  : tr("钱包充值");
+        auto *top=new QHBoxLayout; auto *kind=new QLabel(kindText,card); kind->setObjectName("orderKind"); auto *status=new QLabel(order.statusText,card); status->setObjectName("orderStatus"); status->setProperty("tone", QVariant(order.statusTone)); top->addWidget(kind); top->addStretch(); top->addWidget(status); box->addLayout(top);
         auto *station=new QLabel(order.stationName,card); station->setObjectName("orderStation"); station->setWordWrap(true); box->addWidget(station);
-        auto *meta=new QLabel(tr("%1号桩  ·  %2").arg(order.chargerCode,order.createdAtText),card); meta->setObjectName("orderMeta"); box->addWidget(meta);
+        auto *meta=new QLabel(order.type == OrderBusinessType::Recharge
+                                  ? order.createdAtText
+                                  : tr("%1号桩  ·  %2").arg(order.chargerCode,order.createdAtText),card); meta->setObjectName("orderMeta"); box->addWidget(meta);
         auto *summary=new QLabel(order.summaryText,card); summary->setObjectName("orderSummary"); summary->setWordWrap(true); box->addWidget(summary);
         auto *bottom=new QHBoxLayout; auto *amount=new QLabel(order.amountText,card); amount->setObjectName("orderAmount"); bottom->addWidget(amount); bottom->addStretch();
         if(order.action!=OrderListAction::None){auto *action=new QPushButton(order.actionText,card); action->setObjectName("orderAction"); action->setProperty("primary", QVariant(order.action==OrderListAction::ContinuePayment)); connect(action,&QPushButton::clicked,this,[this,order]{emit orderActionRequested(order.businessId,order.type,order.action);}); bottom->addWidget(action);} box->addLayout(bottom); m_cardsLayout->addWidget(card);

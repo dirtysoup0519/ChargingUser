@@ -356,6 +356,8 @@ int main(int argc, char *argv[])
     ScanEntryPoint scanEntryPoint = ScanEntryPoint::PrimaryCharging;
     bool confirmationOpenedFromScanner = false;
     WalletEntryPoint walletEntryPoint = WalletEntryPoint::Profile;
+    bool orderListOpen = false;
+    OrderListViewState orderListBaseState;
     const auto openWallet = [&](WalletEntryPoint entryPoint) {
         walletEntryPoint = entryPoint;
         walletBinder.activate();
@@ -484,8 +486,11 @@ int main(int argc, char *argv[])
     });
     QObject::connect(&mainWindow, &MainWindow::ordersPageRequested,
                      &app, [&] {
+        orderListOpen = true;
+        orderListBaseState = {};
         orderList.render(OrderListViewState{{}, QStringLiteral("正在加载订单…")});
         mainWindow.renderSecondaryPage(&orderList);
+        walletBinder.activate();
         orderService.queryActiveOrders(
             {QUuid::createUuid().toString(QUuid::WithoutBraces), {}});
     });
@@ -525,6 +530,28 @@ int main(int argc, char *argv[])
         if (!stationId.trimmed().isEmpty())
             mapBinder.stationDetailsRequested(stationId);
     });
+    const auto appendRechargeOrders = [&](OrderListViewState state) {
+        const WalletViewState wallet = walletBinder.currentState();
+        for (const WalletTransaction &transaction : wallet.recentTransactions) {
+            if (transaction.type != WalletTransactionType::Recharge) continue;
+            OrderListItemView item;
+            item.businessId = transaction.transactionId;
+            item.type = OrderBusinessType::Recharge;
+            item.stationName = QStringLiteral("钱包账户");
+            item.createdAtText = transaction.createdAtUtc.isValid()
+                ? transaction.createdAtUtc.toLocalTime().toString(Qt::ISODate)
+                : QStringLiteral("时间未知");
+            item.amountText = QStringLiteral("¥%1").arg(transaction.amountCents / 100.0, 0, 'f', 2);
+            item.statusText = QStringLiteral("已完成");
+            item.statusTone = QStringLiteral("success");
+            item.summaryText = transaction.transactionId.isEmpty()
+                ? QStringLiteral("钱包充值流水")
+                : QStringLiteral("流水号 %1").arg(transaction.transactionId);
+            item.action = OrderListAction::None;
+            state.orders.append(item);
+        }
+        return state;
+    };
     QObject::connect(&orderService, &IOrderService::activeOrdersReady,
                      &app, [&](const RequestContext &, const QVector<ChargingOrder> &orders) {
         OrderListViewState state;
@@ -554,12 +581,21 @@ int main(int argc, char *argv[])
                                                                        : QStringLiteral("去结算");
             state.orders.append(item);
         }
+        state = appendRechargeOrders(state);
+        orderListBaseState = state;
         state.message = state.orders.isEmpty() ? QStringLiteral("暂无进行中的订单") : QString();
         orderList.render(state);
     });
     QObject::connect(&orderList, &OrderListWindow::backRequested,
                      &app, [&] {
+        orderListOpen = false;
         mainWindow.renderPrimaryPage(MainWindow::PrimaryPage::Profile);
+    });
+    QObject::connect(&walletBinder, &WalletUiBinder::stateChanged,
+                     &app, [&](const WalletViewState &wallet) {
+        if (!orderListOpen || wallet.recentTransactions.isEmpty()) return;
+        OrderListViewState state = appendRechargeOrders(orderListBaseState);
+        orderList.render(state);
     });
     QObject::connect(&orderList, &OrderListWindow::refreshRequested,
                      &app, [&] {

@@ -7,6 +7,9 @@
 #include <QList>
 #include <QPair>
 #include <QPushButton>
+#include <QLabel>
+#include <QStringList>
+#include <QVBoxLayout>
 
 WalletRechargeWindow::WalletRechargeWindow(QWidget *parent)
     : QWidget(parent), ui(new Ui::WalletRechargeWindow)
@@ -44,6 +47,14 @@ WalletRechargeWindow::WalletRechargeWindow(QWidget *parent)
     connect(ui->confirmRechargeButton, &QPushButton::clicked, this, [this] {
         emit rechargeRequested(ui->customAmountEdit->text().trimmed());
     });
+    auto *transactions = new QLabel(this);
+    transactions->setObjectName(QStringLiteral("walletTransactionsLabel"));
+    transactions->setWordWrap(true);
+    transactions->setStyleSheet(QStringLiteral(
+        "#walletTransactionsLabel { background: white; border-radius: 8px; "
+        "padding: 10px; color: #52627A; font-size: 13px; }"));
+    transactions->setText(tr("暂无钱包流水"));
+    ui->contentLayout->insertWidget(5, transactions);
 }
 
 WalletRechargeWindow::~WalletRechargeWindow() { delete ui; }
@@ -71,6 +82,28 @@ void WalletRechargeWindow::render(const WalletViewState &state)
     ui->amount50Button->setEnabled(!busy);
     ui->amount100Button->setEnabled(!busy);
     ui->amount200Button->setEnabled(!busy);
+    auto *transactions = findChild<QLabel *>(QStringLiteral("walletTransactionsLabel"));
+    if (transactions) {
+        QStringList lines;
+        for (const WalletTransaction &transaction : state.recentTransactions) {
+            QString type = tr("其他");
+            if (transaction.type == WalletTransactionType::Recharge)
+                type = tr("充值");
+            else if (transaction.type == WalletTransactionType::Payment)
+                type = tr("支付");
+            else if (transaction.type == WalletTransactionType::Refund)
+                type = tr("退款");
+            const QString time = transaction.createdAtUtc.isValid()
+                ? transaction.createdAtUtc.toLocalTime().toString(QStringLiteral("MM-dd hh:mm"))
+                : tr("时间未知");
+            const QString sign = transaction.amountCents >= 0 ? QStringLiteral("+") : QString();
+            lines.append(tr("%1  %2  %3¥%4")
+                .arg(time, type, sign)
+                .arg(qAbs(transaction.amountCents) / 100.0, 0, 'f', 2));
+        }
+        transactions->setText(lines.isEmpty() ? tr("暂无钱包流水") : lines.join(QLatin1Char('\n')));
+        transactions->setVisible(state.status != WalletPageStatus::Idle);
+    }
 }
 
 void WalletRechargeWindow::selectQuickAmount(const QString &amountText)

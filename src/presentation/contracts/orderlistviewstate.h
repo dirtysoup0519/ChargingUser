@@ -3,7 +3,7 @@
 #include <QMetaType>
 #include <QString>
 
-enum class OrderBusinessType { Charging, Reservation };
+enum class OrderBusinessType { Charging, Reservation, Recharge };
 enum class OrderListAction { None, ContinuePayment, ViewCharging, StartReservedCharging, ViewDetails };
 
 struct OrderListItemView
