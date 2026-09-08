@@ -510,6 +510,31 @@ int main(int argc, char *argv[])
         state.message = state.orders.isEmpty() ? QStringLiteral("暂无进行中的订单") : QString();
         orderList.render(state);
     });
+    QObject::connect(&orderList, &OrderListWindow::backRequested,
+                     &app, [&] {
+        mainWindow.renderPrimaryPage(MainWindow::PrimaryPage::Profile);
+    });
+    QObject::connect(&orderList, &OrderListWindow::refreshRequested,
+                     &app, [&] {
+        orderService.queryActiveOrders(
+            {QUuid::createUuid().toString(QUuid::WithoutBraces), {}});
+    });
+    QObject::connect(&orderList, &OrderListWindow::orderActionRequested,
+                     &app, [&](const QString &orderId, OrderBusinessType type,
+                               OrderListAction action) {
+        if (type != OrderBusinessType::Charging || orderId.trimmed().isEmpty()) {
+            showProfileNotice(QStringLiteral("订单"),
+                              QStringLiteral("该订单类型暂未接入详情页。"));
+            return;
+        }
+        if (action == OrderListAction::ViewCharging) {
+            sessionBinder.sessionRequested(orderId);
+            mainWindow.renderSecondaryPage(&sessionWindow);
+            return;
+        }
+        orderService.queryOrderDetail(
+            {QUuid::createUuid().toString(QUuid::WithoutBraces), {}}, orderId);
+    });
     QObject::connect(&walletRecharge, &WalletRechargeWindow::backRequested,
                      &app, [&] {
         if (walletEntryPoint == WalletEntryPoint::ChargeConfirmation) {
