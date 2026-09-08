@@ -4,6 +4,7 @@
 #include "app/mapuibinder.h"
 #include "app/iuseruibinder.h"
 #include "app/walletuibinder.h"
+#include "app/settlementuibinder.h"
 #include "modules/charging/chargingservice.h"
 #include "network/backendclient.h"
 #include "network/qtnetworktransport.h"
@@ -193,6 +194,7 @@ int main(int argc, char *argv[])
     RealWalletNetworkApi walletNetwork(&backend);
     WalletService walletService(&walletNetwork);
     WalletUiBinder walletBinder(&walletService);
+    SettlementUiBinder settlementBinder(&walletService);
 
     const QJsonObject mapConfig = loadTencentMapConfig();
     QString mapKey = qEnvironmentVariable("TENCENT_MAP_KEY").trimmed();
@@ -382,7 +384,15 @@ int main(int argc, char *argv[])
                                const std::optional<ChargingOrder> &active) {
         if (active.has_value()) {
             sessionBinder.sessionRequested(active->orderId);
+            if (active->status == OrderStatus::PendingSettlement) {
+                settlementBinder.showOrder(*active);
+            }
         }
+    });
+    QObject::connect(&orderService, &IOrderService::chargingStopped,
+                     &app, [&](const RequestContext &,
+                               const StopChargingResult &result) {
+        settlementBinder.showOrder(result.order);
     });
 
     // ===== 阶段 B：预约/扫码页可达（业务 Binder 属阶段 J，渲染诚实失败态）=====
