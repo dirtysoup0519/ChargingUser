@@ -15,16 +15,27 @@ INCLUDEPATH += \
 include($$PROJECT_ROOT/src/presentation/presentation.pri)
 include($$PROJECT_ROOT/src/modules/map/map.pri)
 include($$PROJECT_ROOT/src/modules/charger/charger.pri)
+include($$PROJECT_ROOT/src/modules/charging/charging.pri)
+include($$PROJECT_ROOT/src/modules/order/order.pri)
+include($$PROJECT_ROOT/src/modules/wallet/wallet.pri)
 include($$PROJECT_ROOT/src/modules/user/user.pri)
 include($$PROJECT_ROOT/src/flow/flow.pri)
 include($$PROJECT_ROOT/src/app/app.pri)
 
 SOURCES += \
     user-demo-tests.cpp \
+    $$PROJECT_ROOT/src/demo/chargedemofixtureloader.cpp \
+    $$PROJECT_ROOT/src/demo/reservationdemofixtureloader.cpp \
     $$PROJECT_ROOT/src/demo/userdemocontroller.cpp
 
 HEADERS += \
+    $$PROJECT_ROOT/src/demo/chargedemofixtureloader.h \
+    $$PROJECT_ROOT/src/demo/reservationdemofixtureloader.h \
     $$PROJECT_ROOT/src/demo/userdemocontroller.h
+
+# userdemocontroller 读取 :/demo/*.tmp 夹具；正式构建的 demo 资源
+# 已隔离到 demo-resources.qrc，测试工程需显式携带。
+RESOURCES += $$PROJECT_ROOT/resources/demo-resources.qrc
 
 FORMS += \
     $$PROJECT_ROOT/ui/auth/loginwindow.ui \
