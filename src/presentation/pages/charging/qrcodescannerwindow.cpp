@@ -85,6 +85,9 @@ void QrCodeScannerWindow::render(const ScanViewState &state)
         const bool showPreview = state.cameraPermissionGranted
             && (state.status == ScanStatus::OpeningCamera || state.status == ScanStatus::Scanning);
         m_videoWidget->setVisible(showPreview);
+        // The placeholder label is underneath the camera preview; keeping it
+        // visible would paint the hint text over the live video frame.
+        ui->previewPlaceholder->setVisible(!showPreview);
         if (showPreview && !m_camera->isActive())
             m_camera->start();
         if (!showPreview && m_camera->isActive())
