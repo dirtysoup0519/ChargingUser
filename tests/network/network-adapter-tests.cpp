@@ -14,6 +14,8 @@
 #include "protocol.h"
 
 #include <QSignalSpy>
+
+#include <algorithm>
 #include <QtTest>
 
 namespace
@@ -93,6 +95,19 @@ QList<QPair<int, QJsonObject>> decodeFrames(const QList<QByteArray> &bytesList)
     return frames;
 }
 
+/* 过滤连接时自动发出的 107 存活心跳：心跳属于生命周期帧，
+ * 业务用例只断言业务帧的条数与顺序。 */
+QList<QPair<int, QJsonObject>> businessFrames(const QList<QByteArray> &bytesList)
+{
+    auto frames = decodeFrames(bytesList);
+    frames.erase(std::remove_if(frames.begin(), frames.end(),
+                                [](const QPair<int, QJsonObject> &frame) {
+                                    return frame.first == HEARTBEAT;
+                                }),
+                 frames.end());
+    return frames;
+}
+
 RequestContext makeContext(const QString &requestId)
 {
     RequestContext context;
@@ -140,7 +155,7 @@ void NetworkAdapterTests::loginSendsPhoneRequestWithRequestId()
     RealUserNetworkApi api(&backend);
 
     api.loginByPhone(QStringLiteral("13800138000"), makeContext(QStringLiteral("req-x")));
-    const auto frames = decodeFrames(transport.m_sentFrames);
+    const auto frames = businessFrames(transport.m_sentFrames);
 
     QCOMPARE(frames.size(), 1);
     QCOMPARE(frames.first().first, PHONE_LOGIN_REQ);
@@ -149,6 +164,9 @@ void NetworkAdapterTests::loginSendsPhoneRequestWithRequestId()
              QStringLiteral("13800138000"));
     QCOMPARE(payload.value(QLatin1String("requestId")).toString(),
              QStringLiteral("req-x"));
+    // 联调约定：password=手机号 随载荷携带，服务端自动注册用默认密码。
+    QCOMPARE(payload.value(QLatin1String("password")).toString(),
+             QStringLiteral("13800138000"));
 }
 
 void NetworkAdapterTests::loginAckMapsToLoginResult()
@@ -249,7 +267,7 @@ void NetworkAdapterTests::queryProfileReportsUnsupportedProtocol()
     QCOMPARE(error.operationId, QStringLiteral("req-4-op"));
     QVERIFY(!error.retryable);
     QVERIFY(!error.resultUnknown);
-    QVERIFY(transport.m_sentFrames.isEmpty());
+    QVERIFY(businessFrames(transport.m_sentFrames).isEmpty());
 }
 
 void NetworkAdapterTests::nicknameUpdateReportsUnsupportedProtocol()
@@ -270,7 +288,7 @@ void NetworkAdapterTests::nicknameUpdateReportsUnsupportedProtocol()
     QCOMPARE(error.operationId, QStringLiteral("req-5-op"));
     QVERIFY(!error.retryable);
     QVERIFY(!error.resultUnknown);
-    QVERIFY(transport.m_sentFrames.isEmpty());
+    QVERIFY(businessFrames(transport.m_sentFrames).isEmpty());
 }
 
 void NetworkAdapterTests::disconnectFailsPendingRequests()
@@ -463,7 +481,7 @@ void NetworkAdapterTests::logoutSendsImmediatelyWithoutAck()
     QCOMPARE(successes.count(), 1);
     QCOMPARE(failures.count(), 0);
 
-    const auto frames = decodeFrames(transport.m_sentFrames);
+    const auto frames = businessFrames(transport.m_sentFrames);
     QCOMPARE(frames.size(), 1);
     QCOMPARE(frames.first().first, LOGOUT_REQ);
     QCOMPARE(frames.first().second.value(QLatin1String("requestId")).toString(),
