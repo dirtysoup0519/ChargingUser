@@ -36,5 +36,6 @@ private:
     QCamera *m_camera = nullptr;
     QMediaCaptureSession *m_captureSession = nullptr;
     QVideoSink *m_videoSink = nullptr;
+    bool m_receivedCameraFrame = false;
 #endif
 };

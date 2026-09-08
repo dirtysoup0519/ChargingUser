@@ -6,9 +6,11 @@
 
 #ifdef CHARGINGUSER_ENABLE_QT_MULTIMEDIA
 #include <QCamera>
+#include <QCameraFormat>
 #include <QMediaDevices>
 #include <QMediaCaptureSession>
 #include <QPixmap>
+#include <QTimer>
 #include <QVideoFrame>
 #include <QVideoSink>
 #endif
@@ -31,6 +33,15 @@ QrCodeScannerWindow::QrCodeScannerWindow(QWidget *parent)
     const auto cameras = QMediaDevices::videoInputs();
     if (!cameras.isEmpty()) {
         m_camera = new QCamera(cameras.front(), this);
+        QCameraFormat selectedFormat;
+        for (const QCameraFormat &format : cameras.front().videoFormats()) {
+            if (format.resolution() == QSize(640, 480) && format.maxFrameRate() >= 25.0) {
+                selectedFormat = format;
+                break;
+            }
+        }
+        if (!selectedFormat.isNull())
+            m_camera->setCameraFormat(selectedFormat);
         m_captureSession = new QMediaCaptureSession(this);
         m_videoSink = new QVideoSink(this);
         m_captureSession->setCamera(m_camera);
@@ -39,12 +50,16 @@ QrCodeScannerWindow::QrCodeScannerWindow(QWidget *parent)
                 [this](const QVideoFrame &frame) {
             const QImage image = frame.toImage();
             if (image.isNull() || !m_state.cameraPermissionGranted) return;
+            m_receivedCameraFrame = true;
             ui->previewPlaceholder->setPixmap(QPixmap::fromImage(image).scaled(
                 ui->previewPlaceholder->size(), Qt::KeepAspectRatioByExpanding,
                 Qt::SmoothTransformation));
         });
         connect(m_camera, &QCamera::errorOccurred, this,
-                [this](QCamera::Error, const QString &) {
+                [this](QCamera::Error, const QString &description) {
+            ui->stateLabel->setText(description.isEmpty()
+                                        ? tr("摄像头启动失败")
+                                        : tr("摄像头错误：%1").arg(description));
             emit cameraStatusChanged(false, false);
         });
     }
@@ -98,7 +113,14 @@ void QrCodeScannerWindow::render(const ScanViewState &state)
         else
             ui->previewPlaceholder->setPixmap(QPixmap());
         if (showPreview && !m_camera->isActive())
+        {
+            m_receivedCameraFrame = false;
             m_camera->start();
+            QTimer::singleShot(3000, this, [this] {
+                if (!m_camera || !m_camera->isActive() || m_receivedCameraFrame) return;
+                ui->stateLabel->setText(tr("摄像头已打开，但 3 秒内没有收到画面帧"));
+            });
+        }
         if (!showPreview && m_camera->isActive())
             m_camera->stop();
     }
