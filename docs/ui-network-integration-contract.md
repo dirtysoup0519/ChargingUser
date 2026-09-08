@@ -230,3 +230,94 @@ UI 联调前需要服务端准备：
 
 1. 个人中心 → 钱包 → 返回，应回到个人中心。
 2. 充电确认页 → 钱包 → 返回，应回到充电确认页。
+
+## 9. 联调问题清单与修复计划（map-navigation-ui）
+
+本节记录 2026-09-08 联调反馈，作为后续修复的验收依据。当前分支基线为
+`4865003`，以下问题尚未宣称已修复。
+
+### 9.1 我的页面四个入口不可用
+
+现象：个人中心的“我的订单、常用充电站、帮助与反馈、关于智充”点击后没有页面变化。
+
+代码证据：`MainWindow` 只对 `profileMenuList` 的第 0 项发出
+`ordersPageRequested()`，而 `src/main.cpp` 没有连接该信号，也没有创建或注册
+`OrderListWindow`；第 1～3 项没有任何业务分发。
+
+修复顺序：
+
+1. 先接通订单页：创建并注册 `OrderListWindow`，增加 `OrderListUiBinder`（或等价
+   的订单查询适配层），使用真实 `IOrderService::queryOrders` 数据，补齐返回路径。
+2. 将常用充电站、帮助与反馈、关于智充分别定义明确的页面/占位状态和信号，避免
+   点击后静默；暂未接入后端的页面显示诚实的“功能未接入”状态。
+3. 为四个入口增加 Qt 信号测试和手工验收：点击、返回、重复进入、登出后重新登录。
+
+### 9.2 首页和详情页腾讯地图不显示
+
+现象：两个地图区域均无法正常显示。
+
+代码证据：`main.cpp` 只从 `TENCENT_MAP_KEY` 或
+`config/tencent-map.local.json` 读取 Key；仓库仅提供
+`config/tencent-map.example.json`，其中 `key` 为空且 `provider` 为 `mock`。
+地图 HTML 又直接加载腾讯 GL JS，Key 为空、域名白名单不匹配、QtWebEngine/WebGL
+不可用时都会进入失败态。
+
+修复顺序：
+
+1. 联调前准备不提交到 Git 的 `config/tencent-map.local.json`，填入有效腾讯地图
+   JS Key、正确 `region` 和默认坐标；确认 Key 已开通 Web 服务/JavaScript API、
+   域名或来源限制允许当前环境。
+2. 启动时打印脱敏后的配置状态（是否有 Key、配置来源、WebEngine 进程路径），
+   页面失败时保留错误原因和重试按钮。
+3. 检查 Linux QtWebEngineProcess、GPU/WebGL 和 HTTPS 访问；必要时提供明确的
+   软件渲染启动选项，不把 TMP 地图数据当作真实地图成功标志。
+4. 首页与详情页分别验收 `mapReady`、标记渲染、标记点击和地图失败重试。
+
+### 9.3 扫码界面打不开或无实际扫描能力
+
+现象：扫码入口无法进入可用的扫码流程。
+
+代码证据：`main.cpp` 仅把会话页的 `scanChargingRequested` 导航到
+`QrCodeScannerWindow`，没有连接 `cameraPermissionRequested`、`scanRetryRequested`、
+`imageImportRequested`、`torchToggleRequested`，也没有扫码 Binder/摄像头实现；
+页面因此只能显示静态占位状态。
+
+修复顺序：
+
+1. 增加 `QrCodeScannerUiBinder` 与摄像头/图片输入适配器，统一输出扫码状态和解析
+   后的 `chargerCode`。
+2. 连接权限、重试、相册导入、手电筒信号；解析成功后调用服务端电桩校验，禁止
+   UI 本地伪造电桩存在。
+3. 校验成功后复用充电确认/启动链路，失败、权限拒绝、无摄像头和取消均有可见状态。
+
+### 9.4 充电桩详情页桩列表不能交互
+
+现象：详情页下方电桩行/“选择”按钮点击无效，导致充电订单无法进入测试。
+
+代码证据：`StationDetailWindow` 已发出 `chargerSelected`，但 `main.cpp` 当前只连接
+详情刷新、路线和充电确认信号，没有把 `StationDetailWindow::chargerSelected`
+连接到 `IMapUiBinder::chargerSelected`。同时 `MapUiBinder` 只允许
+`canCharge` 或本人预约的电桩继续选择；服务端若未返回可启动状态，按钮会按设计禁用。
+
+修复顺序：
+
+1. 先补齐详情页 `chargerSelected → MapUiBinder::chargerSelected` 接线，并在状态
+   更新后验证选中态和“去充电/确认”按钮可用性。
+2. 对服务端返回的 `online`、业务状态、预约归属和 `canStartCharging` 做字段审计，
+   明确不可用原因；不得为了联调直接放开禁用条件。
+3. 完成“选择电桩 → 充电确认 → 真实启动 115 → 会话页”的链路测试，并核对服务端
+   订单记录。
+
+### 9.5 阶段安排与验收门槛
+
+建议按以下阶段实施，每阶段独立提交：
+
+- A：修复个人中心四入口导航与订单页查询；
+- B：补齐详情页电桩选择接线和状态诊断；
+- C：恢复腾讯地图配置、WebEngine/WebGL 诊断和双页面验收；
+- D：实现扫码输入、服务端电桩校验并接入真实充电确认；
+- E：执行端到端联调，覆盖登录、站点、地图、选桩、扫码、启动、活动订单、停止、
+  结算和返回路径。
+
+每阶段必须同时满足：代码构建通过、对应自动化测试通过、页面点击有可见结果、
+服务端日志与数据库记录一致；未接入的能力只能显示明确占位或错误态，不能静默无响应。
