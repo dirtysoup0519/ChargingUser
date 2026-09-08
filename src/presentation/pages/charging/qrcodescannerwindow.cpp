@@ -130,12 +130,29 @@ void QrCodeScannerWindow::render(const ScanViewState &state)
         {
             m_receivedCameraFrame = false;
             m_convertedCameraFrame = false;
+            m_cameraRestartCount = 0;
             m_camera->start();
             QTimer::singleShot(3000, this, [this] {
                 if (!m_camera || !m_camera->isActive() || m_convertedCameraFrame) return;
-                ui->stateLabel->setText(m_receivedCameraFrame
-                    ? tr("摄像头有视频帧，但当前像素格式无法转换")
-                    : tr("摄像头已打开，但 3 秒内没有收到画面帧"));
+                if (m_receivedCameraFrame) {
+                    ui->stateLabel->setText(tr("摄像头有视频帧，但当前像素格式无法转换"));
+                    return;
+                }
+                ui->stateLabel->setText(tr("摄像头正在重新连接…"));
+                m_camera->stop();
+                ++m_cameraRestartCount;
+                QTimer::singleShot(1800, this, [this] {
+                    if (!m_camera || !m_state.cameraPermissionGranted) return;
+                    m_receivedCameraFrame = false;
+                    m_convertedCameraFrame = false;
+                    m_camera->start();
+                    QTimer::singleShot(4000, this, [this] {
+                        if (!m_camera || m_convertedCameraFrame) return;
+                        ui->stateLabel->setText(m_receivedCameraFrame
+                            ? tr("摄像头有视频帧，但当前像素格式无法转换")
+                            : tr("摄像头重连后仍未收到画面，请关闭其他摄像头程序后重试"));
+                    });
+                });
             });
         }
         if (!showPreview && m_camera->isActive())

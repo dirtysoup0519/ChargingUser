@@ -38,5 +38,6 @@ private:
     QVideoSink *m_videoSink = nullptr;
     bool m_receivedCameraFrame = false;
     bool m_convertedCameraFrame = false;
+    int m_cameraRestartCount = 0;
 #endif
 };
