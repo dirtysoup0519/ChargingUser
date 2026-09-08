@@ -108,10 +108,17 @@ void RealWalletNetworkApi::recharge(const RequestContext &context,
 }
 
 void RealWalletNetworkApi::payOrder(const RequestContext &context,
-                                    const QString &)
+                                    const QString &orderId)
 {
-    emitFailure(context, QStringLiteral("wallet-payment-unsupported"),
-                QStringLiteral("订单支付将在阶段 I 接入。"));
+    if (orderId.trimmed().isEmpty() || !begin(PendingKind::PayOrder, context)) return;
+    QJsonObject payload{{QStringLiteral("orderNo"), orderId.trimmed()},
+                        {QStringLiteral("username"), m_username},
+                        {QStringLiteral("requestId"), context.requestId},
+                        {QStringLiteral("operationId"), context.operationId}};
+    if (!m_backend->sendFrame(PAY_REQ, payload)) {
+        failPending(QStringLiteral("send-failed"),
+                    QStringLiteral("订单支付请求发送失败。"), false, true);
+    }
 }
 
 void RealWalletNetworkApi::queryOperationResult(const RequestContext &context,
@@ -254,6 +261,29 @@ void RealWalletNetworkApi::handleFrame(int msgType, const QJsonObject &payload)
         return;
     }
 
+    if (msgType == PAY_ACK && m_pending->kind == PendingKind::PayOrder) {
+        const PendingRequest pending = *m_pending;
+        bool ok = false;
+        const qint64 balance = parseCents(
+            payload, QStringLiteral("balanceCents"),
+            QStringLiteral("balance"), &ok);
+        if (!ok) {
+            failPending(QStringLiteral("bad-response"),
+                        QStringLiteral("支付响应缺少余额。"), false, true);
+            return;
+        }
+        MoneyOperationResult result;
+        result.requestId = pending.context.requestId;
+        result.operationId = pending.context.operationId;
+        result.type = MoneyOperationType::PayOrder;
+        result.balanceCents = balance;
+        result.orderId = payload.value(QStringLiteral("orderNo")).toString();
+        result.transactionId = payload.value(QStringLiteral("transactionId")).toString();
+        finishPending();
+        emit moneyOperationSucceeded(pending.context, result);
+        return;
+    }
+
     if (msgType >= DATA_NOEXIST && msgType <= OP_FORBIDDEN) {
         QString message = payload.value(QStringLiteral("err")).toString();
         if (message.isEmpty()) {
@@ -271,7 +301,8 @@ void RealWalletNetworkApi::handleFrame(int msgType, const QJsonObject &payload)
 void RealWalletNetworkApi::handleConnectionStateChanged(ConnectionState state)
 {
     if (state != ConnectionState::Connected && m_pending) {
-        const bool mutation = m_pending->kind == PendingKind::Recharge;
+        const bool mutation = m_pending->kind == PendingKind::Recharge
+                              || m_pending->kind == PendingKind::PayOrder;
         failPending(QStringLiteral("connection-lost"),
                     QStringLiteral("服务器连接已断开。"), !mutation, mutation);
     }
@@ -280,7 +311,8 @@ void RealWalletNetworkApi::handleConnectionStateChanged(ConnectionState state)
 void RealWalletNetworkApi::handleTimeout()
 {
     if (!m_pending) return;
-    const bool mutation = m_pending->kind == PendingKind::Recharge;
+    const bool mutation = m_pending->kind == PendingKind::Recharge
+                          || m_pending->kind == PendingKind::PayOrder;
     failPending(QStringLiteral("request-timeout"),
                 mutation ? QStringLiteral("充值结果未知，请刷新余额后确认，勿重复提交。")
                          : QStringLiteral("钱包查询超时。"),

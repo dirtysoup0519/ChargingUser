@@ -36,7 +36,7 @@ private slots:
     void handleTimeout();
 
 private:
-    enum class PendingKind { WalletUser, WalletTransactions, Recharge };
+    enum class PendingKind { WalletUser, WalletTransactions, Recharge, PayOrder };
     struct PendingRequest
     {
         PendingKind kind = PendingKind::WalletUser;

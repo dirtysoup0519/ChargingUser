@@ -112,29 +112,91 @@ void RealOrderService::queryOrderDetail(const RequestContext &context,
 void RealOrderService::stopCharging(const RequestContext &context,
                                     const QString &orderId)
 {
-    Q_UNUSED(orderId);
-    // 阶段 G（109/209 + 停止结果恢复）未实现：显式失败，绝不伪造停止成功。
-    emitFailed(context, QStringLiteral("order-stop-unsupported"),
-               QStringLiteral("Order stop is not wired yet (phase G)."), false);
+    if (!context.isValid() || !context.isMutation() || orderId.trimmed().isEmpty()) {
+        emitFailed(context, QStringLiteral("order-invalid-stop-request"),
+                   QStringLiteral("停止充电参数无效。"), false);
+        return;
+    }
+    if (m_username.isEmpty()) {
+        emitFailed(context, QStringLiteral("order-identity-missing"),
+                   QStringLiteral("当前用户身份未知。"), false);
+        return;
+    }
+    if (m_backend->connectionState() != ConnectionState::Connected) {
+        emitFailed(context, QStringLiteral("not-connected"),
+                   QStringLiteral("服务器尚未连接。"), true);
+        return;
+    }
+    if (m_pending) {
+        emitFailed(context, QStringLiteral("request-in-flight"),
+                   QStringLiteral("上一项订单请求仍在处理中。"), true);
+        return;
+    }
+
+    PendingRequest pending;
+    pending.kind = QueryKind::StopOrderLookup;
+    pending.requestId = context.requestId;
+    pending.operationId = context.operationId;
+    pending.orderId = orderId.trimmed();
+    pending.timer = new QTimer(this);
+    pending.timer->setSingleShot(true);
+    connect(pending.timer, &QTimer::timeout,
+            this, &RealOrderService::handleTimeout);
+    m_pending = pending;
+    QJsonObject condition{{QStringLiteral("orderNo"), pending.orderId},
+                          {QStringLiteral("username"), m_username}};
+    if (!m_backend->sendFrame(ORDERQRY_REQ,
+                              makeOrderQuery(condition, context.requestId))) {
+        failPending(QStringLiteral("send-failed"),
+                    QStringLiteral("停止前订单查询发送失败。"), true);
+        return;
+    }
+    pending.timer->start(m_requestTimeoutMs);
 }
 
 void RealOrderService::queryStopResult(const RequestContext &context,
                                        const QString &operationId)
 {
-    Q_UNUSED(operationId);
-    emitFailed(context, QStringLiteral("order-stop-unsupported"),
-               QStringLiteral("Order stop is not wired yet (phase G)."), false);
+    if (!context.isValid() || context.isMutation() || operationId.trimmed().isEmpty()) {
+        emitFailed(context, QStringLiteral("order-invalid-stop-result-query"),
+                   QStringLiteral("停止结果查询参数无效。"), false);
+        return;
+    }
+    if (m_username.isEmpty()) {
+        emitFailed(context, QStringLiteral("order-identity-missing"),
+                   QStringLiteral("当前用户身份未知。"), false);
+        return;
+    }
+    if (m_pending) {
+        emitFailed(context, QStringLiteral("request-in-flight"),
+                   QStringLiteral("上一项订单请求仍在处理中。"), true);
+        return;
+    }
+    PendingRequest pending;
+    pending.kind = QueryKind::StopResult;
+    pending.requestId = context.requestId;
+    pending.operationId = operationId.trimmed();
+    pending.timer = new QTimer(this);
+    pending.timer->setSingleShot(true);
+    connect(pending.timer, &QTimer::timeout,
+            this, &RealOrderService::handleTimeout);
+    m_pending = pending;
+    QJsonObject condition{{QStringLiteral("username"), m_username},
+                          {QStringLiteral("operationId"), pending.operationId}};
+    if (!m_backend->sendFrame(ORDERQRY_REQ,
+                              makeOrderQuery(condition, context.requestId))) {
+        failPending(QStringLiteral("send-failed"),
+                    QStringLiteral("停止结果查询发送失败。"), true);
+        return;
+    }
+    pending.timer->start(m_requestTimeoutMs);
 }
 
 void RealOrderService::cancel(const QString &requestId)
 {
     // 尽力取消：摘除在途关联即可，214 迟到应答因关联缺失被静默丢弃。
     if (m_pending && m_pending->requestId == requestId) {
-        if (m_pending->timer) {
-            m_pending->timer->stop();
-            m_pending->timer->deleteLater();
-        }
-        m_pending.reset();
+        finishPending();
     }
 }
 
@@ -246,6 +308,37 @@ void RealOrderService::handleFrame(int msgType, const QJsonObject &payload)
             return;
         }
 
+        if (m_pending->kind == QueryKind::StopOrderLookup) {
+            ChargingOrder matched;
+            bool found = false;
+            for (const QJsonValue &value : data.toArray()) {
+                if (!value.isObject()) continue;
+                const ChargingOrder order = parseOrderRecord(value.toObject());
+                if (order.orderId == m_pending->orderId) {
+                    matched = order;
+                    found = true;
+                    break;
+                }
+            }
+            if (!found || matched.chargerCode.isEmpty()) {
+                failPending(QStringLiteral("order-not-found"),
+                            QStringLiteral("未找到可停止的订单或电桩。"), false);
+                return;
+            }
+            m_pending->chargerCode = matched.chargerCode;
+            m_pending->kind = QueryKind::StopRequest;
+            QJsonObject stopPayload{
+                {QStringLiteral("chargerCode"), matched.chargerCode},
+                {QStringLiteral("username"), m_username},
+                {QStringLiteral("requestId"), m_pending->requestId},
+                {QStringLiteral("operationId"), m_pending->operationId}};
+            if (!m_backend->sendFrame(STOP_CHARGING_REQ, stopPayload)) {
+                failPending(QStringLiteral("send-failed"),
+                            QStringLiteral("停止充电请求发送失败。"), false, true);
+            }
+            return;
+        }
+
         const PendingRequest pending = *m_pending;
         m_pending.reset();
         if (pending.timer) {
@@ -280,6 +373,36 @@ void RealOrderService::handleFrame(int msgType, const QJsonObject &payload)
             return;
         }
 
+        if (pending.kind == QueryKind::StopResult) {
+            ChargingOrder matched;
+            bool found = false;
+            for (const QJsonValue &value : data.toArray()) {
+                if (!value.isObject()) continue;
+                const QJsonObject record = value.toObject();
+                if (record.value(QStringLiteral("operationId")).toString()
+                    != pending.operationId) continue;
+                matched = parseOrderRecord(record);
+                found = true;
+                break;
+            }
+            StopOperationStatus status;
+            status.requestId = pending.requestId;
+            status.operationId = pending.operationId;
+            if (found && (matched.status == OrderStatus::PendingSettlement
+                          || matched.status == OrderStatus::Settled)) {
+                status.state = StopOperationState::Succeeded;
+                status.result = StopChargingResult{pending.requestId,
+                                                   pending.operationId,
+                                                   matched};
+            } else {
+                status.state = StopOperationState::Pending;
+            }
+            emit stopOperationStatusReady(RequestContext{pending.requestId,
+                                                          pending.operationId},
+                                          status);
+            return;
+        }
+
         // 活动订单：Charging 优先于 PendingSettlement，最多返回一条。
         std::optional<ChargingOrder> active;
         for (const QJsonValue &value : data.toArray()) {
@@ -298,6 +421,20 @@ void RealOrderService::handleFrame(int msgType, const QJsonObject &payload)
             }
         }
         emit activeOrderReady(context, active);
+        return;
+    }
+
+    if (msgType == STOP_CHARGING_ACK
+        && m_pending->kind == QueryKind::StopRequest) {
+        const PendingRequest pending = *m_pending;
+        ChargingOrder order = parseOrderRecord(payload);
+        if (order.orderId.isEmpty()) order.orderId = pending.orderId;
+        if (order.chargerCode.isEmpty()) order.chargerCode = pending.chargerCode;
+        if (order.chargerId.isEmpty()) order.chargerId = order.chargerCode;
+        order.status = OrderStatus::PendingSettlement;
+        const StopChargingResult result{pending.requestId, pending.operationId, order};
+        finishPending();
+        emit chargingStopped(RequestContext{pending.requestId, pending.operationId}, result);
         return;
     }
 
@@ -411,8 +548,22 @@ void RealOrderService::handleTimeout()
     if (!m_pending) {
         return;
     }
+    const bool mutation = m_pending->kind == QueryKind::StopOrderLookup
+                          || m_pending->kind == QueryKind::StopRequest;
     failPending(QStringLiteral("request-timeout"),
-                QStringLiteral("Request timed out."), true);
+                mutation ? QStringLiteral("停止结果未知，请查询原订单状态，勿重复停止。")
+                         : QStringLiteral("Request timed out."),
+                !mutation);
+}
+
+void RealOrderService::finishPending()
+{
+    if (!m_pending) return;
+    if (m_pending->timer) {
+        m_pending->timer->stop();
+        m_pending->timer->deleteLater();
+    }
+    m_pending.reset();
 }
 
 void RealOrderService::failPending(const QString &code, const QString &message,

@@ -30,8 +30,7 @@ class QTimer;
  * - 时间戳接受 ISO 与 "yyyy-MM-dd hh:mm:ss" 两种格式，解析失败按缺失处理
  *   （endedAt/paymentDeadline 本就是 optional），联调后按实际格式收敛。
  *
- * 阶段 D 范围：只读查询 + 登录身份注入；stopCharging/queryStopResult 属
- * 阶段 G，当前显式返回 order-stop-unsupported，绝不伪造停止成功。
+ * 停止请求使用 109/209；因协议要求 chargerCode，停止前先按 orderNo 查询订单。
  */
 class RealOrderService final : public IOrderService
 {
@@ -63,7 +62,10 @@ private:
     enum class QueryKind
     {
         ActiveOrder,
-        OrderDetail
+        OrderDetail,
+        StopOrderLookup,
+        StopRequest,
+        StopResult
     };
 
     struct PendingRequest
@@ -72,11 +74,13 @@ private:
         QString requestId;
         QString operationId;
         QString orderId;
+        QString chargerCode;
         QTimer *timer = nullptr;
     };
 
     bool startQuery(QueryKind kind, const RequestContext &context,
                     const QString &orderId);
+    void finishPending();
     void failPending(const QString &code, const QString &message,
                      bool retryable);
     void failAllPending(const QString &code, const QString &message);
