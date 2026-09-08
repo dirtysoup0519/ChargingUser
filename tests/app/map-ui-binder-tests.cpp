@@ -190,6 +190,78 @@ private slots:
                  fixture.first.stationId);
     }
 
+    void chargerSelectionRequiresReadyAvailableItem()
+    {
+        Fixture fixture;
+        fixture.activate();
+        fixture.binder.stationDetailsRequested(fixture.first.stationId);
+        QTRY_COMPARE(fixture.binder.currentStationDetailState().status,
+                     MapLoadStatus::Ready);
+
+        fixture.binder.chargerSelected(QStringLiteral("missing"));
+        QVERIFY(fixture.binder.currentStationDetailState().selectedChargerId.isEmpty());
+
+        const QString chargerId = fixture.first.chargers.first().chargerId;
+        fixture.binder.chargerSelected(chargerId);
+        const StationDetailViewState selected =
+            fixture.binder.currentStationDetailState();
+        QCOMPARE(selected.selectedChargerId, chargerId);
+        QVERIFY(selected.canContinueToConfirmation);
+        QVERIFY(selected.chargingDisabledReason.isEmpty());
+    }
+
+    void confirmationIntentCarriesStableIdsWithoutStartingOrder()
+    {
+        Fixture fixture;
+        fixture.activate();
+        fixture.binder.stationDetailsRequested(fixture.first.stationId);
+        QTRY_COMPARE(fixture.binder.currentStationDetailState().status,
+                     MapLoadStatus::Ready);
+        QSignalSpy confirmation(
+            &fixture.binder, &IMapUiBinder::chargeConfirmationPageRequested);
+
+        const QString chargerId = fixture.first.chargers.first().chargerId;
+        fixture.binder.chargeConfirmationRequested(fixture.first.stationId,
+                                                    chargerId);
+        QCOMPARE(confirmation.count(), 0);
+
+        fixture.binder.chargerSelected(chargerId);
+        fixture.binder.chargeConfirmationRequested(fixture.first.stationId,
+                                                    chargerId);
+        QCOMPARE(confirmation.count(), 1);
+        QCOMPARE(confirmation.first().at(0).toString(), fixture.first.stationId);
+        QCOMPARE(confirmation.first().at(1).toString(), chargerId);
+    }
+
+    void detailRefreshPreservesOnlyStillAvailableSelection()
+    {
+        Fixture fixture;
+        fixture.activate();
+        fixture.binder.stationDetailsRequested(fixture.first.stationId);
+        QTRY_COMPARE(fixture.binder.currentStationDetailState().status,
+                     MapLoadStatus::Ready);
+        const QString chargerId = fixture.first.chargers.first().chargerId;
+        fixture.binder.chargerSelected(chargerId);
+
+        fixture.binder.stationRefreshRequested();
+        QTRY_COMPARE(fixture.binder.currentStationDetailState().status,
+                     MapLoadStatus::Ready);
+        QCOMPARE(fixture.binder.currentStationDetailState().selectedChargerId,
+                 chargerId);
+
+        fixture.first.chargers.first().canStartCharging = false;
+        fixture.first.chargers.first().businessStatus =
+            ChargerBusinessStatus::Charging;
+        fixture.first.chargers.first().disabledReason = QStringLiteral("充电中");
+        fixture.charger.setStationCatalog({fixture.first, fixture.second});
+        fixture.binder.stationRefreshRequested();
+        QTRY_COMPARE(fixture.binder.currentStationDetailState().status,
+                     MapLoadStatus::Ready);
+        QVERIFY(fixture.binder.currentStationDetailState().selectedChargerId.isEmpty());
+        QVERIFY(!fixture.binder.currentStationDetailState()
+                     .canContinueToConfirmation);
+    }
+
     void manualOriginRequiresExplicitCandidateSelection()
     {
         Fixture fixture;

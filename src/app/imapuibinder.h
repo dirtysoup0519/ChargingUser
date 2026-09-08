@@ -48,6 +48,9 @@ public slots:
     virtual void stationSelected(const QString &stationId) = 0;
     virtual void stationDetailsRequested(const QString &stationId) = 0;
     virtual void stationRefreshRequested() = 0;
+    virtual void chargerSelected(const QString &chargerId) = 0;
+    virtual void chargeConfirmationRequested(const QString &stationId,
+                                             const QString &chargerId) = 0;
     virtual void routePreviewRequested(TravelMode mode) = 0;
     virtual void routeModeRequested(TravelMode mode) = 0;
     virtual void manualOriginRequested(const QString &address) = 0;
@@ -60,6 +63,9 @@ signals:
     void stationDetailStateChanged(const StationDetailViewState &state);
     void navigationStateChanged(const NavigationViewState &state);
     void pageRequested(MapPageTarget target, const QString &stationId);
+    /** 预留给后续 ChargingUiBinder；本阶段不创建订单或启动充电。 */
+    void chargeConfirmationPageRequested(const QString &stationId,
+                                         const QString &chargerId);
 };
 
 Q_DECLARE_METATYPE(MapPageTarget)

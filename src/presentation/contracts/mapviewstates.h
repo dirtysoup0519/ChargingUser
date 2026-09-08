@@ -132,10 +132,18 @@ struct StationDetailViewState
     QString availabilityText;
     QString priceText;
     QVector<ChargerListItemView> chargers;
+    /** 当前选中的稳定电桩标识；刷新后仅在该桩仍可启动时保留。 */
+    QString selectedChargerId;
     QString message;
+    QString lastUpdatedText;
+    bool isRefreshing = false;
     bool canRetry = false;
     bool canNavigate = false;
     bool canCharge = false;
+    bool canContinueToConfirmation = false;
+    QString navigationDisabledReason;
+    QString chargingDisabledReason;
+    // 兼容现有调用方；新代码应使用上面两个按操作区分的禁用原因。
     QString disabledReason;
 };
 

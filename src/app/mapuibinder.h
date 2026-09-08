@@ -42,6 +42,9 @@ public slots:
     void stationSelected(const QString &stationId) override;
     void stationDetailsRequested(const QString &stationId) override;
     void stationRefreshRequested() override;
+    void chargerSelected(const QString &chargerId) override;
+    void chargeConfirmationRequested(const QString &stationId,
+                                     const QString &chargerId) override;
     void routePreviewRequested(TravelMode mode) override;
     void routeModeRequested(TravelMode mode) override;
     void manualOriginRequested(const QString &address) override;

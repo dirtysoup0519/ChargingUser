@@ -269,6 +269,37 @@ void MapUiBinder::stationRefreshRequested()
     startDetailQuery(m_detail.stationId, true);
 }
 
+void MapUiBinder::chargerSelected(const QString &chargerId)
+{
+    if (m_detail.status != MapLoadStatus::Ready || m_detail.isRefreshing) {
+        return;
+    }
+    const auto selected = std::find_if(
+        m_detail.chargers.cbegin(), m_detail.chargers.cend(),
+        [&chargerId](const ChargerListItemView &item) {
+            return item.chargerId == chargerId && item.canCharge;
+        });
+    if (selected == m_detail.chargers.cend()) {
+        return;
+    }
+    m_detail.selectedChargerId = chargerId;
+    m_detail.canContinueToConfirmation = true;
+    m_detail.chargingDisabledReason.clear();
+    publishDetail();
+}
+
+void MapUiBinder::chargeConfirmationRequested(const QString &stationId,
+                                               const QString &chargerId)
+{
+    if (m_detail.status != MapLoadStatus::Ready || m_detail.isRefreshing
+        || !m_detail.canContinueToConfirmation
+        || stationId != m_detail.stationId
+        || chargerId != m_detail.selectedChargerId) {
+        return;
+    }
+    emit chargeConfirmationPageRequested(stationId, chargerId);
+}
+
 void MapUiBinder::routePreviewRequested(TravelMode mode)
 {
     if (m_detail.status != MapLoadStatus::Ready
@@ -411,6 +442,7 @@ void MapUiBinder::handleStationDetailReady(const RequestContext &context,
         return;
     }
     m_detailRequestId.clear();
+    const QString previousSelection = m_detail.selectedChargerId;
     StationSummary summary = detail.summary;
     summary.stationId = detail.stationId;
     m_stationsById.insert(detail.stationId, summary);
@@ -444,23 +476,46 @@ void MapUiBinder::handleStationDetailReady(const RequestContext &context,
         }
         m_detail.chargers.append(item);
     }
+    const auto preserved = std::find_if(
+        m_detail.chargers.cbegin(), m_detail.chargers.cend(),
+        [&previousSelection](const ChargerListItemView &item) {
+            return !previousSelection.isEmpty()
+                   && item.chargerId == previousSelection && item.canCharge;
+        });
+    m_detail.selectedChargerId = preserved == m_detail.chargers.cend()
+                                     ? QString()
+                                     : previousSelection;
     // 详情本身已成功时保持 Ready；没有充电桩不应阻断使用站点坐标预览路线。
     m_detail.status = MapLoadStatus::Ready;
     m_detail.message = m_detail.chargers.isEmpty()
                            ? QStringLiteral("该站点暂无充电桩信息。")
                            : QString();
     m_detail.canRetry = false;
+    m_detail.isRefreshing = false;
     m_detail.canNavigate = summary.point && summary.point->isValid();
     m_detail.canCharge = canCharge;
+    m_detail.canContinueToConfirmation = !m_detail.selectedChargerId.isEmpty();
+    m_detail.lastUpdatedText = detail.updatedAtUtc.isValid()
+                                   ? detail.updatedAtUtc.toLocalTime().toString(
+                                         QStringLiteral("yyyy-MM-dd HH:mm:ss"))
+                                   : QString();
     if (!m_detail.canNavigate) {
-        m_detail.disabledReason = QStringLiteral("站点坐标缺失，暂不能规划路线。");
-    } else if (!canCharge) {
-        m_detail.disabledReason = disabledReason.isEmpty()
-                                      ? QStringLiteral("当前没有可启动的充电桩。")
-                                      : disabledReason;
+        m_detail.navigationDisabledReason = QStringLiteral("站点坐标缺失，暂不能规划路线。");
     } else {
-        m_detail.disabledReason.clear();
+        m_detail.navigationDisabledReason.clear();
     }
+    if (!canCharge) {
+        m_detail.chargingDisabledReason = disabledReason.isEmpty()
+                                              ? QStringLiteral("当前没有可启动的充电桩。")
+                                              : disabledReason;
+    } else if (m_detail.selectedChargerId.isEmpty()) {
+        m_detail.chargingDisabledReason = QStringLiteral("请先选择可用充电桩。");
+    } else {
+        m_detail.chargingDisabledReason.clear();
+    }
+    m_detail.disabledReason = !m_detail.navigationDisabledReason.isEmpty()
+                                  ? m_detail.navigationDisabledReason
+                                  : m_detail.chargingDisabledReason;
     publishDetail();
 }
 
@@ -576,11 +631,16 @@ void MapUiBinder::handleChargerRequestFailed(const ClientError &error)
     if (error.requestId == m_detailRequestId) {
         m_detailRequestId.clear();
         m_detail.status = MapLoadStatus::Error;
+        m_detail.isRefreshing = false;
         m_detail.message = displayError(error,
                                          QStringLiteral("站点详情加载失败。"));
         m_detail.canRetry = error.retryable;
         m_detail.canNavigate = false;
         m_detail.canCharge = false;
+        m_detail.canContinueToConfirmation = false;
+        m_detail.navigationDisabledReason = QStringLiteral("详情刷新失败，暂不能规划路线。");
+        m_detail.chargingDisabledReason = QStringLiteral("详情刷新失败，请重新加载后再操作。");
+        m_detail.disabledReason = m_detail.chargingDisabledReason;
         publishDetail();
     }
 }
@@ -689,6 +749,8 @@ void MapUiBinder::startDetailQuery(const QString &stationId, bool preserveConten
     const RequestContext context = createContext(QStringLiteral("station-detail"));
     m_detailRequestId = context.requestId;
     m_detail.status = MapLoadStatus::Loading;
+    m_detail.isRefreshing = preserveContent;
+    m_detail.canContinueToConfirmation = false;
     m_detail.message = preserveContent
                            ? QStringLiteral("正在刷新，当前内容可能不是最新数据…")
                            : QStringLiteral("正在加载充电站详情…");
