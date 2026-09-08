@@ -20,6 +20,7 @@
 #include "modules/user/iuserservice.h"
 #include "modules/map/tencentmapservice.h"
 #include "presentation/contracts/reservationviewstates.h"
+#include "presentation/contracts/orderlistviewstate.h"
 #include "presentation/pages/auth/loginwindow.h"
 #include "presentation/pages/charging/chargeconfirmationwindow.h"
 #include "presentation/pages/charging/chargingsessionwindow.h"
@@ -30,6 +31,7 @@
 #include "presentation/pages/home/navigationwindow.h"
 #include "presentation/pages/home/stationdetailwindow.h"
 #include "presentation/pages/profile/profileeditwindow.h"
+#include "presentation/pages/profile/orderlistwindow.h"
 #include "presentation/pages/profile/walletrechargewindow.h"
 #include "presentation/pages/shell/mainwindow.h"
 #include "protocol.h"
@@ -46,6 +48,7 @@
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QJsonParseError>
+#include <QMessageBox>
 #include <QRegularExpression>
 #include <QStringList>
 #include <QUuid>
@@ -248,10 +251,12 @@ int main(int argc, char *argv[])
     ChargingUiBinder chargeBinder(&chargingService);
     ChargeConfirmationWindow chargeConfirmation(&mainWindow);
     WalletRechargeWindow walletRecharge(&mainWindow);
+    OrderListWindow orderList(&mainWindow);
     ReservationConfirmationWindow reservationConfirmation(&mainWindow);
     QrCodeScannerWindow qrScanner(&mainWindow);
     mainWindow.registerSecondaryPage(&chargeConfirmation);
     mainWindow.registerSecondaryPage(&walletRecharge);
+    mainWindow.registerSecondaryPage(&orderList);
     mainWindow.registerSecondaryPage(&reservationConfirmation);
     mainWindow.registerSecondaryPage(&qrScanner);
 
@@ -371,6 +376,59 @@ int main(int argc, char *argv[])
     QObject::connect(&mainWindow, &MainWindow::rechargePageRequested,
                      &app, [&] {
         openWallet(WalletEntryPoint::Profile);
+    });
+    QObject::connect(&mainWindow, &MainWindow::ordersPageRequested,
+                     &app, [&] {
+        orderList.render(OrderListViewState{{}, QStringLiteral("正在加载订单…")});
+        mainWindow.renderSecondaryPage(&orderList);
+        orderService.queryActiveOrders(
+            {QUuid::createUuid().toString(QUuid::WithoutBraces), {}});
+    });
+    const auto showProfileNotice = [&](const QString &title, const QString &text) {
+        QMessageBox::information(&mainWindow, title, text);
+    };
+    QObject::connect(&mainWindow, &MainWindow::commonStationsPageRequested,
+                     &app, [&] { showProfileNotice(QStringLiteral("常用充电站"),
+                                                    QStringLiteral("常用充电站功能接入中。")); });
+    QObject::connect(&mainWindow, &MainWindow::helpFeedbackPageRequested,
+                     &app, [&] { showProfileNotice(QStringLiteral("帮助与反馈"),
+                                                    QStringLiteral("帮助与反馈功能接入中。")); });
+    QObject::connect(&mainWindow, &MainWindow::aboutPageRequested,
+                     &app, [&] { showProfileNotice(QStringLiteral("关于智充"),
+                                                    QStringLiteral("智充实训版")); });
+    QObject::connect(&stationDetail, &StationDetailWindow::chargerSelected,
+                     &mapBinder, &IMapUiBinder::chargerSelected);
+    QObject::connect(&orderService, &IOrderService::activeOrdersReady,
+                     &app, [&](const RequestContext &, const QVector<ChargingOrder> &orders) {
+        OrderListViewState state;
+        for (const ChargingOrder &order : orders) {
+            OrderListItemView item;
+            item.businessId = order.orderId;
+            item.stationId = order.stationId;
+            item.chargerId = order.chargerId;
+            item.type = OrderBusinessType::Charging;
+            item.stationName = order.stationName;
+            item.chargerCode = order.chargerCode;
+            item.createdAtText = order.startedAtUtc.isValid()
+                                     ? order.startedAtUtc.toLocalTime().toString(Qt::ISODate)
+                                     : QStringLiteral("时间未知");
+            item.amountText = QStringLiteral("¥%1").arg(order.amountCents / 100.0, 0, 'f', 2);
+            item.energyText = QStringLiteral("%1 kWh").arg(order.energyKwh, 0, 'f', 2);
+            item.statusText = order.status == OrderStatus::Charging
+                                  ? QStringLiteral("充电中")
+                                  : order.status == OrderStatus::PendingSettlement
+                                        ? QStringLiteral("待结算") : QStringLiteral("进行中");
+            item.statusTone = order.status == OrderStatus::Charging ? QStringLiteral("warning")
+                                                                       : QStringLiteral("success");
+            item.summaryText = QStringLiteral("电量 %1").arg(item.energyText);
+            item.action = order.status == OrderStatus::Charging ? OrderListAction::ViewCharging
+                                                                  : OrderListAction::ContinuePayment;
+            item.actionText = order.status == OrderStatus::Charging ? QStringLiteral("查看")
+                                                                       : QStringLiteral("去结算");
+            state.orders.append(item);
+        }
+        state.message = state.orders.isEmpty() ? QStringLiteral("暂无进行中的订单") : QString();
+        orderList.render(state);
     });
     QObject::connect(&walletRecharge, &WalletRechargeWindow::backRequested,
                      &app, [&] {
