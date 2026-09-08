@@ -104,3 +104,21 @@
 2. 216/215 应答是否回显 requestId/operationId（决定恢复查询的实现方式）；
 3. 服务端是否已有 113 幂等保护（重复充值防重）；
 4. walletTransaction 表字段（流水查询如果要做）。
+
+## 6. 远程联机流程（P0 已实现，2026-09-08）
+
+目标地址优先级：`--server-host/--server-port` 参数 > `CHARGER_SERVER_HOST/PORT`
+环境变量 > 协议内置默认（127.0.0.1:12345）。已在本机验证两级解析。
+
+1. 远程主机：启动服务端进程，确认监听 `0.0.0.0:12345`（防火墙放行）；
+2. 客户端连通性：`ping <远程IP>` → `timeout 3 bash -c 'cat < /dev/null > /dev/tcp/<远程IP>/12345' && echo OK`；
+3. 协议冒烟（不启动 GUI）：`./network-smoke --host <远程IP> --port 12345 --timeout 10000`，
+   预期心跳 107/230 双通过；
+4. 构建真实入口：`qmake CONFIG+=real_network && make -j4` → `bin/ChargingUserUI`；
+5. 启动（两种方式任选）：
+   - `export CHARGER_SERVER_HOST=<远程IP>; export CHARGER_SERVER_PORT=12345; ./bin/ChargingUserUI`
+   - `./bin/ChargingUserUI --server-host <远程IP> --server-port 12345`
+6. 启动日志应出现 `Starting real-network entry for <远程IP>:12345.` 与
+   `Network state: connected`；然后走手机号登录验证 116/217 真实链路；
+7. 网络中断演练：拔线/关服务端 → 客户端应打印 `Network state: disconnected`
+   并每 5 秒重连，恢复后自动回到 connected。

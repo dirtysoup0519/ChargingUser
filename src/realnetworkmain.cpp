@@ -67,12 +67,22 @@ int main(int argc, char *argv[])
         QStringLiteral("ChargingUser optional real-network entry."));
     parser.addHelpOption();
     parser.addVersionOption();
+    // 目标地址优先级：命令行参数 > 环境变量（CHARGER_SERVER_HOST/PORT）> 协议内置默认。
+    // 环境变量面向"远程服务端"联调场景：不把 IP 写进仓库，同一构建可切换本地/远程。
+    const QString envHost = qEnvironmentVariable("CHARGER_SERVER_HOST").trimmed();
+    const QString envPort = qEnvironmentVariable("CHARGER_SERVER_PORT").trimmed();
+    const QString defaultHost = envHost.isEmpty()
+                                    ? QString::fromLatin1(SERVER_IP)
+                                    : envHost;
+    const QString defaultPort = envPort.isEmpty()
+                                    ? QString::fromLatin1(SERVER_PORT)
+                                    : envPort;
     const QCommandLineOption hostOption(
         QStringLiteral("server-host"), QStringLiteral("Backend host or IP address."),
-        QStringLiteral("host"), QString::fromLatin1(SERVER_IP));
+        QStringLiteral("host"), defaultHost);
     const QCommandLineOption portOption(
         QStringLiteral("server-port"), QStringLiteral("Backend TCP port."),
-        QStringLiteral("port"), QString::fromLatin1(SERVER_PORT));
+        QStringLiteral("port"), defaultPort);
     parser.addOption(hostOption);
     parser.addOption(portOption);
     parser.process(app);
