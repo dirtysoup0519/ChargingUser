@@ -45,6 +45,7 @@
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
+#include <QFileDialog>
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QJsonParseError>
@@ -491,7 +492,51 @@ int main(int argc, char *argv[])
                      &sessionBinder, &IChargingSessionUiBinder::activeSessionSelected);
     QObject::connect(&sessionWindow, &ChargingSessionWindow::scanChargingRequested,
                      &app, [&] {
+        ScanViewState scanState;
+        scanState.status = ScanStatus::Error;
+        scanState.message = QStringLiteral("当前版本尚未接入摄像头扫码，请从相册选择二维码。\n若设备无摄像头，可使用服务端下发的电桩编号联调。");
+        scanState.cameraAvailable = false;
+        scanState.cameraPermissionGranted = false;
+        scanState.canImportImage = true;
+        scanState.canRetry = false;
+        qrScanner.render(scanState);
         mainWindow.renderSecondaryPage(&qrScanner);
+    });
+    QObject::connect(&qrScanner, &QrCodeScannerWindow::cameraPermissionRequested,
+                     &app, [&] {
+        ScanViewState state;
+        state.status = ScanStatus::Error;
+        state.message = QStringLiteral("摄像头能力尚未接入，请从相册选择二维码。");
+        state.canImportImage = true;
+        qrScanner.render(state);
+    });
+    QObject::connect(&qrScanner, &QrCodeScannerWindow::scanRetryRequested,
+                     &app, [&] {
+        ScanViewState state;
+        state.status = ScanStatus::Error;
+        state.message = QStringLiteral("当前没有可用摄像头扫码适配器。");
+        state.canImportImage = true;
+        qrScanner.render(state);
+    });
+    QObject::connect(&qrScanner, &QrCodeScannerWindow::imageImportRequested,
+                     &app, [&] {
+        const QString path = QFileDialog::getOpenFileName(
+            &qrScanner, QStringLiteral("选择二维码图片"), QString(),
+            QStringLiteral("图片 (*.png *.jpg *.jpeg *.bmp)"));
+        if (path.isEmpty()) return;
+        ScanViewState state;
+        state.status = ScanStatus::Error;
+        state.message = QStringLiteral("已选择图片，但当前版本尚未接入二维码解析器：%1").arg(path);
+        state.canImportImage = true;
+        qrScanner.render(state);
+    });
+    QObject::connect(&qrScanner, &QrCodeScannerWindow::torchToggleRequested,
+                     &app, [&](bool) {
+        ScanViewState state;
+        state.status = ScanStatus::Error;
+        state.message = QStringLiteral("当前设备不支持扫码手电筒控制。");
+        state.canImportImage = true;
+        qrScanner.render(state);
     });
 
     // 合同 §3.2：充电启动成功 → 携带真实 orderId 进入会话页。
