@@ -22,6 +22,7 @@ public:
     {
         activeOrdersQueries.append(context);
     }
+    void queryOrderHistory(const RequestContext &) override {}
     void queryOrderDetail(const RequestContext &context,
                           const QString &orderId) override
     {

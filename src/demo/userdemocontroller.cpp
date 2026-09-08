@@ -527,6 +527,47 @@ UserDemoController::UserDemoController(MockUserNetworkApi *network,
         m_qrScanner->render(m_scanState);
         m_mainWindow->renderSecondaryPage(m_qrScanner);
     });
+    connect(m_qrScanner, &QrCodeScannerWindow::qrCodeDetected,
+            this, [this](const QString &rawText) {
+        const QString code = chargerCodeFromQr(rawText);
+        if (code.isEmpty()) {
+            m_scanState.status = ScanStatus::Error;
+            m_scanState.message = tr("二维码内容不包含合法的 chargerCode。");
+            m_scanState.canRetry = true;
+            m_scanState.canImportImage = true;
+            m_qrScanner->render(m_scanState);
+            return;
+        }
+        for (const StationDetail &station : m_demoStations) {
+            for (const ChargerSummary &charger : station.chargers) {
+                if (charger.chargerId.compare(code, Qt::CaseInsensitive) != 0)
+                    continue;
+                if (!charger.canStartCharging) {
+                    m_scanState.status = ScanStatus::Error;
+                    m_scanState.message = charger.disabledReason.isEmpty()
+                        ? tr("该电桩当前不可启动充电。") : charger.disabledReason;
+                    m_scanState.canRetry = true;
+                    m_scanState.canImportImage = true;
+                    m_qrScanner->render(m_scanState);
+                    return;
+                }
+                m_scanState.expectedStationId = station.stationId;
+                m_scanState.expectedChargerId = charger.chargerId;
+                m_scanState.chargerDisplayText = charger.chargerId;
+                m_scanState.status = ScanStatus::Validating;
+                m_scanState.message = tr("二维码识别成功，正在加载充电确认信息…");
+                m_scanState.canImportImage = false;
+                m_qrScanner->render(m_scanState);
+                showChargeConfirmation(station.stationId, charger.chargerId);
+                return;
+            }
+        }
+        m_scanState.status = ScanStatus::Error;
+        m_scanState.message = tr("Demo 数据中找不到该电桩。");
+        m_scanState.canRetry = true;
+        m_scanState.canImportImage = true;
+        m_qrScanner->render(m_scanState);
+    });
     connect(m_qrScanner, &QrCodeScannerWindow::imageImportRequested,
             this, [this] {
         const QString path = QFileDialog::getOpenFileName(
@@ -572,7 +613,15 @@ UserDemoController::UserDemoController(MockUserNetworkApi *network,
         m_qrScanner->render(m_scanState);
     });
     connect(m_qrScanner, &QrCodeScannerWindow::scanRetryRequested,
-            this, [this] { m_qrScanner->render(m_scanState); });
+            this, [this] {
+        m_scanState.cameraAvailable = m_qrScanner->cameraAvailable();
+        m_scanState.cameraPermissionGranted = m_scanState.cameraAvailable;
+        m_scanState.status = m_scanState.cameraAvailable ? ScanStatus::Scanning
+                                                         : ScanStatus::Error;
+        m_scanState.message = m_scanState.cameraAvailable
+            ? tr("正在重新打开摄像头…") : tr("当前没有可用摄像头");
+        m_qrScanner->render(m_scanState);
+    });
     connect(m_stationDetail, &StationDetailWindow::reservationConfirmationRequested,
             this, [this](const QString &stationId, const QString &chargerId) {
         const StationDetailViewState detail = m_mapBinder->currentStationDetailState();
@@ -1095,12 +1144,15 @@ UserDemoController::UserDemoController(MockUserNetworkApi *network,
                     m_scanState.expectedChargerId = order.chargerId;
                     m_scanState.chargerDisplayText = tr("已预约充电桩 %1")
                         .arg(order.chargerCode);
-                    m_scanState.status = ScanStatus::Error;
-                    m_scanState.cameraAvailable = false;
+                    m_scanState.status = m_qrScanner->cameraAvailable()
+                        ? ScanStatus::RequestingPermission : ScanStatus::Error;
+                    m_scanState.cameraAvailable = m_qrScanner->cameraAvailable();
                     m_scanState.cameraPermissionGranted = false;
                     m_scanState.canRetry = false;
                     m_scanState.canImportImage = true;
-                    m_scanState.message = tr("Demo 尚未接入摄像头，可从相册选择二维码进行流程测试");
+                    m_scanState.message = m_scanState.cameraAvailable
+                        ? tr("点击允许摄像头后开始实时扫码")
+                        : tr("Demo 没有可用摄像头，可从相册选择二维码进行流程测试");
                     m_qrScanner->render(m_scanState);
                     m_mainWindow->renderSecondaryPage(m_qrScanner);
                 }

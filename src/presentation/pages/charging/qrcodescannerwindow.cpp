@@ -7,6 +7,7 @@
 
 #ifdef CHARGINGUSER_ENABLE_QT_MULTIMEDIA
 #include <QCamera>
+#include <QDateTime>
 #include <QMediaDevices>
 #include <QMediaCaptureSession>
 #include <QPixmap>
@@ -14,6 +15,13 @@
 #include <QVideoFrame>
 #include <QVideoFrameFormat>
 #include <QVideoSink>
+#endif
+
+#ifdef CHARGINGUSER_ENABLE_ZXING
+#include <ZXing/BarcodeFormat.h>
+#include <ZXing/ImageView.h>
+#include <ZXing/ReadBarcode.h>
+#include <ZXing/ReaderOptions.h>
 #endif
 
 #ifdef CHARGINGUSER_ENABLE_QT_MULTIMEDIA
@@ -33,6 +41,23 @@ QImage imageFromVideoFrame(const QVideoFrame &source)
     }
     frame.unmap();
     return image;
+}
+
+QString decodeQrFrame(const QImage &source)
+{
+#ifdef CHARGINGUSER_ENABLE_ZXING
+    const QImage image = source.convertToFormat(QImage::Format_Grayscale8);
+    const ZXing::ImageView view(image.constBits(), image.width(), image.height(),
+                                ZXing::ImageFormat::Lum, image.bytesPerLine());
+    ZXing::ReaderOptions options;
+    options.setFormats(ZXing::BarcodeFormat::QRCode);
+    options.setTryHarder(true);
+    const ZXing::Barcode barcode = ZXing::ReadBarcode(view, options);
+    return barcode.isValid() ? QString::fromStdString(barcode.text()) : QString();
+#else
+    Q_UNUSED(source)
+    return {};
+#endif
 }
 }
 #endif
@@ -101,6 +126,14 @@ void QrCodeScannerWindow::createCameraPipeline()
         ui->previewPlaceholder->setPixmap(QPixmap::fromImage(image).scaled(
             ui->previewPlaceholder->size(), Qt::KeepAspectRatioByExpanding,
             Qt::SmoothTransformation));
+        const qint64 now = QDateTime::currentMSecsSinceEpoch();
+        if (m_qrDetectionLocked || now - m_lastDecodeAtMs < 300) return;
+        m_lastDecodeAtMs = now;
+        const QString rawText = decodeQrFrame(image);
+        if (rawText.isEmpty()) return;
+        m_qrDetectionLocked = true;
+        if (m_camera) m_camera->stop();
+        emit qrCodeDetected(rawText);
     }, Qt::QueuedConnection);
     connect(m_camera, &QCamera::errorOccurred, this,
             [this](QCamera::Error, const QString &description) {
@@ -127,6 +160,8 @@ void QrCodeScannerWindow::destroyCameraPipeline()
     m_camera = nullptr;
     m_receivedCameraFrame = false;
     m_convertedCameraFrame = false;
+    m_qrDetectionLocked = false;
+    m_lastDecodeAtMs = 0;
 }
 
 void QrCodeScannerWindow::startCamera(bool allowRestart)
@@ -135,6 +170,7 @@ void QrCodeScannerWindow::startCamera(bool allowRestart)
     if (!m_camera) return;
     m_receivedCameraFrame = false;
     m_convertedCameraFrame = false;
+    m_qrDetectionLocked = false;
     const int generation = m_cameraGeneration;
     m_camera->start();
     QTimer::singleShot(3500, this, [this, generation, allowRestart] {

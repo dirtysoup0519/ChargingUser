@@ -27,6 +27,7 @@ signals:
     void cameraPermissionRequested();
     void scanRetryRequested();
     void imageImportRequested();
+    void qrCodeDetected(const QString &rawText);
     void torchToggleRequested(bool enabled);
     void cameraStatusChanged(bool available, bool permissionGranted);
 
@@ -43,6 +44,8 @@ private:
     bool m_receivedCameraFrame = false;
     bool m_convertedCameraFrame = false;
     int m_cameraGeneration = 0;
+    qint64 m_lastDecodeAtMs = 0;
+    bool m_qrDetectionLocked = false;
 
     void createCameraPipeline();
     void destroyCameraPipeline();

@@ -491,7 +491,7 @@ int main(int argc, char *argv[])
         orderList.render(OrderListViewState{{}, QStringLiteral("正在加载订单…")});
         mainWindow.renderSecondaryPage(&orderList);
         walletBinder.activate();
-        orderService.queryActiveOrders(
+        orderService.queryOrderHistory(
             {QUuid::createUuid().toString(QUuid::WithoutBraces), {}});
     });
     const auto showProfileNotice = [&](const QString &title, const QString &text) {
@@ -552,8 +552,7 @@ int main(int argc, char *argv[])
         }
         return state;
     };
-    QObject::connect(&orderService, &IOrderService::activeOrdersReady,
-                     &app, [&](const RequestContext &, const QVector<ChargingOrder> &orders) {
+    const auto renderChargingOrders = [&](const QVector<ChargingOrder> &orders) {
         OrderListViewState state;
         for (const ChargingOrder &order : orders) {
             OrderListItemView item;
@@ -585,6 +584,14 @@ int main(int argc, char *argv[])
         orderListBaseState = state;
         state.message = state.orders.isEmpty() ? QStringLiteral("暂无进行中的订单") : QString();
         orderList.render(state);
+    };
+    QObject::connect(&orderService, &IOrderService::activeOrdersReady,
+                     &app, [&](const RequestContext &, const QVector<ChargingOrder> &orders) {
+        renderChargingOrders(orders);
+    });
+    QObject::connect(&orderService, &IOrderService::orderHistoryReady,
+                     &app, [&](const RequestContext &, const QVector<ChargingOrder> &orders) {
+        renderChargingOrders(orders);
     });
     QObject::connect(&orderList, &OrderListWindow::backRequested,
                      &app, [&] {
@@ -599,7 +606,7 @@ int main(int argc, char *argv[])
     });
     QObject::connect(&orderList, &OrderListWindow::refreshRequested,
                      &app, [&] {
-        orderService.queryActiveOrders(
+        orderService.queryOrderHistory(
             {QUuid::createUuid().toString(QUuid::WithoutBraces), {}});
     });
     QObject::connect(&orderList, &OrderListWindow::orderActionRequested,
@@ -689,6 +696,27 @@ int main(int argc, char *argv[])
                      &app, [&] { openScanner(ScanEntryPoint::PrimaryCharging); });
     QObject::connect(&sessionWindow, &ChargingSessionWindow::scanChargingRequested,
                      &app, [&] { openScanner(ScanEntryPoint::Session); });
+    const auto handleDetectedQr = [&](const QString &raw) {
+        ScanViewState state;
+        state.canImportImage = true;
+        const QString chargerCode = chargerCodeFromQr(raw);
+        if (chargerCode.isEmpty()) {
+            state.status = ScanStatus::Error;
+            state.message = QStringLiteral("二维码内容不包含合法的 chargerCode。");
+            state.canRetry = true;
+            qrScanner.render(state);
+            return;
+        }
+        state.status = ScanStatus::Validating;
+        state.chargerDisplayText = chargerCode;
+        state.message = QStringLiteral("二维码识别成功，正在加载充电确认信息…");
+        state.canImportImage = false;
+        qrScanner.render(state);
+        confirmationOpenedFromScanner = true;
+        chargeBinder.chargeConfirmationByChargerCodeRequested(chargerCode);
+    };
+    QObject::connect(&qrScanner, &QrCodeScannerWindow::qrCodeDetected,
+                     &app, handleDetectedQr);
     QObject::connect(&qrScanner, &QrCodeScannerWindow::cameraPermissionRequested,
                      &app, [&] {
         ScanViewState state;
@@ -703,8 +731,11 @@ int main(int argc, char *argv[])
     QObject::connect(&qrScanner, &QrCodeScannerWindow::scanRetryRequested,
                      &app, [&] {
         ScanViewState state;
-        state.status = ScanStatus::Error;
-        state.message = QStringLiteral("当前没有可用摄像头扫码适配器。");
+        state.cameraAvailable = qrScanner.cameraAvailable();
+        state.cameraPermissionGranted = state.cameraAvailable;
+        state.status = state.cameraAvailable ? ScanStatus::Scanning : ScanStatus::Error;
+        state.message = state.cameraAvailable ? QStringLiteral("正在重新打开摄像头…")
+                                               : QStringLiteral("当前没有可用摄像头扫码适配器。");
         state.canImportImage = true;
         qrScanner.render(state);
     });
@@ -725,21 +756,7 @@ int main(int argc, char *argv[])
             qrScanner.render(state);
             return;
         }
-        const QString chargerCode = chargerCodeFromQr(raw);
-        if (chargerCode.isEmpty()) {
-            state.status = ScanStatus::Error;
-            state.message = QStringLiteral("二维码内容不包含合法的 chargerCode。");
-            state.canRetry = true;
-            qrScanner.render(state);
-            return;
-        }
-        state.status = ScanStatus::Validating;
-        state.chargerDisplayText = chargerCode;
-        state.message = QStringLiteral("二维码识别成功，正在加载充电确认信息…");
-        state.canImportImage = false;
-        qrScanner.render(state);
-        confirmationOpenedFromScanner = true;
-        chargeBinder.chargeConfirmationByChargerCodeRequested(chargerCode);
+        handleDetectedQr(raw);
     });
     QObject::connect(&qrScanner, &QrCodeScannerWindow::torchToggleRequested,
                      &app, [&](bool) {

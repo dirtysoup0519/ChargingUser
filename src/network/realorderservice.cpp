@@ -108,6 +108,11 @@ void RealOrderService::queryActiveOrders(const RequestContext &context)
     startQuery(QueryKind::ActiveOrders, context, QString());
 }
 
+void RealOrderService::queryOrderHistory(const RequestContext &context)
+{
+    startQuery(QueryKind::OrderHistory, context, QString());
+}
+
 void RealOrderService::queryOrderDetail(const RequestContext &context,
                                         const QString &orderId)
 {
@@ -419,6 +424,17 @@ void RealOrderService::handleFrame(int msgType, const QJsonObject &payload)
                 }
             }
             emit activeOrdersReady(context, activeOrders);
+            return;
+        }
+
+        if (pending.kind == QueryKind::OrderHistory) {
+            QVector<ChargingOrder> history;
+            for (const QJsonValue &value : data.toArray()) {
+                if (!value.isObject()) continue;
+                const ChargingOrder order = parseOrderRecord(value.toObject());
+                if (!order.orderId.isEmpty()) history.append(order);
+            }
+            emit orderHistoryReady(context, history);
             return;
         }
 
