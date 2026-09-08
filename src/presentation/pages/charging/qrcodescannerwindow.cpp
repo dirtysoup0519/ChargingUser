@@ -6,7 +6,6 @@
 
 #ifdef CHARGINGUSER_ENABLE_QT_MULTIMEDIA
 #include <QCamera>
-#include <QCameraFormat>
 #include <QMediaDevices>
 #include <QMediaCaptureSession>
 #include <QPixmap>
@@ -55,15 +54,6 @@ QrCodeScannerWindow::QrCodeScannerWindow(QWidget *parent)
     const auto cameras = QMediaDevices::videoInputs();
     if (!cameras.isEmpty()) {
         m_camera = new QCamera(cameras.front(), this);
-        QCameraFormat selectedFormat;
-        for (const QCameraFormat &format : cameras.front().videoFormats()) {
-            if (format.resolution() == QSize(640, 480) && format.maxFrameRate() >= 25.0) {
-                selectedFormat = format;
-                break;
-            }
-        }
-        if (!selectedFormat.isNull())
-            m_camera->setCameraFormat(selectedFormat);
         m_captureSession = new QMediaCaptureSession(this);
         m_videoSink = new QVideoSink(this);
         m_captureSession->setCamera(m_camera);
