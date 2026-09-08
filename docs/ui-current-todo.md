@@ -1,8 +1,14 @@
 # 当前 UI 负责人待办（对接 M1 + M4）
 
-> 分支：`user-design-main`。本文只列 UI 可独立完成的工作；`user-module-main` 已负责 M1 用户服务、网络适配和 M4 用户流程，不要复制或修改其 `src/modules/`、`src/network/`、`src/flow/` 实现。
+> 分支：`map-navigation-ui`（2026-09-08 起所有开发在此分支）。本文只列 UI 可独立完成的工作；用户服务、网络适配和用户流程由逻辑负责人维护，不要复制或修改其 `src/modules/`、`src/network/`、`src/flow/` 实现。
 
 > 2026-09-05 交接更新：小 Demo 优先于完整页面重构。逻辑分支当前提交为 `872e738`，已经提供 `MockUserNetworkApi`、`UserApplicationAssembly`、`IUserUiBinder`、`LoginViewState` 和 `ProfileEditViewState`，逻辑与网络测试共 75/75 通过。UI 先完成下面的“P0：小 Demo 最短路径”，完成后再继续其余 P1/P2。
+
+> **2026-09-08 入口变更提醒（UI 负责人必读）**：
+> 1. 正式入口已由 `src/realnetworkmain.cpp` 改名为 **`src/main.cpp`**（默认构建即真实网络模式）；原来只挂裸 `LoginWindow` 的旧 `main.cpp` 已删除。
+> 2. `CONFIG+=user_demo` 仍走 `src/demo/userdemomain.cpp`，构建目录与正式产物隔离，逻辑不变。
+> 3. **不要**重新创建只含 `LoginWindow` 的 `main.cpp`，也不要在无确认的情况下修改 `ChargingUser.pro` 的入口选择逻辑（仍属共同接缝，见 `user-module-contract.md`）。
+> 4. 若页面需要新增信号（如 `ChargeConfirmationWindow::rechargeRequested`），请同步告知逻辑负责人更新 `src/main.cpp` 的接线——eb31164 曾因信号名不一致导致入口无法编译。
 
 ## 当前可对接的逻辑能力
 

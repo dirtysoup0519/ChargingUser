@@ -121,7 +121,7 @@ int main(int argc, char *argv[])
 
     QCommandLineParser parser;
     parser.setApplicationDescription(
-        QStringLiteral("ChargingUser optional real-network entry."));
+        QStringLiteral("ChargingUser client (real-network entry, default build)."));
     parser.addHelpOption();
     parser.addVersionOption();
     // 目标地址优先级：命令行参数 > 环境变量（CHARGER_SERVER_HOST/PORT）> 协议内置默认。
@@ -324,7 +324,9 @@ int main(int argc, char *argv[])
         walletRecharge.renderBalance(chargeBinder.currentState().walletBalanceText);
         mainWindow.renderSecondaryPage(&walletRecharge);
     });
-    QObject::connect(&chargeConfirmation, &ChargeConfirmationWindow::rechargePageRequested,
+    // 修复来源：eb31164 误用不存在的 rechargePageRequested 信号，导致真实入口
+    // 无法编译；ChargeConfirmationWindow 实际声明的信号是 rechargeRequested()。
+    QObject::connect(&chargeConfirmation, &ChargeConfirmationWindow::rechargeRequested,
                      &app, [&] {
         walletRecharge.renderBalance(chargeBinder.currentState().walletBalanceText);
         mainWindow.renderSecondaryPage(&walletRecharge);

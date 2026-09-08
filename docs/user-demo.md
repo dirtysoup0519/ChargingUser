@@ -57,8 +57,10 @@ make -j2
 
 尚未实现或验收：
 
-- 正式 `src/main.cpp` 仍只是 UI 入口，尚未装配真实 `UserApplicationAssembly`
-  和页面导航；完整用户流程目前仅由 `CONFIG+=user_demo` 入口提供。
+- ~~正式 `src/main.cpp` 仍只是 UI 入口~~ **2026-09-08 更新**：正式入口
+  `src/main.cpp`（原 `realnetworkmain.cpp` 改名）已装配真实
+  `UserApplicationAssembly` 与全部页面；完整用户流程由默认构建提供，
+  `CONFIG+=user_demo` 仅作离线演示/视觉验收。
 - 服务端协议 v2.4 尚无普通用户资料查询、昵称修改的专用消息，真实后端链路未完成；
   Demo 使用 `MockUserNetworkApi`，不能作为真实网络联调结论。
 - 尚未完成有桌面显示环境下的逐页人工点击、截图、长文案/小窗口视觉验收；

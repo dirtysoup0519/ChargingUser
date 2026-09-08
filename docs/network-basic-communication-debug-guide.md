@@ -37,8 +37,8 @@
 | `src/network/qtnetworktransport.h/.cpp` | `QTcpSocket` 实现；管理连接和 FIFO 发送队列，断线时清除未发送数据。 |
 | `src/network/backendclient.h/.cpp` | 网络生命周期协调器；维护连接状态、心跳定时器、重连定时器，并把协议帧交给业务适配器。 |
 | `src/network/realusernetworkapi.h/.cpp` | 将用户领域请求映射为服务端消息码，管理请求超时和响应关联。 |
-| `src/realnetworkmain.cpp` | 可选真实入口；装配 transport、backend、真实 API、应用层和登录窗口。 |
-| `ChargingUser.pro` | 通过 `CONFIG+=real_network` 选择真实入口，并禁止和 `user_demo` 同时启用。 |
+| `src/main.cpp` | 正式入口（默认构建即真实网络模式）；装配 transport、backend、真实 API、应用层和登录窗口。 |
+| `ChargingUser.pro` | 默认构建即真实入口（`src/main.cpp`）；`CONFIG+=user_demo` 切换演示入口，两者互斥。 |
 | `tools/network-smoke/` | 命令行联调工具；连接后发送一次心跳，可选发送手机号登录请求。 |
 | `tests/network/protocol-framing-tests.cpp` | 验证帧头、半包、粘包、分片、非法长度和解析状态重置。 |
 | `tests/network/network-transport-tests.cpp` | 验证真实 socket、部分写入、发送顺序、心跳、断线和 shutdown。 |
@@ -49,7 +49,7 @@
 
 ### 3.1 建立连接
 
-1. `realnetworkmain.cpp` 解析 `--server-host` 和 `--server-port`；
+1. `src/main.cpp` 解析 `--server-host` 和 `--server-port`；
 2. 按 `QtNetworkTransport → BackendClient → RealUserNetworkApi →
    UserApplicationAssembly` 的顺序创建对象；
 3. `BackendClient::start()` 把状态改为 `Connecting`，再调用
