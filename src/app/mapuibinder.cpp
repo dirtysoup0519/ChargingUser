@@ -71,6 +71,24 @@ QString chargerStatusText(const ChargerSummary &charger)
     return QStringLiteral("状态未知");
 }
 
+QString chargerStatusText(ChargerBusinessStatus status)
+{
+    ChargerSummary charger;
+    charger.online = true;
+    charger.businessStatus = status;
+    return chargerStatusText(charger);
+}
+
+bool isAvailable(ChargerBusinessStatus status)
+{
+    return status == ChargerBusinessStatus::Idle;
+}
+
+QString chargerStateKey(const QString &stationId, const QString &chargerId)
+{
+    return stationId + QLatin1Char('\n') + chargerId;
+}
+
 QString displayError(const ClientError &error, const QString &fallback)
 {
     return error.displayMessage.isEmpty() ? fallback : error.displayMessage;
@@ -125,6 +143,73 @@ void MapUiBinder::setActiveReservation(const std::optional<ActiveReservationView
     m_detail.activeReservation = reservation;
     publishHome();
     publishDetail();
+}
+
+void MapUiBinder::chargerStatusConfirmed(const QString &stationId,
+                                         const QString &chargerId,
+                                         ChargerBusinessStatus status)
+{
+    if (stationId.isEmpty() || chargerId.isEmpty())
+        return;
+    const QString key = chargerStateKey(stationId, chargerId);
+    const auto previous = m_confirmedChargerStatuses.constFind(key);
+    const bool previouslyAvailable = previous == m_confirmedChargerStatuses.cend()
+                                         ? status != ChargerBusinessStatus::Idle
+                                         : isAvailable(previous.value());
+    const bool nowAvailable = isAvailable(status);
+    if (previous != m_confirmedChargerStatuses.cend() && previous.value() == status)
+        return;
+    m_confirmedChargerStatuses.insert(key, status);
+    m_chargerService->applyConfirmedChargerStatus(stationId, chargerId, status);
+
+    if (previouslyAvailable != nowAvailable) {
+        const int delta = nowAvailable ? 1 : -1;
+        for (StationListItemView &station : m_home.stations) {
+            if (station.stationId != stationId)
+                continue;
+            station.availableCount = qBound(0, station.availableCount + delta,
+                                            station.totalCount);
+            station.availabilityText = availabilityText(station.availableCount,
+                                                         station.totalCount);
+        }
+        if (m_stationsById.contains(stationId)) {
+            StationSummary &summary = m_stationsById[stationId];
+            summary.availableCount = qBound(0, summary.availableCount + delta,
+                                            summary.totalCount);
+        }
+    }
+
+    if (m_detail.stationId == stationId) {
+        for (ChargerListItemView &charger : m_detail.chargers) {
+            if (charger.chargerId != chargerId)
+                continue;
+            charger.statusText = chargerStatusText(status);
+            charger.canCharge = nowAvailable;
+            charger.disabledReason = nowAvailable ? QString() :
+                (status == ChargerBusinessStatus::Reserved
+                     ? QStringLiteral("该充电桩已被预约。")
+                     : status == ChargerBusinessStatus::Charging
+                           ? QStringLiteral("该充电桩正在充电。")
+                           : QStringLiteral("该充电桩当前不可用。"));
+        }
+        if (!nowAvailable && m_detail.selectedChargerId == chargerId)
+            m_detail.selectedChargerId.clear();
+        m_detail.canCharge = std::any_of(
+            m_detail.chargers.cbegin(), m_detail.chargers.cend(),
+            [](const ChargerListItemView &charger) { return charger.canCharge; });
+        m_detail.canContinueToConfirmation = !m_detail.selectedChargerId.isEmpty()
+                                             && !m_detail.activeReservation.has_value();
+        publishDetail();
+    }
+    publishHome();
+    // 立即状态用于消除 UI 延迟；随后向当前数据源查询一次进行权威校准。
+    if (m_currentPage == MapPageTarget::StationDetail
+        && m_detail.stationId == stationId && m_detailRequestId.isEmpty()) {
+        startDetailQuery(stationId, true);
+    } else if (m_currentPage == MapPageTarget::Home
+               && m_lastStationQuery && m_stationsRequestId.isEmpty()) {
+        startStationQuery(*m_lastStationQuery);
+    }
 }
 
 NavigationViewState MapUiBinder::currentNavigationState() const
@@ -467,6 +552,9 @@ void MapUiBinder::handleStationDetailReady(const RequestContext &context,
         if (charger.chargerId.isEmpty()) {
             continue;
         }
+        m_confirmedChargerStatuses.insert(
+            chargerStateKey(detail.stationId, charger.chargerId),
+            charger.businessStatus);
         ChargerListItemView item;
         item.chargerId = charger.chargerId;
         item.title = charger.type.isEmpty()

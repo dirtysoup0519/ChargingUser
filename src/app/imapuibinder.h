@@ -1,6 +1,7 @@
 #pragma once
 
 #include "modules/map/maptypes.h"
+#include "modules/charger/chargertypes.h"
 #include "presentation/contracts/mapviewstates.h"
 
 #include <QObject>
@@ -49,6 +50,10 @@ public slots:
     virtual void stationDetailsRequested(const QString &stationId) = 0;
     virtual void stationRefreshRequested() = 0;
     virtual void chargerSelected(const QString &chargerId) = 0;
+    /** 已由预约/充电服务确认的电桩状态变化；两种数据源共用此入口。 */
+    virtual void chargerStatusConfirmed(const QString &stationId,
+                                        const QString &chargerId,
+                                        ChargerBusinessStatus status) = 0;
     virtual void chargeConfirmationRequested(const QString &stationId,
                                              const QString &chargerId) = 0;
     virtual void routePreviewRequested(TravelMode mode) = 0;

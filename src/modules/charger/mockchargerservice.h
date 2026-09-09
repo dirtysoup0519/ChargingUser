@@ -47,6 +47,9 @@ public:
     void queryStationDetail(const RequestContext &context,
                             const QString &stationId) override;
     void cancel(const QString &requestId) override;
+    void applyConfirmedChargerStatus(const QString &stationId,
+                                     const QString &chargerId,
+                                     ChargerBusinessStatus status) override;
 
 private:
     using Completion = std::function<void()>;
