@@ -1,4 +1,5 @@
 #include "app/application.h"
+#include "common/clienterror.h"
 #include "app/charginguibinder.h"
 #include "app/chargingsessionuibinder.h"
 #include "app/mapuibinder.h"
@@ -20,7 +21,10 @@
 #include "modules/user/iuserservice.h"
 #include "modules/map/tencentmapservice.h"
 #include "presentation/contracts/reservationviewstates.h"
+#include "presentation/contracts/frequentstationviewstate.h"
+#include "presentation/contracts/orderdetailviewstate.h"
 #include "presentation/contracts/orderlistviewstate.h"
+#include "presentation/contracts/paymentviewstates.h"
 #include "presentation/pages/auth/loginwindow.h"
 #include "presentation/pages/charging/chargeconfirmationwindow.h"
 #include "presentation/pages/charging/chargingsessionwindow.h"
@@ -30,8 +34,12 @@
 #include "presentation/pages/charging/settlementwindow.h"
 #include "presentation/pages/home/navigationwindow.h"
 #include "presentation/pages/home/stationdetailwindow.h"
+#include "presentation/pages/profile/frequentstationswindow.h"
+#include "presentation/pages/profile/orderdetailwindow.h"
 #include "presentation/pages/profile/profileeditwindow.h"
 #include "presentation/pages/profile/orderlistwindow.h"
+#include "presentation/pages/profile/passwordchangewindow.h"
+#include "presentation/pages/profile/profiletextwindow.h"
 #include "presentation/pages/profile/walletrechargewindow.h"
 #include "presentation/pages/shell/mainwindow.h"
 #include "protocol.h"
@@ -46,6 +54,7 @@
 #include <QFile>
 #include <QFileInfo>
 #include <QFileDialog>
+#include <QHash>
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QJsonParseError>
@@ -57,6 +66,7 @@
 #include <QUuid>
 
 #include <algorithm>
+#include <limits>
 
 #ifdef CHARGINGUSER_ENABLE_ZXING
 #include <ZXing/BarcodeFormat.h>
@@ -198,6 +208,92 @@ void configureWebEngineDiagnostics()
     qInfo() << "Tencent map diagnostics: software WebEngine rendering enabled.";
 }
 
+QString orderStatusText(OrderStatus status)
+{
+    switch (status) {
+    case OrderStatus::Charging: return QStringLiteral("充电中");
+    case OrderStatus::PendingSettlement: return QStringLiteral("待结算");
+    case OrderStatus::Settled: return QStringLiteral("已支付");
+    case OrderStatus::Cancelled: return QStringLiteral("已取消");
+    case OrderStatus::Unknown: return QStringLiteral("状态未知");
+    }
+    return QStringLiteral("状态未知");
+}
+
+QString orderStatusTone(OrderStatus status)
+{
+    if (status == OrderStatus::Charging) return QStringLiteral("warning");
+    if (status == OrderStatus::Settled) return QStringLiteral("success");
+    return QStringLiteral("neutral");
+}
+
+QString orderDurationText(const ChargingOrder &order)
+{
+    if (!order.startedAtUtc.isValid()) return {};
+    const QDateTime end = order.endedAtUtc.value_or(QDateTime::currentDateTimeUtc());
+    const qint64 seconds = qMax<qint64>(0, order.startedAtUtc.secsTo(end));
+    return QStringLiteral("%1 分钟").arg(seconds / 60);
+}
+
+OrderDetailViewState orderDetailViewState(const ChargingOrder &order)
+{
+    OrderDetailViewState state;
+    state.businessId = order.orderId;
+    state.relatedBusinessId = order.orderId;
+    state.stationId = order.stationId;
+    state.chargerId = order.chargerId;
+    state.type = OrderBusinessType::Charging;
+    state.titleText = QStringLiteral("充电订单");
+    state.stationName = order.stationName;
+    state.chargerCode = order.chargerCode;
+    state.createdAtText = order.startedAtUtc.isValid()
+                              ? order.startedAtUtc.toLocalTime().toString(Qt::ISODate)
+                              : QStringLiteral("时间未知");
+    state.durationText = orderDurationText(order);
+    state.energyText = QStringLiteral("%1 kWh").arg(order.energyKwh, 0, 'f', 2);
+    state.amountText = QStringLiteral("¥%1").arg(order.amountCents / 100.0, 0, 'f', 2);
+    state.paymentMethodText = QStringLiteral("钱包支付");
+    state.statusText = orderStatusText(order.status);
+    state.statusTone = orderStatusTone(order.status);
+    if (order.status == OrderStatus::Charging) {
+        state.action = OrderListAction::ViewCharging;
+        state.actionText = QStringLiteral("查看充电");
+        state.actionEnabled = true;
+    } else if (order.status == OrderStatus::PendingSettlement) {
+        state.action = OrderListAction::ContinuePayment;
+        state.actionText = QStringLiteral("去结算");
+        state.actionEnabled = true;
+    }
+    return state;
+}
+
+bool parseMoneyText(const QString &text, qint64 *cents)
+{
+    QString normalized = text.trimmed();
+    normalized.remove(QChar(0x00A5));
+    normalized.remove(QChar(0xFFE5));
+    normalized.remove(QLatin1Char(','));
+    static const QRegularExpression pattern(
+        QStringLiteral("^(\\d+)(?:\\.(\\d{1,2}))?$"));
+    const QRegularExpressionMatch match = pattern.match(normalized);
+    if (!match.hasMatch()) return false;
+    bool wholeOk = false;
+    const qint64 whole = match.captured(1).toLongLong(&wholeOk);
+    if (!wholeOk || whole > (std::numeric_limits<qint64>::max() / 100)) return false;
+    QString fraction = match.captured(2);
+    if (fraction.size() == 1) fraction.append(QLatin1Char('0'));
+    bool fractionOk = true;
+    const qint64 fractional = fraction.isEmpty() ? 0 : fraction.toLongLong(&fractionOk);
+    if (!fractionOk) return false;
+    *cents = whole * 100 + fractional;
+    return true;
+}
+
+QString moneyText(qint64 cents)
+{
+    return QStringLiteral("¥%1").arg(cents / 100.0, 0, 'f', 2);
+}
+
 } // namespace
 
 int main(int argc, char *argv[])
@@ -332,17 +428,26 @@ int main(int argc, char *argv[])
     ChargeConfirmationWindow chargeConfirmation(&mainWindow);
     WalletRechargeWindow walletRecharge(&mainWindow);
     OrderListWindow orderList(&mainWindow);
+    OrderDetailWindow orderDetail(&mainWindow);
+    FrequentStationsWindow frequentStations(&mainWindow);
+    ProfileTextWindow profileText(&mainWindow);
     ReservationConfirmationWindow reservationConfirmation(&mainWindow);
     QrCodeScannerWindow qrScanner(&mainWindow);
+    PaymentWindow paymentWindow(&mainWindow);
     mainWindow.registerSecondaryPage(&chargeConfirmation);
     mainWindow.registerSecondaryPage(&walletRecharge);
     mainWindow.registerSecondaryPage(&orderList);
+    mainWindow.registerSecondaryPage(&orderDetail);
+    mainWindow.registerSecondaryPage(&frequentStations);
+    mainWindow.registerSecondaryPage(&profileText);
     mainWindow.registerSecondaryPage(&reservationConfirmation);
     mainWindow.registerSecondaryPage(&qrScanner);
+    mainWindow.registerSecondaryPage(&paymentWindow);
 
     // 合同 §3：会话页与结算页接入（充电启动/活动恢复到达，G/H 阶段展示载体）。
     ChargingSessionWindow sessionWindow(&mainWindow);
     SettlementWindow settlementWindow(&mainWindow);
+    PasswordChangeWindow passwordChange;
     mainWindow.registerSecondaryPage(&sessionWindow);
     mainWindow.registerSecondaryPage(&settlementWindow);
     if (!mapKey.isEmpty()) {
@@ -351,24 +456,116 @@ int main(int argc, char *argv[])
     IUserUiBinder *binder = assembly.userUiBinder();
     IUserService *userService = assembly.userService();
     bool profileEditOpenedFromMain = false;
-    enum class WalletEntryPoint { Profile, ChargeConfirmation };
+    enum class WalletEntryPoint { Profile, ChargeConfirmation, Payment };
     enum class ScanEntryPoint { PrimaryCharging, Session };
+    enum class OrderDetailDestination { None, Detail, Settlement };
     ScanEntryPoint scanEntryPoint = ScanEntryPoint::PrimaryCharging;
     bool confirmationOpenedFromScanner = false;
     WalletEntryPoint walletEntryPoint = WalletEntryPoint::Profile;
     bool orderListOpen = false;
+    QString orderListRequestId;
+    bool frequentStationsOpen = false;
+    QString frequentStationsRequestId;
     bool settlementOpenedFromOrderList = false;
+    bool paymentOpen = false;
+    QString pendingOrderDetailRequestId;
+    QString pendingOrderDetailOrderId;
+    OrderDetailDestination pendingOrderDetailDestination = OrderDetailDestination::None;
     OrderListViewState orderListBaseState;
     const auto openWallet = [&](WalletEntryPoint entryPoint) {
         walletEntryPoint = entryPoint;
+        if (entryPoint == WalletEntryPoint::Payment) paymentOpen = false;
         walletBinder.activate();
         mainWindow.renderSecondaryPage(&walletRecharge);
     };
+    const auto renderPayment = [&] {
+        const SettlementViewState settlement = settlementBinder.currentState();
+        const WalletViewState wallet = walletBinder.currentState();
+        PaymentViewState state;
+        state.businessId = settlement.orderId;
+        state.purpose = PaymentPurpose::ChargingSettlement;
+        state.titleText = QStringLiteral("订单支付");
+        state.descriptionText = QStringLiteral("%1 · %2号桩充电订单")
+                                    .arg(settlement.stationName.isEmpty()
+                                             ? QStringLiteral("未知站点")
+                                             : settlement.stationName,
+                                         settlement.chargerCode.isEmpty()
+                                             ? QStringLiteral("未知")
+                                             : settlement.chargerCode);
+        state.amountText = settlement.payableText.isEmpty()
+                               ? settlement.amountText : settlement.payableText;
+        state.balanceText = wallet.balanceText;
+        state.canRecharge = wallet.status != WalletPageStatus::Loading
+                            && wallet.status != WalletPageStatus::Submitting;
 
-    const auto showOnly = [&login, &profileEdit, &mainWindow](QWidget *target) {
+        qint64 balanceCents = 0;
+        qint64 amountCents = 0;
+        const bool balanceKnown = parseMoneyText(wallet.balanceText, &balanceCents);
+        const bool amountKnown = parseMoneyText(state.amountText, &amountCents);
+        if (balanceKnown && amountKnown && balanceCents >= amountCents) {
+            state.balanceAfterPaymentText = moneyText(balanceCents - amountCents);
+        }
+
+        switch (settlement.status) {
+        case SettlementPageStatus::Submitting:
+            state.status = PaymentViewStatus::Submitting;
+            state.canPay = false;
+            state.canRecharge = false;
+            state.message = settlement.message;
+            break;
+        case SettlementPageStatus::Settled:
+            state.status = PaymentViewStatus::Success;
+            state.canPay = false;
+            state.canRecharge = false;
+            state.balanceText = settlement.balanceText.isEmpty()
+                                    ? wallet.balanceText : settlement.balanceText;
+            state.message = settlement.message;
+            break;
+        case SettlementPageStatus::ResultUnknown:
+            state.status = PaymentViewStatus::ResultUnknown;
+            state.canPay = false;
+            state.canRecharge = false;
+            state.canRecoverResult = false;
+            state.message = settlement.message
+                            + QStringLiteral("\n服务端未提供支付结果查询接口，请刷新订单和钱包后确认，勿重复支付。");
+            break;
+        case SettlementPageStatus::Error:
+            state.status = PaymentViewStatus::Error;
+            state.canPay = false;
+            state.message = settlement.message;
+            break;
+        case SettlementPageStatus::Ready:
+            state.status = PaymentViewStatus::Ready;
+            state.canPay = wallet.status == WalletPageStatus::Ready
+                           && balanceKnown && amountKnown
+                           && balanceCents >= amountCents;
+            if (wallet.status != WalletPageStatus::Ready || !balanceKnown) {
+                state.canRecharge = false;
+                state.message = wallet.message.isEmpty()
+                                    ? QStringLiteral("正在同步钱包余额…")
+                                    : wallet.message;
+            } else if (!state.canPay) {
+                state.message = QStringLiteral("钱包余额不足，请先充值后再支付。");
+            } else {
+                state.message = settlement.message;
+            }
+            break;
+        case SettlementPageStatus::Idle:
+            state.status = PaymentViewStatus::Error;
+            state.canPay = false;
+            state.canRecharge = false;
+            state.message = QStringLiteral("尚未加载待支付订单。");
+            break;
+        }
+        paymentWindow.render(state);
+    };
+
+    const auto showOnly = [&login, &profileEdit, &mainWindow,
+                           &passwordChange](QWidget *target) {
         login.setVisible(target == &login);
         profileEdit.setVisible(target == &profileEdit);
         mainWindow.setVisible(target == &mainWindow);
+        passwordChange.setVisible(target == &passwordChange);
         if (target != nullptr) {
             target->raise();
             target->activateWindow();
@@ -377,8 +574,43 @@ int main(int argc, char *argv[])
 
     QObject::connect(&login, &LoginWindow::loginRequested,
                      binder, &IUserUiBinder::loginRequested);
+    QObject::connect(&login, &LoginWindow::usernamePasswordLoginRequested,
+                     &app, [&](const QString &username, const QString &) {
+        LoginViewState state = binder->currentLoginViewState();
+        state.phoneInput = username;
+        state.submitState = SubmitState::ServerError;
+        state.message = QStringLiteral(
+            "当前服务端协议尚未提供用户名密码登录，请切换为手机号登录。");
+        state.canSubmit = true;
+        login.render(state);
+    });
     QObject::connect(&profileEdit, &ProfileEditWindow::profileSaveRequested,
                      binder, &IUserUiBinder::profileSaveRequested);
+    QObject::connect(&profileEdit, &ProfileEditWindow::profileCompletionRequested,
+                     &app, [&](const QString &, const QString &, const QString &) {
+        QMessageBox::information(
+            &profileEdit, QStringLiteral("完善资料"),
+            QStringLiteral("当前服务端协议尚未提供首次密码设置或手机号绑定接口。"));
+    });
+    QObject::connect(&profileEdit, &ProfileEditWindow::passwordChangeRequested,
+                     &app, [&] {
+        passwordChange.setGeometry(profileEdit.geometry());
+        passwordChange.setStep(
+            PasswordChangeStep::VerifyOriginal,
+            QStringLiteral("当前服务端协议暂不支持密码验证与修改，本页仅保留正式 UI 接口。"));
+        showOnly(&passwordChange);
+    });
+    QObject::connect(&passwordChange, &PasswordChangeWindow::backRequested,
+                     &app, [&] { showOnly(&profileEdit); });
+    const auto passwordChangeUnavailable = [&](const QString &) {
+        passwordChange.setStep(
+            PasswordChangeStep::VerifyOriginal,
+            QStringLiteral("服务端未提供密码修改协议，未发送任何密码数据。"));
+    };
+    QObject::connect(&passwordChange, &PasswordChangeWindow::originalPasswordSubmitted,
+                     &app, passwordChangeUnavailable);
+    QObject::connect(&passwordChange, &PasswordChangeWindow::newPasswordSubmitted,
+                     &app, passwordChangeUnavailable);
     QObject::connect(&mainWindow, &MainWindow::logoutRequested,
                      binder, &IUserUiBinder::logoutRequested);
     QObject::connect(binder, &IUserUiBinder::loginViewStateChanged,
@@ -492,21 +724,30 @@ int main(int argc, char *argv[])
         orderList.render(OrderListViewState{{}, QStringLiteral("正在加载订单…")});
         mainWindow.renderSecondaryPage(&orderList);
         walletBinder.activate();
-        orderService.queryOrderHistory(
-            {QUuid::createUuid().toString(QUuid::WithoutBraces), {}});
+        orderListRequestId = QUuid::createUuid().toString(QUuid::WithoutBraces);
+        orderService.queryOrderHistory({orderListRequestId, {}});
     });
     const auto showProfileNotice = [&](const QString &title, const QString &text) {
         QMessageBox::information(&mainWindow, title, text);
     };
-    QObject::connect(&mainWindow, &MainWindow::commonStationsPageRequested,
-                     &app, [&] { showProfileNotice(QStringLiteral("常用充电站"),
-                                                    QStringLiteral("常用充电站功能接入中。")); });
     QObject::connect(&mainWindow, &MainWindow::helpFeedbackPageRequested,
-                     &app, [&] { showProfileNotice(QStringLiteral("帮助与反馈"),
-                                                    QStringLiteral("帮助与反馈功能接入中。")); });
+                     &app, [&] {
+        profileText.renderContent(
+            QStringLiteral("帮助与反馈"),
+            QStringLiteral("如果您在站点查询、路线导航、预约、扫码充电、订单支付或钱包使用过程中遇到问题，请记录发生时间、站点名称、充电桩编号和页面提示。\n\n当前服务端尚未提供反馈提交协议，因此本页暂不上传内容；联调问题可将上述信息交给项目组排查。"));
+        mainWindow.renderSecondaryPage(&profileText);
+    });
     QObject::connect(&mainWindow, &MainWindow::aboutPageRequested,
-                     &app, [&] { showProfileNotice(QStringLiteral("关于智充"),
-                                                    QStringLiteral("智充实训版")); });
+                     &app, [&] {
+        profileText.renderContent(
+            QStringLiteral("关于智充"),
+            QStringLiteral("智充实训版 1.0\n\n提供充电站查询、腾讯地图导航、充电桩预约、扫码充电、实时充电状态、订单结算和钱包服务。业务结果以服务端返回的数据为准。"));
+        mainWindow.renderSecondaryPage(&profileText);
+    });
+    QObject::connect(&profileText, &ProfileTextWindow::backRequested,
+                     &app, [&] {
+        mainWindow.renderPrimaryPage(MainWindow::PrimaryPage::Profile);
+    });
     QObject::connect(&stationDetail, &StationDetailWindow::chargerSelected,
                      &mapBinder, &IMapUiBinder::chargerSelected);
     // 预约状态变化由服务端/预约 Binder 决定；详情页事件必须有明确反馈，不能静默无响应。
@@ -553,6 +794,73 @@ int main(int argc, char *argv[])
         }
         return state;
     };
+    const auto orderItemDetailState = [](const OrderListItemView &order) {
+        OrderDetailViewState detail;
+        detail.businessId = order.businessId;
+        detail.relatedBusinessId = order.relatedBusinessId;
+        detail.stationId = order.stationId;
+        detail.chargerId = order.chargerId;
+        detail.type = order.type;
+        detail.titleText = order.type == OrderBusinessType::Charging
+                               ? QStringLiteral("充电订单")
+                           : order.type == OrderBusinessType::Reservation
+                               ? QStringLiteral("预约订单")
+                               : QStringLiteral("钱包充值");
+        detail.stationName = order.stationName;
+        detail.chargerCode = order.chargerCode;
+        detail.createdAtText = order.createdAtText;
+        detail.durationText = order.durationText;
+        detail.energyText = order.energyText;
+        detail.amountText = order.amountText;
+        detail.paymentMethodText = QStringLiteral("钱包支付");
+        detail.statusText = order.statusText;
+        detail.statusTone = order.statusTone;
+        detail.message = order.summaryText;
+        if (order.action != OrderListAction::ViewDetails) {
+            detail.action = order.action;
+            detail.actionText = order.actionText;
+            detail.actionEnabled = order.action != OrderListAction::None;
+        }
+        return detail;
+    };
+    const auto currentOrderItem = [&](const QString &businessId,
+                                      OrderBusinessType type)
+        -> std::optional<OrderListItemView> {
+        const OrderListViewState current = appendRechargeOrders(orderListBaseState);
+        for (const OrderListItemView &order : current.orders) {
+            if (order.businessId == businessId && order.type == type) return order;
+        }
+        return std::nullopt;
+    };
+    const auto renderFrequentStations = [&] {
+        QHash<QString, FrequentStationItemView> aggregated;
+        for (const OrderListItemView &order : orderListBaseState.orders) {
+            if (order.type == OrderBusinessType::Recharge) continue;
+            const QString key = order.stationId.isEmpty()
+                                    ? order.stationName : order.stationId;
+            if (key.isEmpty() || order.stationName.isEmpty()) continue;
+            FrequentStationItemView item = aggregated.value(key);
+            item.stationId = order.stationId;
+            item.stationName = order.stationName;
+            ++item.orderCount;
+            if (item.lastUsedText.isEmpty()) item.lastUsedText = order.createdAtText;
+            aggregated.insert(key, item);
+        }
+        FrequentStationsViewState state;
+        state.stations = aggregated.values();
+        std::sort(state.stations.begin(), state.stations.end(),
+                  [](const FrequentStationItemView &left,
+                     const FrequentStationItemView &right) {
+            if (left.orderCount != right.orderCount)
+                return left.orderCount > right.orderCount;
+            return left.stationName < right.stationName;
+        });
+        if (state.stations.isEmpty()) {
+            state.message = QStringLiteral(
+                "暂无可统计的历史订单，完成充电后常用站点会显示在这里。");
+        }
+        frequentStations.render(state);
+    };
     const auto renderChargingOrders = [&](const QVector<ChargingOrder> &orders) {
         OrderListViewState state;
         for (const ChargingOrder &order : orders) {
@@ -568,18 +876,9 @@ int main(int argc, char *argv[])
                                      : QStringLiteral("时间未知");
             item.amountText = QStringLiteral("¥%1").arg(order.amountCents / 100.0, 0, 'f', 2);
             item.energyText = QStringLiteral("%1 kWh").arg(order.energyKwh, 0, 'f', 2);
-            item.statusText = order.status == OrderStatus::Charging
-                                  ? QStringLiteral("充电中")
-                                  : order.status == OrderStatus::PendingSettlement
-                                  ? QStringLiteral("待结算")
-                                  : order.status == OrderStatus::Settled
-                                  ? QStringLiteral("已支付")
-                                  : order.status == OrderStatus::Cancelled
-                                  ? QStringLiteral("已取消") : QStringLiteral("状态未知");
-            item.statusTone = order.status == OrderStatus::Charging
-                                  ? QStringLiteral("warning")
-                                  : order.status == OrderStatus::Settled
-                                  ? QStringLiteral("success") : QStringLiteral("neutral");
+            item.durationText = orderDurationText(order);
+            item.statusText = orderStatusText(order.status);
+            item.statusTone = orderStatusTone(order.status);
             item.summaryText = QStringLiteral("电量 %1").arg(item.energyText);
             item.action = order.status == OrderStatus::Charging ? OrderListAction::ViewCharging
                           : order.status == OrderStatus::PendingSettlement
@@ -589,22 +888,54 @@ int main(int argc, char *argv[])
                             ? QStringLiteral("去结算") : QStringLiteral("查看详情");
             state.orders.append(item);
         }
-        state = appendRechargeOrders(state);
         orderListBaseState = state;
+        state = appendRechargeOrders(state);
         state.message = state.orders.isEmpty() ? QStringLiteral("暂无订单") : QString();
-        orderList.render(state);
+        if (orderListOpen) orderList.render(state);
+        if (frequentStationsOpen) renderFrequentStations();
     };
     QObject::connect(&orderService, &IOrderService::activeOrdersReady,
                      &app, [&](const RequestContext &, const QVector<ChargingOrder> &orders) {
         renderChargingOrders(orders);
     });
     QObject::connect(&orderService, &IOrderService::orderHistoryReady,
-                     &app, [&](const RequestContext &, const QVector<ChargingOrder> &orders) {
+                     &app, [&](const RequestContext &context,
+                               const QVector<ChargingOrder> &orders) {
+        if (context.requestId == frequentStationsRequestId)
+            frequentStationsRequestId.clear();
+        if (context.requestId == orderListRequestId)
+            orderListRequestId.clear();
         renderChargingOrders(orders);
+    });
+    QObject::connect(&mainWindow, &MainWindow::commonStationsPageRequested,
+                     &app, [&] {
+        frequentStationsOpen = true;
+        orderListOpen = false;
+        frequentStations.render(
+            FrequentStationsViewState{{}, QStringLiteral("正在加载常用充电站…")});
+        mainWindow.renderSecondaryPage(&frequentStations);
+        frequentStationsRequestId =
+            QUuid::createUuid().toString(QUuid::WithoutBraces);
+        orderService.queryOrderHistory({frequentStationsRequestId, {}});
+    });
+    QObject::connect(&frequentStations, &FrequentStationsWindow::backRequested,
+                     &app, [&] {
+        frequentStationsOpen = false;
+        if (!frequentStationsRequestId.isEmpty())
+            orderService.cancel(frequentStationsRequestId);
+        frequentStationsRequestId.clear();
+        mainWindow.renderPrimaryPage(MainWindow::PrimaryPage::Profile);
+    });
+    QObject::connect(&frequentStations, &FrequentStationsWindow::stationRequested,
+                     &app, [&](const QString &stationId) {
+        frequentStationsOpen = false;
+        mapBinder.stationDetailsRequested(stationId);
     });
     QObject::connect(&orderList, &OrderListWindow::backRequested,
                      &app, [&] {
         orderListOpen = false;
+        if (!orderListRequestId.isEmpty()) orderService.cancel(orderListRequestId);
+        orderListRequestId.clear();
         mainWindow.renderPrimaryPage(MainWindow::PrimaryPage::Profile);
     });
     QObject::connect(&walletBinder, &WalletUiBinder::stateChanged,
@@ -615,30 +946,89 @@ int main(int argc, char *argv[])
     });
     QObject::connect(&orderList, &OrderListWindow::refreshRequested,
                      &app, [&] {
-        orderService.queryOrderHistory(
-            {QUuid::createUuid().toString(QUuid::WithoutBraces), {}});
+        if (!orderListRequestId.isEmpty()) return;
+        orderListRequestId = QUuid::createUuid().toString(QUuid::WithoutBraces);
+        orderService.queryOrderHistory({orderListRequestId, {}});
     });
-    QObject::connect(&orderList, &OrderListWindow::orderActionRequested,
-                     &app, [&](const QString &orderId, OrderBusinessType type,
-                               OrderListAction action) {
-        if (type != OrderBusinessType::Charging || orderId.trimmed().isEmpty()) {
+    const auto handleOrderAction = [&](const QString &orderId,
+                                       OrderBusinessType type,
+                                       OrderListAction action) {
+        if (orderId.trimmed().isEmpty()) {
             showProfileNotice(QStringLiteral("订单"),
-                              QStringLiteral("该订单类型暂未接入详情页。"));
+                              QStringLiteral("订单编号缺失，无法继续操作。"));
             return;
         }
+        const std::optional<OrderListItemView> cached = currentOrderItem(orderId, type);
         if (action == OrderListAction::ViewCharging) {
-            sessionBinder.sessionRequested(orderId);
+            const QString activeOrderId = cached && !cached->relatedBusinessId.isEmpty()
+                                              ? cached->relatedBusinessId : orderId;
+            sessionBinder.sessionRequested(activeOrderId);
             mainWindow.renderSecondaryPage(&sessionWindow);
             return;
         }
-        settlementOpenedFromOrderList = true;
-        orderService.queryOrderDetail(
-            {QUuid::createUuid().toString(QUuid::WithoutBraces), {}}, orderId);
+        if (type != OrderBusinessType::Charging) {
+            if (!cached) {
+                showProfileNotice(QStringLiteral("订单"),
+                                  QStringLiteral("当前订单摘要已经失效，请刷新订单列表。"));
+                return;
+            }
+            OrderDetailViewState detail = orderItemDetailState(*cached);
+            if (action == OrderListAction::StartReservedCharging) {
+                detail.message = QStringLiteral(
+                    "预约记录已展示；正式服务端尚未提供预约历史到扫码上下文的查询合同。请从站点详情进入扫码充电。");
+                detail.action = OrderListAction::None;
+                detail.actionEnabled = false;
+            }
+            orderDetail.render(detail);
+            mainWindow.renderSecondaryPage(&orderDetail);
+            return;
+        }
+
+        pendingOrderDetailRequestId =
+            QUuid::createUuid().toString(QUuid::WithoutBraces);
+        pendingOrderDetailOrderId = orderId;
+        pendingOrderDetailDestination = action == OrderListAction::ContinuePayment
+                                            ? OrderDetailDestination::Settlement
+                                            : OrderDetailDestination::Detail;
+        settlementOpenedFromOrderList =
+            pendingOrderDetailDestination == OrderDetailDestination::Settlement;
+        if (pendingOrderDetailDestination == OrderDetailDestination::Detail) {
+            OrderDetailViewState loading = cached
+                                               ? orderItemDetailState(*cached)
+                                               : OrderDetailViewState{};
+            loading.businessId = orderId;
+            loading.type = OrderBusinessType::Charging;
+            loading.titleText = QStringLiteral("充电订单");
+            loading.message = QStringLiteral("正在加载服务端订单详情…");
+            loading.action = OrderListAction::None;
+            loading.actionEnabled = false;
+            orderDetail.render(loading);
+            mainWindow.renderSecondaryPage(&orderDetail);
+        }
+        orderService.queryOrderDetail({pendingOrderDetailRequestId, {}}, orderId);
+    };
+    QObject::connect(&orderList, &OrderListWindow::orderActionRequested,
+                     &app, handleOrderAction);
+    QObject::connect(&orderDetail, &OrderDetailWindow::actionRequested,
+                     &app, handleOrderAction);
+    QObject::connect(&orderDetail, &OrderDetailWindow::backRequested,
+                     &app, [&] {
+        if (!pendingOrderDetailRequestId.isEmpty())
+            orderService.cancel(pendingOrderDetailRequestId);
+        pendingOrderDetailRequestId.clear();
+        pendingOrderDetailOrderId.clear();
+        pendingOrderDetailDestination = OrderDetailDestination::None;
+        orderList.render(appendRechargeOrders(orderListBaseState));
+        mainWindow.renderSecondaryPage(&orderList);
     });
     QObject::connect(&walletRecharge, &WalletRechargeWindow::backRequested,
                      &app, [&] {
         if (walletEntryPoint == WalletEntryPoint::ChargeConfirmation) {
             mainWindow.renderSecondaryPage(&chargeConfirmation);
+        } else if (walletEntryPoint == WalletEntryPoint::Payment) {
+            paymentOpen = true;
+            renderPayment();
+            mainWindow.renderSecondaryPage(&paymentWindow);
         } else {
             mainWindow.renderPrimaryPage(MainWindow::PrimaryPage::Profile);
         }
@@ -646,6 +1036,10 @@ int main(int argc, char *argv[])
     // 阶段 E：钱包页面使用服务端余额与流水；充值结果未知时由 Binder 锁定重试。
     QObject::connect(&walletBinder, &WalletUiBinder::stateChanged,
                      &walletRecharge, &WalletRechargeWindow::render);
+    QObject::connect(&walletBinder, &WalletUiBinder::stateChanged,
+                     &app, [&](const WalletViewState &) {
+        if (paymentOpen) renderPayment();
+    });
     QObject::connect(&walletRecharge, &WalletRechargeWindow::rechargeRequested,
                      &walletBinder, &WalletUiBinder::rechargeRequested);
     QObject::connect(&walletBinder, &WalletUiBinder::profileRefreshRequested,
@@ -787,9 +1181,37 @@ int main(int argc, char *argv[])
     // 合同 §3.5：结算页接线（展示 → 支付意图 → 刷新）。
     QObject::connect(&settlementBinder, &SettlementUiBinder::stateChanged,
                      &settlementWindow, &SettlementWindow::render);
+    QObject::connect(&settlementBinder, &SettlementUiBinder::stateChanged,
+                     &app, [&](const SettlementViewState &) {
+        if (paymentOpen) renderPayment();
+    });
     QObject::connect(&settlementWindow, &SettlementWindow::paymentRequested,
                      &app, [&](const QString &) {
+        paymentOpen = true;
+        walletBinder.activate();
+        renderPayment();
+        mainWindow.renderSecondaryPage(&paymentWindow);
+    });
+    QObject::connect(&paymentWindow, &PaymentWindow::backRequested,
+                     &app, [&] {
+        paymentOpen = false;
+        settlementWindow.render(settlementBinder.currentState());
+        mainWindow.renderSecondaryPage(&settlementWindow);
+    });
+    QObject::connect(&paymentWindow, &PaymentWindow::rechargeRequested,
+                     &app, [&] { openWallet(WalletEntryPoint::Payment); });
+    QObject::connect(&paymentWindow, &PaymentWindow::payRequested,
+                     &app, [&](const QString &orderId, PaymentPurpose purpose) {
+        if (purpose != PaymentPurpose::ChargingSettlement
+            || orderId != settlementBinder.currentState().orderId) {
+            return;
+        }
         settlementBinder.payRequested();
+    });
+    QObject::connect(&paymentWindow, &PaymentWindow::paymentResultRefreshRequested,
+                     &app, [&](const QString &) {
+        settlementBinder.refreshRequested();
+        renderPayment();
     });
     QObject::connect(&settlementWindow, &SettlementWindow::backRequested,
                      &app, [&] {
@@ -803,8 +1225,13 @@ int main(int argc, char *argv[])
     });
     QObject::connect(&settlementBinder, &SettlementUiBinder::orderRefreshRequested,
                      &app, [&] {
-        // 结算页刷新=按当前展示订单重查权威状态，导航保持在结算页。
+        if (orderListOpen) {
+            orderService.queryOrderHistory(
+                {QUuid::createUuid().toString(QUuid::WithoutBraces), {}});
+        }
     });
+    QObject::connect(&settlementBinder, &SettlementUiBinder::walletRefreshRequested,
+                     &walletBinder, &WalletUiBinder::activate);
 
     // 阶段 D：登录成功 → 注入身份并自动恢复活动订单（充电中/待结算）。
     QObject::connect(&network, &RealUserNetworkApi::loginSucceeded,
@@ -840,14 +1267,80 @@ int main(int argc, char *argv[])
         mainWindow.renderSecondaryPage(&settlementWindow);
     });
     QObject::connect(&orderService, &IOrderService::orderDetailReady,
-                     &app, [&](const RequestContext &,
-                               const ChargingOrder &order) {
+                     &app, [&](const RequestContext &context,
+                                const ChargingOrder &order) {
+        if (context.requestId == pendingOrderDetailRequestId) {
+            const OrderDetailDestination destination = pendingOrderDetailDestination;
+            pendingOrderDetailRequestId.clear();
+            pendingOrderDetailOrderId.clear();
+            pendingOrderDetailDestination = OrderDetailDestination::None;
+            if (destination == OrderDetailDestination::Detail) {
+                orderDetail.render(orderDetailViewState(order));
+                mainWindow.renderSecondaryPage(&orderDetail);
+            } else {
+                settlementBinder.showOrder(order);
+                mainWindow.renderSecondaryPage(&settlementWindow);
+            }
+            return;
+        }
         if (order.status == OrderStatus::Charging) {
             sessionBinder.sessionRequested(order.orderId);
             mainWindow.renderSecondaryPage(&sessionWindow);
         } else {
             settlementBinder.showOrder(order);
             mainWindow.renderSecondaryPage(&settlementWindow);
+        }
+    });
+    QObject::connect(&orderService, &IOrderService::requestFailed,
+                     &app, [&](const ClientError &error) {
+        if (error.requestId == orderListRequestId) {
+            orderListRequestId.clear();
+            if (orderListOpen) {
+                OrderListViewState state = appendRechargeOrders(orderListBaseState);
+                state.message = error.displayMessage.isEmpty()
+                                    ? QStringLiteral("订单加载失败，请点击刷新重试。")
+                                    : error.displayMessage;
+                orderList.render(state);
+            }
+            return;
+        }
+        if (error.requestId == frequentStationsRequestId) {
+            frequentStationsRequestId.clear();
+            if (frequentStationsOpen) {
+                FrequentStationsViewState state;
+                state.message = error.displayMessage.isEmpty()
+                                    ? QStringLiteral("常用充电站加载失败，请稍后重试。")
+                                    : error.displayMessage;
+                frequentStations.render(state);
+            }
+            return;
+        }
+        if (error.requestId != pendingOrderDetailRequestId) return;
+        const OrderDetailDestination destination = pendingOrderDetailDestination;
+        const QString orderId = pendingOrderDetailOrderId;
+        pendingOrderDetailRequestId.clear();
+        pendingOrderDetailOrderId.clear();
+        pendingOrderDetailDestination = OrderDetailDestination::None;
+        if (destination == OrderDetailDestination::Detail) {
+            OrderDetailViewState state;
+            state.businessId = orderId;
+            state.type = OrderBusinessType::Charging;
+            state.titleText = QStringLiteral("充电订单");
+            state.statusText = QStringLiteral("加载失败");
+            state.statusTone = QStringLiteral("neutral");
+            state.message = error.displayMessage.isEmpty()
+                                ? QStringLiteral("订单详情加载失败，请返回后重试。")
+                                : error.displayMessage;
+            orderDetail.render(state);
+            mainWindow.renderSecondaryPage(&orderDetail);
+        } else {
+            settlementOpenedFromOrderList = false;
+            showProfileNotice(
+                QStringLiteral("订单结算"),
+                error.displayMessage.isEmpty()
+                    ? QStringLiteral("订单详情加载失败，请刷新后重试。")
+                    : error.displayMessage);
+            mainWindow.renderSecondaryPage(&orderList);
         }
     });
     QObject::connect(&pushDispatcher, &ServerPushDispatcher::balanceChanged,
