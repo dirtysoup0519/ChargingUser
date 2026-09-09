@@ -3,9 +3,11 @@
 #include "app/application.h"
 #include "app/iuseruibinder.h"
 #include "app/mapuibinder.h"
+#include "app/reservationuibinder.h"
 #include "demo/userdemocontroller.h"
 #include "modules/charger/mockchargerservice.h"
 #include "modules/map/mockmapservice.h"
+#include "modules/reservation/mockreservationservice.h"
 #include "modules/user/mockusernetworkapi.h"
 #include "presentation/pages/auth/loginwindow.h"
 #include "presentation/pages/home/stationdetailwindow.h"
@@ -85,6 +87,8 @@ private:
     MockChargerService *m_chargerService = nullptr;
     MockMapService *m_mapService = nullptr;
     MapUiBinder *m_mapBinder = nullptr;
+    MockReservationService *m_reservationService = nullptr;
+    ReservationUiBinder *m_reservationBinder = nullptr;
     UserApplicationAssembly *m_assembly = nullptr;
     LoginWindow *m_login = nullptr;
     ProfileEditWindow *m_profileEdit = nullptr;
@@ -125,11 +129,14 @@ void UserDemoTests::init()
     route.durationSeconds = 600;
     m_mapService->setRouteResult(station.stationId, TravelMode::Driving, route);
     m_mapBinder = new MapUiBinder(m_chargerService, m_mapService, this);
+    m_reservationService = new MockReservationService(this);
+    m_reservationBinder = new ReservationUiBinder(m_reservationService, this);
     m_login = new LoginWindow;
     m_profileEdit = new ProfileEditWindow;
     m_mainWindow = new MainWindow;
     m_controller = new UserDemoController(m_network, m_assembly->userUiBinder(),
                                           m_mapBinder,
+                                          m_reservationBinder,
                                           m_login, m_profileEdit, m_mainWindow,
                                           this);
     m_controller->showInitialPage();
@@ -144,6 +151,8 @@ void UserDemoTests::cleanup()
     delete m_login;
     delete m_assembly;
     delete m_mapBinder;
+    delete m_reservationBinder;
+    delete m_reservationService;
     delete m_mapService;
     delete m_chargerService;
     delete m_network;
@@ -154,6 +163,8 @@ void UserDemoTests::cleanup()
     m_login = nullptr;
     m_assembly = nullptr;
     m_mapBinder = nullptr;
+    m_reservationBinder = nullptr;
+    m_reservationService = nullptr;
     m_mapService = nullptr;
     m_chargerService = nullptr;
     m_network = nullptr;

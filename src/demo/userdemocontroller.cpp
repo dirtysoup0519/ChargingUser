@@ -5,6 +5,7 @@
 
 #include "app/iuseruibinder.h"
 #include "app/imapuibinder.h"
+#include "app/reservationuibinder.h"
 #include "modules/user/mockusernetworkapi.h"
 #include "presentation/pages/auth/loginwindow.h"
 #include "presentation/pages/shell/mainwindow.h"
@@ -174,6 +175,7 @@ UserProfileResult makeProfileResult(const LoginResult &login)
 UserDemoController::UserDemoController(MockUserNetworkApi *network,
                                        IUserUiBinder *binder,
                                        IMapUiBinder *mapBinder,
+                                       ReservationUiBinder *reservationBinder,
                                        LoginWindow *login,
                                        ProfileEditWindow *profileEdit,
                                        MainWindow *mainWindow,
@@ -182,6 +184,7 @@ UserDemoController::UserDemoController(MockUserNetworkApi *network,
     , m_network(network)
     , m_binder(binder)
     , m_mapBinder(mapBinder)
+    , m_reservationBinder(reservationBinder)
     , m_login(login)
     , m_profileEdit(profileEdit)
     , m_mainWindow(mainWindow)
@@ -203,6 +206,7 @@ UserDemoController::UserDemoController(MockUserNetworkApi *network,
     Q_ASSERT(m_network);
     Q_ASSERT(m_binder);
     Q_ASSERT(m_mapBinder);
+    Q_ASSERT(m_reservationBinder);
     Q_ASSERT(m_login);
     Q_ASSERT(m_profileEdit);
     Q_ASSERT(m_mainWindow);
@@ -399,15 +403,8 @@ UserDemoController::UserDemoController(MockUserNetworkApi *network,
         m_reservationState.durationText = reservationFixture.durationText;
         m_reservationState.depositPolicyText = reservationFixture.depositPolicyText;
         m_reservationState.durationSeconds = reservationFixture.durationSeconds;
-        m_reservationResponseDelayMs = reservationFixture.responseDelayMs;
         m_reservationCancellationCooldownSeconds =
             reservationFixture.cancellationCooldownSeconds;
-        m_cancellationResponseDelayMs = reservationFixture.cancellationResponseDelayMs;
-        m_cancellationOutcome = reservationFixture.cancellationOutcome;
-        m_cancellationRetryOutcome = reservationFixture.cancellationRetryOutcome;
-        m_cancellationFailureMessage = reservationFixture.cancellationFailureMessage;
-        m_cancellationUnknownMessage = reservationFixture.cancellationUnknownMessage;
-        m_reservationOutcome = reservationFixture.outcome;
     } else {
         m_reservationState.status = ReservationConfirmationStatus::Error;
         m_reservationState.message = reservationFixtureError;
@@ -812,7 +809,103 @@ UserDemoController::UserDemoController(MockUserNetworkApi *network,
             this, [this] { m_mainWindow->renderSecondaryPage(m_stationDetail); });
     connect(m_reservationConfirmation,
             &ReservationConfirmationWindow::reservationRefreshRequested,
-            this, [this] { m_reservationConfirmation->render(m_reservationState); });
+            m_reservationBinder, &ReservationUiBinder::refreshRequested);
+    connect(m_reservationBinder, &ReservationUiBinder::stateChanged,
+            this, [this](const ReservationConfirmationViewState &state) {
+        m_reservationState = state;
+        m_reservationConfirmation->render(state);
+        if (m_paymentState.purpose == PaymentPurpose::Reservation
+            && (state.status == ReservationConfirmationStatus::Error
+                || state.status == ReservationConfirmationStatus::ResultUnknown)) {
+            m_paymentState.status = state.status == ReservationConfirmationStatus::ResultUnknown
+                ? PaymentViewStatus::ResultUnknown : PaymentViewStatus::Error;
+            m_paymentState.canPay = false;
+            m_paymentState.message = state.message;
+            m_payment->render(m_paymentState);
+            m_mainWindow->renderSecondaryPage(m_payment);
+        }
+    });
+    connect(m_reservationBinder, &ReservationUiBinder::activeReservationChanged,
+            this, [this](const std::optional<ActiveReservationView> &reservation) {
+        if (!reservation) {
+            if (!m_reservedDetailState.activeReservation) return;
+            const ActiveReservationView previous = *m_reservedDetailState.activeReservation;
+            const bool cancelled = previous.cancellationStatus
+                                   == ReservationCancellationStatus::Submitting;
+            m_mapBinder->chargerStatusConfirmed(previous.stationId, previous.chargerId,
+                                                ChargerBusinessStatus::Idle);
+            m_reservedDetailState.activeReservation.reset();
+            m_reservedDetailState.selectedChargerId.clear();
+            m_reservedDetailState.canContinueToConfirmation = false;
+            if (cancelled) {
+                m_reservedDetailState.canCreateReservation = false;
+                m_reservedDetailState.reservationDisabledReason =
+                    tr("刚刚取消过预约，%1 秒后可再次预约")
+                        .arg(m_reservationCancellationCooldownSeconds);
+                const QString accountKey = m_currentAccountKey;
+                m_reservationCancellationLockedAccounts.insert(accountKey);
+                QTimer::singleShot(m_reservationCancellationCooldownSeconds * 1000,
+                                   this, [this, accountKey] {
+                    m_reservationCancellationLockedAccounts.remove(accountKey);
+                    if (m_currentAccountKey != accountKey) return;
+                    m_reservedDetailState.canCreateReservation = true;
+                    m_reservedDetailState.reservationDisabledReason.clear();
+                    renderStationDetailWithReservation(m_reservedDetailState);
+                });
+            }
+            for (OrderListItemView &order : m_orderListState.orders) {
+                if (order.type != OrderBusinessType::Reservation
+                    || order.businessId != previous.reservationId) continue;
+                order.statusText = cancelled ? tr("已退回") : tr("已超时");
+                order.statusTone = QStringLiteral("neutral");
+                order.summaryText = cancelled
+                    ? tr("预约已取消 · 押金已退回钱包")
+                    : tr("预约已超时");
+                order.actionText = tr("查看详情");
+                order.action = OrderListAction::ViewDetails;
+                break;
+            }
+            renderStationDetailWithReservation(m_reservedDetailState);
+            renderHomeWithReservation(m_mapBinder->currentHomeState());
+            return;
+        }
+        const ActiveReservationView active = *reservation;
+        m_reservedDetailState = m_mapBinder->currentStationDetailState();
+        m_reservedDetailState.selectedChargerId = active.chargerId;
+        m_reservedDetailState.canContinueToConfirmation = true;
+        m_reservedDetailState.activeReservation = active;
+        m_mapBinder->chargerStatusConfirmed(active.stationId, active.chargerId,
+                                            ChargerBusinessStatus::Reserved);
+        const bool exists = std::any_of(
+            m_orderListState.orders.cbegin(), m_orderListState.orders.cend(),
+            [&active](const OrderListItemView &item) {
+                return item.type == OrderBusinessType::Reservation
+                       && item.businessId == active.reservationId;
+            });
+        if (!exists) {
+            OrderListItemView order;
+            order.businessId = active.reservationId;
+            order.stationId = active.stationId;
+            order.chargerId = active.chargerId;
+            order.type = OrderBusinessType::Reservation;
+            order.stationName = m_reservationState.stationName;
+            order.chargerCode = m_reservationState.chargerCode;
+            order.createdAtText = tr("刚刚");
+            order.summaryText = tr("预约时长 %1 · 押金已支付")
+                                    .arg(m_reservationState.durationText);
+            order.amountText = m_reservationState.depositText;
+            order.statusText = tr("已预约");
+            order.statusTone = QStringLiteral("info");
+            order.actionText = tr("扫码充电");
+            order.action = OrderListAction::StartReservedCharging;
+            m_orderListState.orders.prepend(order);
+        }
+        renderStationDetailWithReservation(m_reservedDetailState);
+        renderHomeWithReservation(m_mapBinder->currentHomeState());
+        m_pendingReservationStationId.clear();
+        m_pendingReservationChargerId.clear();
+        m_pendingReservationDurationSeconds = 0;
+    });
     connect(m_reservationConfirmation, &ReservationConfirmationWindow::reserveRequested,
             this, [this](const QString &stationId, const QString &chargerId,
                          int durationSeconds) {
@@ -851,18 +944,7 @@ UserDemoController::UserDemoController(MockUserNetworkApi *network,
     connect(m_stationDetail, &StationDetailWindow::reservationExpiredRefreshRequested,
             this, [this] {
         if (!m_reservedDetailState.activeReservation.has_value()) return;
-        const QString chargerId = m_reservedDetailState.activeReservation->chargerId;
-        m_mapBinder->chargerStatusConfirmed(m_reservedDetailState.stationId, chargerId,
-                                            ChargerBusinessStatus::Idle);
-        for (ChargerListItemView &charger : m_reservedDetailState.chargers) {
-            if (charger.chargerId != chargerId) continue;
-            charger.statusText = QStringLiteral("空闲");
-            charger.canCharge = true;
-            charger.disabledReason.clear();
-            break;
-        }
-        m_reservedDetailState.activeReservation.reset();
-        renderStationDetailWithReservation(m_reservedDetailState);
+        m_reservationBinder->expireReservationIfNeeded();
         QMessageBox::warning(m_stationDetail, tr("预约已超时"),
                              tr("预约时间已结束，未按时开始充电将按预约规则扣除押金。"));
     });
@@ -880,107 +962,17 @@ UserDemoController::UserDemoController(MockUserNetworkApi *network,
         // 否则从首页预约卡直接显示控件后，返回意图会被当作“已在首页”而忽略。
         m_mapBinder->stationDetailsRequested(stationId);
     });
-    const auto submitCancellation = [this](const QString &reservationId,
-                                            bool needsConfirmation) {
-        if (!m_reservedDetailState.activeReservation
-            || m_reservedDetailState.activeReservation->reservationId != reservationId) {
-            QMessageBox::warning(m_stationDetail, tr("无法取消"),
-                                 tr("预约状态已经变化，请刷新后重试。"));
-            return;
-        }
-        if (needsConfirmation
-            && QMessageBox::question(
-                   m_stationDetail, tr("取消预约"),
-                   tr("确定取消当前预约吗？频繁预约和取消可能会被限制预约。"))
-                   != QMessageBox::Yes)
-            return;
-        m_reservedDetailState.activeReservation->cancellationStatus =
-            ReservationCancellationStatus::Submitting;
-        m_reservedDetailState.activeReservation->cancellationMessage = tr("正在取消预约…");
-        m_reservedDetailState.activeReservation->canCancel = false;
-        m_reservedDetailState.activeReservation->canRetryCancel = false;
-        renderStationDetailWithReservation(m_reservedDetailState);
-        const QString outcome = needsConfirmation ? m_cancellationOutcome
-                                                  : m_cancellationRetryOutcome;
-        QTimer::singleShot(m_cancellationResponseDelayMs, this,
-                           [this, reservationId, outcome] {
-            if (!m_reservedDetailState.activeReservation
-                || m_reservedDetailState.activeReservation->reservationId != reservationId)
-                return;
-            if (outcome == QStringLiteral("failure")) {
-                ActiveReservationView &active = *m_reservedDetailState.activeReservation;
-                active.cancellationStatus = ReservationCancellationStatus::Error;
-                active.cancellationMessage = m_cancellationFailureMessage;
-                active.canCancel = false;
-                active.canRetryCancel = true;
-                renderStationDetailWithReservation(m_reservedDetailState);
-                QMessageBox::warning(m_stationDetail, tr("取消失败"),
-                                     m_cancellationFailureMessage);
-                return;
-            }
-            if (outcome == QStringLiteral("result_unknown")) {
-                ActiveReservationView &active = *m_reservedDetailState.activeReservation;
-                active.cancellationStatus = ReservationCancellationStatus::ResultUnknown;
-                active.cancellationMessage = m_cancellationUnknownMessage;
-                active.canCancel = false;
-                active.canRetryCancel = false;
-                renderStationDetailWithReservation(m_reservedDetailState);
-                QMessageBox::warning(m_stationDetail, tr("取消结果待确认"),
-                                     m_cancellationUnknownMessage);
-                return;
-            }
-            const QString chargerId = m_reservedDetailState.activeReservation->chargerId;
-            m_mapBinder->chargerStatusConfirmed(m_reservedDetailState.stationId, chargerId,
-                                                ChargerBusinessStatus::Idle);
-            for (ChargerListItemView &charger : m_reservedDetailState.chargers) {
-                if (charger.chargerId != chargerId) continue;
-                charger.statusText = QStringLiteral("空闲");
-                charger.canCharge = true;
-                charger.disabledReason.clear();
-                break;
-            }
-            m_reservedDetailState.activeReservation.reset();
-            m_reservedDetailState.selectedChargerId.clear();
-            for (OrderListItemView &order : m_orderListState.orders) {
-                if (order.businessId != reservationId
-                    || order.type != OrderBusinessType::Reservation) continue;
-                order.statusText = tr("已退回");
-                order.statusTone = QStringLiteral("neutral");
-                order.summaryText = tr("预约已取消 · 押金已退回钱包");
-                order.actionText = tr("查看详情");
-                order.action = OrderListAction::ViewDetails;
-                break;
-            }
-            m_reservedDetailState.canContinueToConfirmation = false;
-            m_reservedDetailState.canCreateReservation = false;
-            m_reservedDetailState.reservationDisabledReason =
-                tr("刚刚取消过预约，%1 秒后可再次预约")
-                    .arg(m_reservationCancellationCooldownSeconds);
-            const QString cancelledAccountKey = m_currentAccountKey;
-            m_reservationCancellationLockedAccounts.insert(cancelledAccountKey);
-            renderStationDetailWithReservation(m_reservedDetailState);
-            QMessageBox::information(
-                m_stationDetail, tr("预约已取消，进入冷却"),
-                tr("预约已取消。为避免反复预约和取消，%1 秒后才可再次预约。")
-                    .arg(m_reservationCancellationCooldownSeconds));
-            QTimer::singleShot(m_reservationCancellationCooldownSeconds * 1000,
-                               this, [this, cancelledAccountKey] {
-                m_reservationCancellationLockedAccounts.remove(cancelledAccountKey);
-                if (m_currentAccountKey != cancelledAccountKey) return;
-                m_reservedDetailState.canCreateReservation = true;
-                m_reservedDetailState.reservationDisabledReason.clear();
-                renderStationDetailWithReservation(m_reservedDetailState);
-            });
-        });
-    };
     connect(m_stationDetail, &StationDetailWindow::cancelReservationRequested,
-            this, [submitCancellation](const QString &reservationId) {
-        submitCancellation(reservationId, true);
+            this, [this](const QString &reservationId) {
+        if (QMessageBox::question(
+                m_stationDetail, tr("取消预约"),
+                tr("确定取消当前预约吗？频繁预约和取消可能会被限制预约。"))
+            != QMessageBox::Yes)
+            return;
+        m_reservationBinder->cancelReservationRequested(reservationId);
     });
     connect(m_stationDetail, &StationDetailWindow::cancelReservationRetryRequested,
-            this, [submitCancellation](const QString &reservationId) {
-        submitCancellation(reservationId, false);
-    });
+            m_reservationBinder, &ReservationUiBinder::cancelReservationRetryRequested);
     connect(m_chargeConfirmation, &ChargeConfirmationWindow::backRequested,
             this, [this] {
         if (m_scannerOpenedFromOrders) {
@@ -1055,6 +1047,7 @@ UserDemoController::UserDemoController(MockUserNetworkApi *network,
             // Keep one occupied key across idle→charging and reserved→charging.
             // Home rendering de-duplicates it with an active reservation.
             if (consumedReservation) {
+                m_reservationBinder->consumeActiveReservation();
                 if (m_reservedDetailState.activeReservation
                     && m_reservedDetailState.activeReservation->reservationId == consumedReservationId)
                     m_reservedDetailState.activeReservation.reset();
@@ -1177,55 +1170,11 @@ UserDemoController::UserDemoController(MockUserNetworkApi *network,
                 if (businessId != m_paymentState.businessId
                     || m_pendingReservationStationId.isEmpty()
                     || m_pendingReservationChargerId.isEmpty()) return;
-                if (m_reservationOutcome != QStringLiteral("success")) {
-                    m_paymentState.status = PaymentViewStatus::Error;
-                    m_paymentState.canPay = false;
-                    m_paymentState.message = tr("支付已成功，但预约创建失败，押金退款处理中。请勿重复支付。");
-                    m_payment->render(m_paymentState);
-                    return;
-                }
-                m_reservedDetailState = m_mapBinder->currentStationDetailState();
-                for (ChargerListItemView &charger : m_reservedDetailState.chargers) {
-                    if (charger.chargerId != m_pendingReservationChargerId) continue;
-                    charger.statusText = QStringLiteral("已预约");
-                    charger.canCharge = false;
-                    charger.disabledReason = QStringLiteral("该充电桩已由当前用户预约");
-                    break;
-                }
-                m_reservedDetailState.selectedChargerId = m_pendingReservationChargerId;
-                m_reservedDetailState.canContinueToConfirmation = true;
-                ActiveReservationView active;
-                active.reservationId = QStringLiteral("demo-reservation-%1")
-                                           .arg(QDateTime::currentMSecsSinceEpoch());
-                active.stationId = m_pendingReservationStationId;
-                active.chargerId = m_pendingReservationChargerId;
-                active.expiresAtUtc = QDateTime::currentDateTimeUtc().addSecs(
+                m_reservationBinder->setConfirmationState(m_reservationState);
+                m_reservationBinder->reserveRequested(
+                    m_pendingReservationStationId,
+                    m_pendingReservationChargerId,
                     m_pendingReservationDurationSeconds);
-                active.canCancel = true;
-                m_reservedDetailState.activeReservation = active;
-                m_mapBinder->chargerStatusConfirmed(active.stationId, active.chargerId,
-                                                    ChargerBusinessStatus::Reserved);
-                OrderListItemView reservationOrder;
-                reservationOrder.businessId = active.reservationId;
-                reservationOrder.stationId = active.stationId;
-                reservationOrder.chargerId = active.chargerId;
-                reservationOrder.type = OrderBusinessType::Reservation;
-                reservationOrder.stationName = m_reservationState.stationName;
-                reservationOrder.chargerCode = m_reservationState.chargerCode;
-                reservationOrder.createdAtText = tr("刚刚");
-                reservationOrder.summaryText = tr("预约时长 %1 · 押金已支付")
-                                                   .arg(m_reservationState.durationText);
-                reservationOrder.amountText = m_reservationState.depositText;
-                reservationOrder.statusText = tr("已预约");
-                reservationOrder.statusTone = QStringLiteral("info");
-                reservationOrder.actionText = tr("扫码充电");
-                reservationOrder.action = OrderListAction::StartReservedCharging;
-                m_orderListState.orders.prepend(reservationOrder);
-                renderStationDetailWithReservation(m_reservedDetailState);
-                renderHomeWithReservation(m_mapBinder->currentHomeState());
-                m_pendingReservationStationId.clear();
-                m_pendingReservationChargerId.clear();
-                m_pendingReservationDurationSeconds = 0;
             } else {
                 for (OrderListItemView &order : m_orderListState.orders) {
                     if (order.businessId != businessId
