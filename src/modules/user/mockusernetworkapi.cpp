@@ -50,6 +50,11 @@ void MockUserNetworkApi::setNicknameBehavior(const Behavior &behavior)
     m_nicknameBehavior = behavior;
 }
 
+void MockUserNetworkApi::setPasswordBehavior(const Behavior &behavior)
+{
+    m_passwordBehavior = behavior;
+}
+
 void MockUserNetworkApi::setLogoutBehavior(const Behavior &behavior)
 {
     m_logoutBehavior = behavior;
@@ -112,6 +117,25 @@ void MockUserNetworkApi::loginByPhone(const QString &phone, const RequestContext
     });
 }
 
+void MockUserNetworkApi::loginByCredentials(const QString &username,
+                                            const QString &password,
+                                            const RequestContext &context)
+{
+    Q_UNUSED(password)
+    ++m_loginRequestCount;
+    m_lastLoginPhone = username;
+    if (m_loginBehavior.outcome != Outcome::Success) {
+        scheduleFailure(m_loginBehavior, context);
+        return;
+    }
+    LoginResult result = m_loginResult;
+    result.requestId = context.requestId;
+    result.isNewUser = false;
+    QTimer::singleShot(m_loginBehavior.delayMs, this, [this, result] {
+        emit loginSucceeded(result);
+    });
+}
+
 void MockUserNetworkApi::queryCurrentUser(const QString &userId,
                                           const RequestContext &context)
 {
@@ -150,6 +174,26 @@ void MockUserNetworkApi::updateNickname(const QString &userId,
     result.profile.nickname = nickname;
     QTimer::singleShot(m_nicknameBehavior.delayMs, this, [this, result] {
         emit nicknameUpdateSucceeded(result);
+    });
+}
+
+void MockUserNetworkApi::changePassword(const QString &userId,
+                                        const QString &oldPassword,
+                                        const QString &newPassword,
+                                        const RequestContext &context)
+{
+    Q_UNUSED(userId)
+    Q_UNUSED(oldPassword)
+    Q_UNUSED(newPassword)
+    if (m_passwordBehavior.outcome != Outcome::Success) {
+        scheduleFailure(m_passwordBehavior, context);
+        return;
+    }
+    OperationResult result;
+    result.requestId = context.requestId;
+    result.operationId = context.operationId;
+    QTimer::singleShot(m_passwordBehavior.delayMs, this, [this, result] {
+        emit passwordChangeSucceeded(result);
     });
 }
 

@@ -30,6 +30,8 @@ public:
 
 public slots:
     void login(const QString &phone) override;
+    void loginByCredentials(const QString &username,
+                            const QString &password) override;
     void saveNickname(const QString &nickname) override;
     void retry() override;
     void logout() override;
@@ -68,4 +70,5 @@ private:
     QString m_pendingConfirmNickname;   // 结果未知恢复期间待与服务端比对的昵称
     Retryable m_retryable = Retryable::None;
     bool m_terminated = false;          // logout 后置位：一切迟到响应丢弃
+    bool m_credentialLogin = false;
 };

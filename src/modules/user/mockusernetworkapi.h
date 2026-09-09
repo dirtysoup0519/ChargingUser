@@ -27,6 +27,7 @@ public:
     void setLoginBehavior(const Behavior &behavior);
     void setQueryBehavior(const Behavior &behavior);
     void setNicknameBehavior(const Behavior &behavior);
+    void setPasswordBehavior(const Behavior &behavior);
     void setLogoutBehavior(const Behavior &behavior);
 
     void setLoginResult(const LoginResult &result);
@@ -40,9 +41,15 @@ public:
     int logoutRequestCount() const;
 
     void loginByPhone(const QString &phone, const RequestContext &context) override;
+    void loginByCredentials(const QString &username, const QString &password,
+                            const RequestContext &context) override;
     void queryCurrentUser(const QString &userId, const RequestContext &context) override;
     void updateNickname(const QString &userId,
                         const QString &nickname,
+                        const RequestContext &context) override;
+    void changePassword(const QString &userId,
+                        const QString &oldPassword,
+                        const QString &newPassword,
                         const RequestContext &context) override;
     void logout(const RequestContext &context) override;
 
@@ -52,6 +59,7 @@ private:
     Behavior m_loginBehavior;
     Behavior m_queryBehavior;
     Behavior m_nicknameBehavior;
+    Behavior m_passwordBehavior;
     Behavior m_logoutBehavior;
     LoginResult m_loginResult;
     UserProfileResult m_userProfileResult;

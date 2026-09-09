@@ -34,6 +34,10 @@ public:
     void updateNickname(const QString &userId,
                         const QString &nickname,
                         const RequestContext &context) override;
+    void changePassword(const QString &userId,
+                        const QString &oldPassword,
+                        const QString &newPassword,
+                        const RequestContext &context) override;
     void logout(const RequestContext &context) override;
 
     // 供测试与部署调节；默认 10 秒
@@ -45,6 +49,7 @@ public:
         CredentialLogin,
         QueryProfile,
         UpdateNickname,
+        UpdatePassword,
         Logout
     };
 

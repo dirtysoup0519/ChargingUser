@@ -15,6 +15,7 @@ class PasswordChangeWindow final : public QWidget
 public:
     explicit PasswordChangeWindow(QWidget *parent = nullptr);
     void setStep(PasswordChangeStep step, const QString &message = QString());
+    void setSubmitting(bool submitting, const QString &message = QString());
 
 signals:
     void backRequested();

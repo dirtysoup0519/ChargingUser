@@ -126,11 +126,14 @@ class NetworkAdapterTests final : public QObject
 private slots:
     void initTestCase();
     void loginSendsPhoneRequestWithRequestId();
+    void credentialLoginUses101AndMatches201();
     void loginAckMapsToLoginResult();
     void loginAckWithoutEchoStillMatches();
     void serverErrorMapsToClientError();
     void queryProfileUsesGetData();
     void nicknameUpdateUsesProfileUpdate();
+    void passwordChangeUses118AndMatches228();
+    void passwordChangeAuthFailureKeepsRequestIdentity();
     void disconnectFailsPendingRequests();
     void restartAckIsIgnoredByUserAdapter();
     void logoutWaitsForAck();
@@ -166,6 +169,38 @@ void NetworkAdapterTests::loginSendsPhoneRequestWithRequestId()
     QCOMPARE(payload.value(QLatin1String("requestId")).toString(),
              QStringLiteral("req-x"));
     QVERIFY(!payload.contains(QLatin1String("password")));
+}
+
+void NetworkAdapterTests::credentialLoginUses101AndMatches201()
+{
+    MockTransport transport;
+    BackendClient backend(&transport);
+    backend.start();
+    RealUserNetworkApi api(&backend);
+    api.setRequestTimeoutMs(5000);
+    QSignalSpy successes(&api, &IUserNetworkApi::loginSucceeded);
+
+    api.loginByCredentials(QStringLiteral("alice"), QStringLiteral("secret123"),
+                           makeContext(QStringLiteral("req-credential")));
+    const auto frames = businessFrames(transport.m_sentFrames);
+    QCOMPARE(frames.size(), 1);
+    QCOMPARE(frames.first().first, LOGIN_REQ);
+    QCOMPARE(frames.first().second.value(QStringLiteral("username")).toString(),
+             QStringLiteral("alice"));
+    QCOMPARE(frames.first().second.value(QStringLiteral("password")).toString(),
+             QStringLiteral("secret123"));
+    QCOMPARE(frames.first().second.value(QStringLiteral("role")).toString(),
+             QStringLiteral("user"));
+
+    QJsonObject ack{{QStringLiteral("username"), QStringLiteral("alice")},
+                    {QStringLiteral("role"), QStringLiteral("user")}};
+    transport.simulateIncoming(MassageHandler::pack(LOGIN_ACK, ack));
+    QCOMPARE(successes.count(), 1);
+    const LoginResult result = qvariant_cast<LoginResult>(successes.takeFirst().at(0));
+    QCOMPARE(result.requestId, QStringLiteral("req-credential"));
+    QCOMPARE(result.session.profile.userId, QStringLiteral("alice"));
+    QVERIFY(result.session.authenticated);
+    QVERIFY(!result.isNewUser);
 }
 
 void NetworkAdapterTests::loginAckMapsToLoginResult()
@@ -320,6 +355,61 @@ void NetworkAdapterTests::nicknameUpdateUsesProfileUpdate()
     QCOMPARE(result.requestId, QStringLiteral("req-5"));
     QCOMPARE(result.operationId, QStringLiteral("req-5-op"));
     QCOMPARE(result.profile.nickname, QStringLiteral("老王"));
+}
+
+void NetworkAdapterTests::passwordChangeUses118AndMatches228()
+{
+    MockTransport transport;
+    BackendClient backend(&transport);
+    backend.start();
+    RealUserNetworkApi api(&backend);
+    api.setRequestTimeoutMs(5000);
+    QSignalSpy successes(&api, &IUserNetworkApi::passwordChangeSucceeded);
+
+    api.changePassword(QStringLiteral("alice"), QStringLiteral("old123"),
+                       QStringLiteral("new12345"),
+                       makeContext(QStringLiteral("req-password")));
+    const auto frames = businessFrames(transport.m_sentFrames);
+    QCOMPARE(frames.size(), 1);
+    QCOMPARE(frames.first().first, PROFILE_UPD_REQ);
+    const QJsonObject request = frames.first().second;
+    QCOMPARE(request.value(QStringLiteral("username")).toString(), QStringLiteral("alice"));
+    QCOMPARE(request.value(QStringLiteral("oldPassword")).toString(), QStringLiteral("old123"));
+    QCOMPARE(request.value(QStringLiteral("newPassword")).toString(), QStringLiteral("new12345"));
+    QCOMPARE(request.value(QStringLiteral("requestId")).toString(), QStringLiteral("req-password"));
+
+    QJsonObject ack{{QStringLiteral("ok"), true},
+                    {QStringLiteral("username"), QStringLiteral("alice")},
+                    {QStringLiteral("changed"), QJsonArray{QStringLiteral("password")}}};
+    transport.simulateIncoming(MassageHandler::pack(PROFILE_UPD_ACK, ack));
+    QCOMPARE(successes.count(), 1);
+    const OperationResult result =
+        qvariant_cast<OperationResult>(successes.takeFirst().at(0));
+    QCOMPARE(result.requestId, QStringLiteral("req-password"));
+    QCOMPARE(result.operationId, QStringLiteral("req-password-op"));
+}
+
+void NetworkAdapterTests::passwordChangeAuthFailureKeepsRequestIdentity()
+{
+    MockTransport transport;
+    BackendClient backend(&transport);
+    backend.start();
+    RealUserNetworkApi api(&backend);
+    api.setRequestTimeoutMs(5000);
+    QSignalSpy failures(&api, &IUserNetworkApi::requestFailed);
+
+    api.changePassword(QStringLiteral("alice"), QStringLiteral("wrong"),
+                       QStringLiteral("new12345"),
+                       makeContext(QStringLiteral("req-auth")));
+    QJsonObject error{{QStringLiteral("code"), QStringLiteral(BIZ_ERR_AUTH)},
+                      {QStringLiteral("err"), QStringLiteral("old password mismatch")}};
+    transport.simulateIncoming(MassageHandler::pack(AUTH_ERROR, error));
+    QCOMPARE(failures.count(), 1);
+    const ClientError result = qvariant_cast<ClientError>(failures.takeFirst().at(0));
+    QCOMPARE(result.code, QStringLiteral(BIZ_ERR_AUTH));
+    QCOMPARE(result.requestId, QStringLiteral("req-auth"));
+    QCOMPARE(result.operationId, QStringLiteral("req-auth-op"));
+    QVERIFY(!result.retryable);
 }
 
 void NetworkAdapterTests::disconnectFailsPendingRequests()

@@ -83,19 +83,33 @@ void PasswordChangeWindow::setStep(PasswordChangeStep step, const QString &messa
     const bool verify = step == PasswordChangeStep::VerifyOriginal;
     m_title->setText(verify ? tr("验证原密码") : tr("设置新密码"));
     m_instruction->setText(verify
-        ? tr("为保障账号安全，请先验证当前登录密码。")
-        : tr("原密码验证成功，请设置新的登录密码。"));
+        ? tr("为保障账号安全，请输入当前登录密码。服务端将在提交新密码时统一验证。")
+        : tr("请设置新的登录密码，提交后由服务端验证原密码并完成修改。"));
     m_originalLabel->setVisible(verify);
     m_originalEdit->setVisible(verify);
     m_newLabel->setVisible(!verify);
     m_newEdit->setVisible(!verify);
     m_confirmLabel->setVisible(!verify);
     m_confirmEdit->setVisible(!verify);
-    m_submit->setText(verify ? tr("验证原密码") : tr("确认修改密码"));
+    m_submit->setText(verify ? tr("下一步") : tr("确认修改密码"));
     m_message->setText(message);
     m_message->setVisible(!message.isEmpty());
     if (verify) m_originalEdit->clear();
     else { m_newEdit->clear(); m_confirmEdit->clear(); }
+}
+
+void PasswordChangeWindow::setSubmitting(bool submitting, const QString &message)
+{
+    m_originalEdit->setEnabled(!submitting);
+    m_newEdit->setEnabled(!submitting);
+    m_confirmEdit->setEnabled(!submitting);
+    m_submit->setEnabled(!submitting);
+    m_submit->setText(submitting ? tr("正在提交…")
+                                 : (m_step == PasswordChangeStep::VerifyOriginal
+                                        ? tr("下一步")
+                                        : tr("确认修改密码")));
+    m_message->setText(message);
+    m_message->setVisible(!message.isEmpty());
 }
 
 void PasswordChangeWindow::submit()
