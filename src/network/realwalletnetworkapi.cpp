@@ -147,7 +147,11 @@ void RealWalletNetworkApi::queryOperationResult(const RequestContext &context,
 
 void RealWalletNetworkApi::cancel(const QString &requestId)
 {
-    if (m_pending && m_pending->context.requestId == requestId) finishPending();
+    if (m_pending && m_pending->context.requestId == requestId) {
+        // 丢弃连接层可能残留的 GETDATA 查询，避免陈旧请求阻塞后续查询。
+        m_backend->cancelQuery(requestId);
+        finishPending();
+    }
 }
 
 bool RealWalletNetworkApi::begin(PendingKind kind, const RequestContext &context)
@@ -329,17 +333,19 @@ void RealWalletNetworkApi::handleFrame(int msgType, const QJsonObject &payload)
         }
         const QString code = payload.value(QStringLiteral("code")).toString(
             QStringLiteral("server-error"));
-        if (m_pending->kind == PendingKind::WalletTransactions
-            && (msgType == DATA_NOEXIST
-                || message.contains(QStringLiteral("walletTransaction"),
-                                    Qt::CaseInsensitive)
-                || message.contains(QStringLiteral("unknown table"),
-                                    Qt::CaseInsensitive))) {
+        if (m_pending->kind == PendingKind::WalletTransactions) {
+            // 流水查询失败必须对用户可见，不得伪装成"暂无流水"掩盖查询失败；
+            // 余额已由 user 表权威返回，保留余额并附带警告文案。
             const PendingRequest pending = *m_pending;
             WalletSnapshot snapshot;
             snapshot.accountId = m_username;
             snapshot.balanceCents = pending.balanceCents;
             snapshot.fetchedAtUtc = QDateTime::currentDateTimeUtc();
+            if (msgType != DATA_NOEXIST) {
+                snapshot.transactionsNotice = message.isEmpty()
+                    ? QStringLiteral("服务端流水查询失败（%1）。").arg(code)
+                    : QStringLiteral("服务端流水查询失败：%1").arg(message);
+            }
             finishPending();
             emit walletReady(pending.context, snapshot);
             return;
@@ -364,6 +370,8 @@ void RealWalletNetworkApi::handleConnectionStateChanged(ConnectionState state)
 void RealWalletNetworkApi::handleTimeout()
 {
     if (!m_pending) return;
+    // 服务层超时后连接层可能仍保留该 GETDATA 请求，必须清除，否则会阻塞后续查询。
+    m_backend->cancelQuery(m_pending->context.requestId);
     const bool mutation = m_pending->kind == PendingKind::Recharge
                           || m_pending->kind == PendingKind::PayOrder;
     failPending(QStringLiteral("request-timeout"),

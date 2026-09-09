@@ -2,6 +2,7 @@
 #include "inetworktransport.h"
 #include "massagehandler.h"
 #include "modules/wallet/iwalletnetworkapi.h"
+#include "protocol.h"
 #include "realwalletnetworkapi.h"
 
 #include <QSignalSpy>
@@ -62,6 +63,9 @@ private slots:
     void rechargeSendsCentsAndHandlesAck();
     void timeoutMarksRechargeResultUnknown();
     void malformedWalletResponseFails();
+    void unknownTableKeepsBalanceWithNotice();
+    void dataNoexistMeansEmptyTransactions();
+    void dbErrorOnTransactionsKeepsBalanceWithNotice();
 
 private:
     FakeTransport *m_transport = nullptr;
@@ -155,6 +159,64 @@ void RealWalletNetworkTests::malformedWalletResponseFails()
     QCOMPARE(failed.count(), 1);
     QCOMPARE(failed.first().at(0).value<ClientError>().code,
              QStringLiteral("bad-response"));
+}
+
+void RealWalletNetworkTests::unknownTableKeepsBalanceWithNotice()
+{
+    QSignalSpy ready(m_api, &IWalletNetworkApi::walletReady);
+    QSignalSpy failed(m_api, &IWalletNetworkApi::requestFailed);
+    m_api->queryWallet({QStringLiteral("wallet-1"), {}});
+    feed(m_transport, DATA,
+         QJsonObject{{QStringLiteral("data"), QJsonArray{
+             QJsonObject{{QStringLiteral("username"), QStringLiteral("U13800138000")},
+                         {QStringLiteral("balanceCents"), 1234}}}}});
+    // 服务端不支持 walletTransaction 表：不得伪装成"暂无流水"。
+    feed(m_transport, PARAM_ERROR,
+         QJsonObject{{QStringLiteral("err"), QStringLiteral("未知表: walletTransaction")}});
+    QCOMPARE(ready.count(), 1);
+    QCOMPARE(failed.count(), 0);
+    const WalletSnapshot snapshot = ready.first().at(1).value<WalletSnapshot>();
+    QCOMPARE(snapshot.balanceCents, qint64(1234));
+    QVERIFY(snapshot.recentTransactions.isEmpty());
+    QVERIFY(!snapshot.transactionsNotice.isEmpty());
+    QVERIFY(snapshot.transactionsNotice.contains(QStringLiteral("未知表")));
+}
+
+void RealWalletNetworkTests::dataNoexistMeansEmptyTransactions()
+{
+    QSignalSpy ready(m_api, &IWalletNetworkApi::walletReady);
+    QSignalSpy failed(m_api, &IWalletNetworkApi::requestFailed);
+    m_api->queryWallet({QStringLiteral("wallet-1"), {}});
+    feed(m_transport, DATA,
+         QJsonObject{{QStringLiteral("data"), QJsonArray{
+             QJsonObject{{QStringLiteral("username"), QStringLiteral("U13800138000")},
+                         {QStringLiteral("balanceCents"), 1234}}}}});
+    feed(m_transport, DATA_NOEXIST, QJsonObject{});
+    QCOMPARE(ready.count(), 1);
+    QCOMPARE(failed.count(), 0);
+    const WalletSnapshot snapshot = ready.first().at(1).value<WalletSnapshot>();
+    QCOMPARE(snapshot.balanceCents, qint64(1234));
+    QVERIFY(snapshot.recentTransactions.isEmpty());
+    QVERIFY(snapshot.transactionsNotice.isEmpty());
+}
+
+void RealWalletNetworkTests::dbErrorOnTransactionsKeepsBalanceWithNotice()
+{
+    QSignalSpy ready(m_api, &IWalletNetworkApi::walletReady);
+    QSignalSpy failed(m_api, &IWalletNetworkApi::requestFailed);
+    m_api->queryWallet({QStringLiteral("wallet-1"), {}});
+    feed(m_transport, DATA,
+         QJsonObject{{QStringLiteral("data"), QJsonArray{
+             QJsonObject{{QStringLiteral("username"), QStringLiteral("U13800138000")},
+                         {QStringLiteral("balanceCents"), 1234}}}}});
+    feed(m_transport, DB_ERROR,
+         QJsonObject{{QStringLiteral("err"), QStringLiteral("database failure")}});
+    QCOMPARE(ready.count(), 1);
+    QCOMPARE(failed.count(), 0);
+    const WalletSnapshot snapshot = ready.first().at(1).value<WalletSnapshot>();
+    QCOMPARE(snapshot.balanceCents, qint64(1234));
+    QVERIFY(snapshot.recentTransactions.isEmpty());
+    QVERIFY(snapshot.transactionsNotice.contains(QStringLiteral("database failure")));
 }
 
 QTEST_GUILESS_MAIN(RealWalletNetworkTests)

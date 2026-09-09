@@ -23,6 +23,9 @@ struct WalletSnapshot
     qint64 balanceCents = 0;
     QVector<WalletTransaction> recentTransactions;
     QDateTime fetchedAtUtc;
+    // 服务端流水查询失败（如不支持 walletTransaction 表）时的可见警告；
+    // 余额仍为权威值，调用方不得把该警告当空流水静默吞掉。
+    QString transactionsNotice;
 };
 
 enum class MoneyOperationType { Recharge, PayOrder };

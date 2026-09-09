@@ -36,11 +36,18 @@ public:
     void setReconnectIntervalMs(int intervalMs);
     // 供测试与部署调节；默认 HEARTBEAT_INTERVAL_MS
     void setHeartbeatIntervalMs(int intervalMs);
+    // GETDATA 队列中单个查询的等待上限；超时即丢弃该查询并继续后续查询。
+    // 默认略长于各服务层超时（10s），正常路径由服务层超时 + cancelQuery 驱动。
+    void setDataQueryTimeoutMs(int timeoutMs);
 
     ConnectionState connectionState() const;
 
     // 未连接或发送失败返回 false
     bool sendFrame(int msgType, const QJsonObject &payload = QJsonObject());
+
+    // 摘除指定 requestId 的通用查询（活动中的或仍在排队的），
+    // 供服务层超时/取消后清理，防止陈旧请求阻塞后续查询。返回是否命中。
+    bool cancelQuery(const QString &requestId);
 
 signals:
     void frameReceived(int msgType, const QJsonObject &payload);
@@ -56,12 +63,16 @@ private:
     void attemptReconnect();
     bool enqueueDataQuery(const QJsonObject &payload);
     bool dispatchNextDataQuery();
+    void handleDataQueryTimeout();
+    void stopDataQueryTimer();
 
     INetworkTransport *m_transport;
     MassageHandler *m_handler;
     ConnectionState m_state = ConnectionState::Disconnected;
     QTimer *m_heartbeatTimer;
     QTimer *m_reconnectTimer;
+    QTimer *m_dataQueryTimer;
+    int m_dataQueryTimeoutMs = 12000;
     bool m_started = false;
     QQueue<QJsonObject> m_dataQueryQueue;
     std::optional<QJsonObject> m_activeDataQuery;

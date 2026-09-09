@@ -101,7 +101,11 @@ void RealReservationService::reserve(const RequestContext &context,
 
 void RealReservationService::cancel(const QString &requestId)
 {
-    if (m_pending && m_pending->context.requestId == requestId) finishPending();
+    if (m_pending && m_pending->context.requestId == requestId) {
+        // 摘除连接层可能残留的预约历史 GETDATA，避免阻塞后续查询。
+        m_backend->cancelQuery(requestId);
+        finishPending();
+    }
 }
 
 void RealReservationService::cancelReservation(const RequestContext &context)
@@ -271,6 +275,15 @@ void RealReservationService::handleConnectionStateChanged(ConnectionState state)
 
 void RealReservationService::handleTimeout()
 {
+    if (!m_pending) return;
+    // 历史查询超时是只读失败；变更操作超时保持结果未知纪律。
+    if (m_pending->historyQuery) {
+        m_backend->cancelQuery(m_pending->context.requestId);
+        failPending(QStringLiteral("request-timeout"),
+                    QStringLiteral("预约历史查询超时，请稍后重试。"), true);
+        return;
+    }
+    m_backend->cancelQuery(m_pending->context.requestId);
     failPending(QStringLiteral("request-timeout"),
                 QStringLiteral("预约结果未知，请查询预约状态，勿重复提交。"),
                 false, true);

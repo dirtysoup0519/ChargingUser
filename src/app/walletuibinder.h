@@ -41,10 +41,19 @@ private:
     static QString moneyText(qint64 cents);
     static QString transactionText(const QVector<WalletTransaction> &transactions);
     static bool parseAmountCents(const QString &text, qint64 *amountCents);
+    static QVector<WalletTransaction> mergeTransactions(
+        const QVector<WalletTransaction> &serverRows,
+        const QVector<WalletTransaction> &localRecharges);
+    void loadRecharges();
+    void saveRecharges();
 
     IWalletService *m_service;
     QString m_accountId;
     QString m_requestId;
     QString m_operationId;
+    // 由 216 充值回执确认的充值账单（本地持久化）；
+    // 服务端流水表不可查询时，充值账单依然可见。
+    QVector<WalletTransaction> m_recentRecharges;
+    qint64 m_submittedAmountCents = 0;
     WalletViewState m_state;
 };

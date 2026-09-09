@@ -13,6 +13,7 @@ BackendClient::BackendClient(INetworkTransport *transport, QObject *parent)
     , m_handler(new MassageHandler(this))
     , m_heartbeatTimer(new QTimer(this))
     , m_reconnectTimer(new QTimer(this))
+    , m_dataQueryTimer(new QTimer(this))
 {
     Q_ASSERT(m_transport);
     // 非拥有指针：transport 生命周期由装配层保证长于本对象
@@ -20,6 +21,10 @@ BackendClient::BackendClient(INetworkTransport *transport, QObject *parent)
     m_heartbeatTimer->setInterval(HEARTBEAT_INTERVAL_MS);
     m_reconnectTimer->setSingleShot(true);
     m_reconnectTimer->setInterval(RECONNECT_INTERVAL_MS);
+    m_dataQueryTimer->setSingleShot(true);
+    m_dataQueryTimer->setInterval(m_dataQueryTimeoutMs);
+    connect(m_dataQueryTimer, &QTimer::timeout,
+            this, &BackendClient::handleDataQueryTimeout);
 
     connect(m_transport, &INetworkTransport::connected,
             this, &BackendClient::handleConnected);
@@ -84,6 +89,15 @@ void BackendClient::setHeartbeatIntervalMs(int intervalMs)
     }
 }
 
+void BackendClient::setDataQueryTimeoutMs(int timeoutMs)
+{
+    Q_ASSERT(QThread::currentThread() == thread());
+    if (timeoutMs > 0) {
+        m_dataQueryTimeoutMs = timeoutMs;
+        m_dataQueryTimer->setInterval(timeoutMs);
+    }
+}
+
 void BackendClient::shutdown()
 {
     Q_ASSERT(QThread::currentThread() == thread());
@@ -94,6 +108,7 @@ void BackendClient::shutdown()
     m_started = false;
     m_heartbeatTimer->stop();
     m_reconnectTimer->stop();
+    stopDataQueryTimer();
     m_handler->reset();
     m_dataQueryQueue.clear();
     m_activeDataQuery.reset();
@@ -168,12 +183,15 @@ void BackendClient::handleConnected()
     // 发送 107 证明客户端存活，随后仍按 30s 周期保活。
     m_transport->send(MassageHandler::makeHeartbeat());
     m_heartbeatTimer->start();
+    // 重连前排队未发出的查询若仍残留，立即补发。
+    dispatchNextDataQuery();
 }
 
 void BackendClient::handleDisconnected()
 {
     Q_ASSERT(QThread::currentThread() == thread());
     m_heartbeatTimer->stop();
+    stopDataQueryTimer();
     m_handler->reset();
     m_dataQueryQueue.clear();
     m_activeDataQuery.reset();
@@ -201,6 +219,7 @@ void BackendClient::handleFrame(int msgType, const QByteArray &payload)
                           m_activeDataQuery->value(QStringLiteral("requestId")));
             object.insert(QStringLiteral("table"),
                           m_activeDataQuery->value(QStringLiteral("table")));
+            stopDataQueryTimer();
             m_activeDataQuery.reset();
             emit frameReceived(msgType, object);
             dispatchNextDataQuery();
@@ -227,6 +246,7 @@ void BackendClient::handleFrame(int msgType, const QByteArray &payload)
                       m_activeDataQuery->value(QStringLiteral("requestId")));
         object.insert(QStringLiteral("table"),
                       m_activeDataQuery->value(QStringLiteral("table")));
+        stopDataQueryTimer();
         m_activeDataQuery.reset();
         emit frameReceived(msgType, object);
         dispatchNextDataQuery();
@@ -241,6 +261,7 @@ void BackendClient::handleFrame(int msgType, const QByteArray &payload)
             object.insert(QStringLiteral("requestId"), activeId);
             object.insert(QStringLiteral("table"),
                           m_activeDataQuery->value(QStringLiteral("table")));
+            stopDataQueryTimer();
             m_activeDataQuery.reset();
             emit frameReceived(msgType, object);
             dispatchNextDataQuery();
@@ -281,5 +302,49 @@ bool BackendClient::dispatchNextDataQuery()
         m_activeDataQuery.reset();
         return false;
     }
+    // 队列串行化：若服务端对队首查询永不应答，后续查询会被无限阻塞。
+    // 超时即丢弃队首并继续，同时服务层超时会通过 cancelQuery 主动清理。
+    m_dataQueryTimer->start();
     return true;
+}
+
+bool BackendClient::cancelQuery(const QString &requestId)
+{
+    if (requestId.isEmpty()) return false;
+    if (m_activeDataQuery
+        && m_activeDataQuery->value(QStringLiteral("requestId")).toString()
+               == requestId) {
+        stopDataQueryTimer();
+        m_activeDataQuery.reset();
+        dispatchNextDataQuery();
+        return true;
+    }
+    bool removed = false;
+    QQueue<QJsonObject> kept;
+    while (!m_dataQueryQueue.isEmpty()) {
+        const QJsonObject payload = m_dataQueryQueue.dequeue();
+        if (payload.value(QStringLiteral("requestId")).toString() == requestId) {
+            removed = true;
+        } else {
+            kept.enqueue(payload);
+        }
+    }
+    m_dataQueryQueue = kept;
+    return removed;
+}
+
+void BackendClient::handleDataQueryTimeout()
+{
+    if (!m_activeDataQuery) return;
+    // 不重发：该查询的归属服务层拥有自己的超时与结果未知纪律，
+    // 连接层只负责让队列继续流动。
+    m_activeDataQuery.reset();
+    emit networkError(
+        QStringLiteral("通用查询未在时限内应答，已跳过并继续处理后续查询。"));
+    dispatchNextDataQuery();
+}
+
+void BackendClient::stopDataQueryTimer()
+{
+    m_dataQueryTimer->stop();
 }

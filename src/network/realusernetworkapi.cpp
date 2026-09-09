@@ -460,6 +460,11 @@ void RealUserNetworkApi::handleTimeout(const QString &requestId)
         return;
     }
 
+    // 资料查询走 GETDATA 串行队列：超时后清除连接层残留，避免阻塞后续查询。
+    if (pending->kind == PendingKind::QueryProfile) {
+        m_backend->cancelQuery(requestId);
+    }
+
     ClientError error = makeTimeoutError(pending->kind, *pending);
     failPending(*pending, error);
 }
