@@ -1,5 +1,6 @@
 #include "profileeditwindow.h"
 #include "dragscrollhelper.h"
+#include "avatarimagehelper.h"
 #include "ui_profileeditwindow.h"
 #include <QLineEdit>
 #include <QLabel>
@@ -66,6 +67,8 @@ ProfileEditWindow::ProfileEditWindow(QWidget *parent)
             this, &ProfileEditWindow::submitCurrentInput);
     connect(m_changePasswordButton, &QPushButton::clicked,
             this, &ProfileEditWindow::passwordChangeRequested);
+    connect(ui->avatarButton, &QPushButton::clicked,
+            this, &ProfileEditWindow::avatarChangeRequested);
     setEditMode(ProfileEditMode::ExistingProfile);
     render(ProfileEditViewState{});
 }
@@ -95,12 +98,22 @@ void ProfileEditWindow::setEditMode(ProfileEditMode mode, const QString &usernam
     m_confirmPasswordLabel->setVisible(phoneSetup);
     m_confirmPasswordEdit->setVisible(phoneSetup);
     m_changePasswordButton->setVisible(existing);
-    ui->avatarLabel->setVisible(existing);
-    ui->avatarButton->setVisible(existing);
+    ui->avatarLabel->setVisible(true);
+    ui->avatarButton->setVisible(true);
+}
+
+void ProfileEditWindow::setAvatarPreview(const QString &avatarDataUri)
+{
+    const QPixmap pixmap = AvatarImageHelper::pixmapFromDataUri(avatarDataUri);
+    ui->avatarLabel->setPixmap(
+        (pixmap.isNull() ? QPixmap(QStringLiteral(":/icons/default_avatar.png")) : pixmap)
+            .scaled(ui->avatarLabel->size(), Qt::KeepAspectRatioByExpanding,
+                    Qt::SmoothTransformation));
 }
 
 void ProfileEditWindow::render(const ProfileEditViewState &state)
 {
+    setAvatarPreview(state.avatarDataUri);
     if (!state.phone.isEmpty() && ui->phoneEdit->text() != state.phone) {
         const QSignalBlocker blocker(ui->phoneEdit);
         ui->phoneEdit->setText(state.phone);

@@ -12,6 +12,7 @@ struct ProfileViewState {
     QString nickname;
     QString maskedPhone;
     QString balanceText;
+    QString avatarDataUri;
     AccountDisplayState accountState = AccountDisplayState::Unknown;
     QString accountMessage;
 };

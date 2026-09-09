@@ -23,6 +23,7 @@ public slots:
     void usernamePasswordLoginRequested(const QString &username,
                                         const QString &password) override;
     void profileSaveRequested(const QString &nickname) override;
+    void avatarUpdateRequested(const QString &avatarDataUri) override;
     void retryRequested() override;
     void logoutRequested() override;
 

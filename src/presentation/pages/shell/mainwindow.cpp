@@ -1,4 +1,5 @@
 #include "mainwindow.h"
+#include "avatarimagehelper.h"
 #include "dragscrollhelper.h"
 #include "ui_mainwindow.h"
 #include "interactivemapwidget.h"
@@ -370,6 +371,13 @@ void MainWindow::renderPrimaryPage(PrimaryPage page)
 
 void MainWindow::renderProfile(const ProfileViewState &state)
 {
+    const QPixmap avatar = AvatarImageHelper::pixmapFromDataUri(state.avatarDataUri);
+    const QPixmap source = avatar.isNull()
+                               ? QPixmap(QStringLiteral(":/icons/default_avatar.png"))
+                               : avatar;
+    ui->profileAvatarLabel->setPixmap(source.scaled(
+        ui->profileAvatarLabel->size(), Qt::KeepAspectRatioByExpanding,
+        Qt::SmoothTransformation));
     const QString nickname = state.nickname.isEmpty() ? tr("未设置昵称") : state.nickname;
     const QString phone = state.maskedPhone.isEmpty() ? tr("手机号待加载") : state.maskedPhone;
     ui->profileSummaryLabel->setText(nickname);

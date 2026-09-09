@@ -27,6 +27,7 @@ public:
     void setLoginBehavior(const Behavior &behavior);
     void setQueryBehavior(const Behavior &behavior);
     void setNicknameBehavior(const Behavior &behavior);
+    void setAvatarBehavior(const Behavior &behavior);
     void setPasswordBehavior(const Behavior &behavior);
     void setLogoutBehavior(const Behavior &behavior);
 
@@ -47,6 +48,9 @@ public:
     void updateNickname(const QString &userId,
                         const QString &nickname,
                         const RequestContext &context) override;
+    void updateAvatar(const QString &userId,
+                      const QString &avatarDataUri,
+                      const RequestContext &context) override;
     void changePassword(const QString &userId,
                         const QString &oldPassword,
                         const QString &newPassword,
@@ -59,6 +63,7 @@ private:
     Behavior m_loginBehavior;
     Behavior m_queryBehavior;
     Behavior m_nicknameBehavior;
+    Behavior m_avatarBehavior;
     Behavior m_passwordBehavior;
     Behavior m_logoutBehavior;
     LoginResult m_loginResult;

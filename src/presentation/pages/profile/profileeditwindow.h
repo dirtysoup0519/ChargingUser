@@ -21,6 +21,7 @@ public:
 
     void render(const ProfileEditViewState &state);
     void setEditMode(ProfileEditMode mode, const QString &username = QString());
+    void setAvatarPreview(const QString &avatarDataUri);
 
 signals:
     void backRequested();
@@ -29,6 +30,7 @@ signals:
                                     const QString &phone,
                                     const QString &newPassword);
     void passwordChangeRequested();
+    void avatarChangeRequested();
 
 private:
     void submitCurrentInput();

@@ -58,6 +58,7 @@ int reqTypeForKind(RealUserNetworkApi::PendingKind kind)
     case RealUserNetworkApi::PendingKind::QueryProfile:
         return GETDATA;
     case RealUserNetworkApi::PendingKind::UpdateNickname:
+    case RealUserNetworkApi::PendingKind::UpdateAvatar:
     case RealUserNetworkApi::PendingKind::UpdatePassword:
         return PROFILE_UPD_REQ;
     case RealUserNetworkApi::PendingKind::Logout:
@@ -158,6 +159,18 @@ void RealUserNetworkApi::updateNickname(const QString &userId,
     startRequest(PendingKind::UpdateNickname, payload, context, userId, nickname);
 }
 
+void RealUserNetworkApi::updateAvatar(const QString &userId,
+                                      const QString &avatarDataUri,
+                                      const RequestContext &context)
+{
+    QJsonObject payload{{QStringLiteral("username"), userId},
+                        {QStringLiteral("avatar"), avatarDataUri},
+                        {QStringLiteral("requestId"), context.requestId},
+                        {QStringLiteral("operationId"), context.operationId}};
+    startRequest(PendingKind::UpdateAvatar, payload, context, userId,
+                 QString(), avatarDataUri);
+}
+
 void RealUserNetworkApi::changePassword(const QString &userId,
                                         const QString &oldPassword,
                                         const QString &newPassword,
@@ -185,7 +198,8 @@ void RealUserNetworkApi::logout(const RequestContext &context)
 bool RealUserNetworkApi::startRequest(PendingKind kind, const QJsonObject &payload,
                                       const RequestContext &context,
                                       const QString &userId,
-                                      const QString &requestedNickname)
+                                      const QString &requestedNickname,
+                                      const QString &requestedAvatar)
 {
     if (m_backend->connectionState() != ConnectionState::Connected) {
         // 与 connection-lost 同语义：BackendClient 会自动重连，用户应当能重试
@@ -200,8 +214,10 @@ bool RealUserNetworkApi::startRequest(PendingKind kind, const QJsonObject &paylo
     for (const PendingRequest &pending : m_pendingRequests) {
         const bool bothProfileMutations =
             (kind == PendingKind::UpdateNickname
+             || kind == PendingKind::UpdateAvatar
              || kind == PendingKind::UpdatePassword)
             && (pending.kind == PendingKind::UpdateNickname
+                || pending.kind == PendingKind::UpdateAvatar
                 || pending.kind == PendingKind::UpdatePassword);
         if (pending.kind == kind || bothProfileMutations) {
             emit requestFailed(failedRequestError(context,
@@ -226,6 +242,7 @@ bool RealUserNetworkApi::startRequest(PendingKind kind, const QJsonObject &paylo
     pending.operationId = context.operationId;
     pending.userId = userId;
     pending.requestedNickname = requestedNickname;
+    pending.requestedAvatar = requestedAvatar;
 
     pending.timer = new QTimer(this);
     pending.timer->setSingleShot(true);
@@ -260,6 +277,7 @@ void RealUserNetworkApi::handleFrame(int msgType, const QJsonObject &payload)
                 findPendingForResponseByRequestId(responseRequestId);
             if (profilePending == nullptr
                 || (profilePending->kind != PendingKind::UpdateNickname
+                    && profilePending->kind != PendingKind::UpdateAvatar
                     && profilePending->kind != PendingKind::UpdatePassword)) {
                 return;
             }
@@ -270,6 +288,7 @@ void RealUserNetworkApi::handleFrame(int msgType, const QJsonObject &payload)
                 PendingRequest *candidate = findPendingByRequestId(requestId);
                 if (candidate != nullptr
                     && (candidate->kind == PendingKind::UpdateNickname
+                        || candidate->kind == PendingKind::UpdateAvatar
                         || candidate->kind == PendingKind::UpdatePassword)) {
                     profilePending = candidate;
                     break;
@@ -309,6 +328,7 @@ void RealUserNetworkApi::handleFrame(int msgType, const QJsonObject &payload)
     if (!successPayloadValid(kind, response, pending->userId)) {
         ClientError error;
         if (kind == PendingKind::UpdateNickname
+            || kind == PendingKind::UpdateAvatar
             || kind == PendingKind::UpdatePassword) {
             // 变更操作的应答损坏 → 无法得知服务端是否已生效 → 结果未知
             error = makeTimeoutError(kind, *pending);
@@ -339,6 +359,7 @@ void RealUserNetworkApi::handleFrame(int msgType, const QJsonObject &payload)
         result.session.profile.userId = response.value(QStringLiteral("username")).toString();
         result.session.profile.phone = response.value(QStringLiteral("phone")).toString();
         result.session.profile.nickname = response.value(QStringLiteral("nickname")).toString();
+        result.session.profile.avatarKey = response.value(QStringLiteral("avatar")).toString();
         if (response.contains(QStringLiteral("balanceCents"))) {
             bool balanceOk = false;
             const qint64 balance = response.value(QStringLiteral("balanceCents"))
@@ -360,6 +381,7 @@ void RealUserNetworkApi::handleFrame(int msgType, const QJsonObject &payload)
         result.profile.userId = response.value(QStringLiteral("username")).toString();
         result.profile.phone = response.value(QStringLiteral("phone")).toString();
         result.profile.nickname = response.value(QStringLiteral("nickname")).toString();
+        result.profile.avatarKey = response.value(QStringLiteral("avatar")).toString();
         if (response.contains(QStringLiteral("balanceCents"))) {
             bool balanceOk = false;
             const qint64 balance = response.value(QStringLiteral("balanceCents"))
@@ -380,6 +402,15 @@ void RealUserNetworkApi::handleFrame(int msgType, const QJsonObject &payload)
         result.profile.userId = request.userId;
         result.profile.nickname = request.requestedNickname;
         emit nicknameUpdateSucceeded(result);
+        break;
+    }
+    case PendingKind::UpdateAvatar: {
+        UserProfileResult result;
+        result.requestId = request.requestId;
+        result.operationId = request.operationId;
+        result.profile.userId = request.userId;
+        result.profile.avatarKey = request.requestedAvatar;
+        emit avatarUpdateSucceeded(result);
         break;
     }
     case PendingKind::UpdatePassword: {
@@ -438,11 +469,14 @@ ClientError RealUserNetworkApi::makeTimeoutError(PendingKind kind,
 {
     // 合同 §11：查询超时=可重试失败；变更操作超时=结果未知，禁止直接重做
     if (kind == PendingKind::UpdateNickname
+        || kind == PendingKind::UpdateAvatar
         || kind == PendingKind::UpdatePassword) {
         ClientError error = makeError(QStringLiteral("result-unknown"),
                                       kind == PendingKind::UpdatePassword
                                           ? QStringLiteral("Password change result is unknown. Sign in again to verify it.")
-                                          : QStringLiteral("Nickname update result is unknown."),
+                                          : kind == PendingKind::UpdateAvatar
+                                                ? QStringLiteral("Avatar update result is unknown. Refresh the profile before retrying.")
+                                                : QStringLiteral("Nickname update result is unknown."),
                                       false);
         error.resultUnknown = true;
         error.requestId = pending.requestId;
@@ -491,11 +525,13 @@ void RealUserNetworkApi::failAllPending(const QString &code, const QString &mess
         ClientError error = makeError(
             code, message,
             pending->kind != PendingKind::UpdateNickname
+                && pending->kind != PendingKind::UpdateAvatar
                 && pending->kind != PendingKind::UpdatePassword
                 && pending->kind != PendingKind::Logout);
         error.requestId = pending->requestId;
         error.operationId = pending->operationId;
         if (pending->kind == PendingKind::UpdateNickname
+            || pending->kind == PendingKind::UpdateAvatar
             || pending->kind == PendingKind::UpdatePassword) {
             error.resultUnknown = true;
         }
@@ -594,6 +630,7 @@ bool RealUserNetworkApi::successPayloadValid(PendingKind kind,
                && username == requestedUserId
                && !payload.value(QStringLiteral("phone")).toString().isEmpty();
     case PendingKind::UpdateNickname:
+    case PendingKind::UpdateAvatar:
     case PendingKind::UpdatePassword:
         return payload.value(QStringLiteral("ok")).toBool(false)
                && username == requestedUserId;

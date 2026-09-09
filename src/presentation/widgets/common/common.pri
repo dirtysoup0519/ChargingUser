@@ -1,4 +1,6 @@
 INCLUDEPATH += $$PWD
 
-HEADERS += $$PWD/dragscrollhelper.h
-SOURCES += $$PWD/dragscrollhelper.cpp
+HEADERS += $$PWD/dragscrollhelper.h \
+    $$PWD/avatarimagehelper.h
+SOURCES += $$PWD/dragscrollhelper.cpp \
+    $$PWD/avatarimagehelper.cpp

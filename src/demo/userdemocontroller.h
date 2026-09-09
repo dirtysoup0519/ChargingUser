@@ -40,6 +40,7 @@ struct DemoUserData
 {
     QString nickname;
     QString password;
+    QString avatarDataUri;
     AccountStatus status = AccountStatus::Normal;
     bool failFirstLogin = false;
     QString firstLoginFailureCode;
@@ -69,6 +70,7 @@ private:
     void configureNicknameSave(const QString &nickname);
     void rememberConfirmedLogin(const LoginResult &result);
     void rememberConfirmedNickname(const UserProfileResult &result);
+    void rememberConfirmedAvatar(const UserProfileResult &result);
     void handleNavigation(NavigationTarget target);
     void handleMapPage(MapPageTarget target, const QString &stationId);
     void renderStationDetailWithReservation(StationDetailViewState state);
@@ -117,6 +119,7 @@ private:
     bool m_usernameFirstSetup = false;
     QString m_pendingUsername;
     QString m_pendingUsernamePassword;
+    QString m_pendingAvatarDataUri;
     bool m_scannerOpenedFromCharging = false;
     bool m_scannerOpenedFromOrders = false;
     QString m_currentAccountKey;

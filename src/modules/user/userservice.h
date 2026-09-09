@@ -18,6 +18,7 @@ public:
     void loginByCredentials(const QString &username, const QString &password) override;
     void refreshCurrentUser() override;
     void updateNickname(const QString &nickname) override;
+    void updateAvatar(const QString &avatarDataUri) override;
     void changePassword(const QString &oldPassword,
                         const QString &newPassword) override;
     void logout() override;
@@ -29,6 +30,7 @@ private slots:
     void handleLoginSucceeded(const LoginResult &result);
     void handleCurrentUserQuerySucceeded(const UserProfileResult &result);
     void handleNicknameUpdateSucceeded(const UserProfileResult &result);
+    void handleAvatarUpdateSucceeded(const UserProfileResult &result);
     void handlePasswordChangeSucceeded(const OperationResult &result);
     void handleLogoutSucceeded(const OperationResult &result);
     void handleRequestFailed(const ClientError &error);
@@ -39,6 +41,7 @@ private:
         Login,
         QueryCurrentUser,
         UpdateNickname,
+        UpdateAvatar,
         ChangePassword,
         Logout
     };

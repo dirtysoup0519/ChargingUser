@@ -41,6 +41,7 @@ private slots:
     void rejectsNicknameWithControlCharacters();
     void trimsNicknameBeforeSending();
     void changesPasswordThroughDedicatedOperation();
+    void avatarUpdateKeepsExistingProfileFields();
 };
 
 void UserModuleTests::initTestCase()
@@ -72,6 +73,30 @@ void UserModuleTests::changesPasswordThroughDedicatedOperation()
     QTRY_COMPARE(changed.count(), 1);
     QCOMPARE(service.operationStatus(UserOperation::ChangePassword).state,
              UserOperationState::Idle);
+}
+
+void UserModuleTests::avatarUpdateKeepsExistingProfileFields()
+{
+    MockUserNetworkApi network;
+    LoginResult login;
+    login.session.profile.userId = QStringLiteral("alice");
+    login.session.profile.phone = QStringLiteral("13800138000");
+    login.session.profile.nickname = QStringLiteral("小智");
+    login.session.accountStatus = AccountStatus::Normal;
+    network.setLoginResult(login);
+    UserService service(&network);
+    service.loginByCredentials(QStringLiteral("alice"), QStringLiteral("old123"));
+    QTRY_VERIFY(service.currentSession().authenticated);
+
+    const QString avatar = QStringLiteral("data:image/jpeg;base64,YXZhdGFy");
+    QSignalSpy changed(&service, &IUserService::avatarUpdated);
+    service.updateAvatar(avatar);
+    QCOMPARE(service.operationStatus(UserOperation::UpdateAvatar).state,
+             UserOperationState::Running);
+    QTRY_COMPARE(changed.count(), 1);
+    QCOMPARE(service.currentSession().profile.avatarKey, avatar);
+    QCOMPARE(service.currentSession().profile.nickname, QStringLiteral("小智"));
+    QCOMPARE(service.currentSession().profile.phone, QStringLiteral("13800138000"));
 }
 
 void UserModuleTests::rejectsInvalidPhoneWithoutNetworkRequest()

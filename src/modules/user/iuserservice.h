@@ -23,6 +23,7 @@ public:
     virtual void loginByCredentials(const QString &, const QString &) {}
     virtual void refreshCurrentUser() = 0;
     virtual void updateNickname(const QString &nickname) = 0;
+    virtual void updateAvatar(const QString &avatarDataUri) = 0;
     virtual void changePassword(const QString &oldPassword,
                                 const QString &newPassword) = 0;
     virtual void logout() = 0;
@@ -37,6 +38,7 @@ signals:
     void loginSucceeded(const LoginResult &result);
     void currentUserRefreshed(const UserProfileResult &result);
     void nicknameUpdated(const UserProfileResult &result);
+    void avatarUpdated(const UserProfileResult &result);
     void passwordChanged(const OperationResult &result);
     void passwordChangeFailed(const ClientError &error);
     void logoutSucceeded(const OperationResult &result);

@@ -132,6 +132,7 @@ private slots:
     void serverErrorMapsToClientError();
     void queryProfileUsesGetData();
     void nicknameUpdateUsesProfileUpdate();
+    void avatarUpdateUsesProfileUpdate();
     void passwordChangeUses118AndMatches228();
     void passwordChangeAuthFailureKeepsRequestIdentity();
     void disconnectFailsPendingRequests();
@@ -355,6 +356,34 @@ void NetworkAdapterTests::nicknameUpdateUsesProfileUpdate()
     QCOMPARE(result.requestId, QStringLiteral("req-5"));
     QCOMPARE(result.operationId, QStringLiteral("req-5-op"));
     QCOMPARE(result.profile.nickname, QStringLiteral("老王"));
+}
+
+void NetworkAdapterTests::avatarUpdateUsesProfileUpdate()
+{
+    MockTransport transport;
+    BackendClient backend(&transport);
+    backend.start();
+    RealUserNetworkApi api(&backend);
+    QSignalSpy successes(&api, &IUserNetworkApi::avatarUpdateSucceeded);
+    const QString avatar = QStringLiteral("data:image/jpeg;base64,YXZhdGFy");
+    api.updateAvatar(QStringLiteral("alice"), avatar,
+                     makeContext(QStringLiteral("req-avatar")));
+
+    const auto frames = businessFrames(transport.m_sentFrames);
+    QCOMPARE(frames.size(), 1);
+    QCOMPARE(frames.first().first, PROFILE_UPD_REQ);
+    QCOMPARE(frames.first().second.value(QStringLiteral("username")).toString(),
+             QStringLiteral("alice"));
+    QCOMPARE(frames.first().second.value(QStringLiteral("avatar")).toString(), avatar);
+
+    QJsonObject ack{{QStringLiteral("ok"), true},
+                    {QStringLiteral("username"), QStringLiteral("alice")},
+                    {QStringLiteral("changed"), QJsonArray{QStringLiteral("avatar")}}};
+    transport.simulateIncoming(MassageHandler::pack(PROFILE_UPD_ACK, ack));
+    QCOMPARE(successes.count(), 1);
+    const UserProfileResult result =
+        qvariant_cast<UserProfileResult>(successes.takeFirst().at(0));
+    QCOMPARE(result.profile.avatarKey, avatar);
 }
 
 void NetworkAdapterTests::passwordChangeUses118AndMatches228()
