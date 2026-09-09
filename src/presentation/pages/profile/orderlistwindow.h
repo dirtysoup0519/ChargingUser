@@ -12,6 +12,7 @@ class OrderListWindow final : public QWidget
 public:
     explicit OrderListWindow(QWidget *parent = nullptr);
     void render(const OrderListViewState &state);
+    void resetFilter();
 signals:
     void backRequested();
     void refreshRequested();

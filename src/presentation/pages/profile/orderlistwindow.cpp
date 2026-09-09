@@ -47,6 +47,7 @@ OrderListWindow::OrderListWindow(QWidget *parent) : QWidget(parent)
 }
 
 void OrderListWindow::render(const OrderListViewState &state) { m_state=state; rebuild(); }
+void OrderListWindow::resetFilter() { setFilter(Filter::All); }
 void OrderListWindow::setFilter(Filter filter)
 {
     m_filter=filter; m_allButton->setChecked(filter==Filter::All); m_chargingButton->setChecked(filter==Filter::Charging); m_reservationButton->setChecked(filter==Filter::Reservation); rebuild();

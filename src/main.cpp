@@ -550,7 +550,6 @@ int main(int argc, char *argv[])
     WalletEntryPoint walletEntryPoint = WalletEntryPoint::Profile;
     bool orderListOpen = false;
     QString orderListRequestId;
-    bool reservationHistoryRequested = false;
     bool frequentStationsOpen = false;
     QString frequentStationsRequestId;
     bool settlementOpenedFromOrderList = false;
@@ -916,13 +915,17 @@ int main(int argc, char *argv[])
     QObject::connect(&mainWindow, &MainWindow::ordersPageRequested,
                      &app, [&] {
         orderListOpen = true;
-        orderListBaseState = {};
-        orderList.render(OrderListViewState{{}, QStringLiteral("正在加载订单…")});
+        orderList.resetFilter();
+        orderListBaseState = OrderListViewState{
+            {}, QStringLiteral("正在加载订单、预约和钱包流水…")};
+        orderList.render(orderListBaseState);
         mainWindow.renderSecondaryPage(&orderList);
-        reservationHistoryRequested = false;
         orderListRequestId = QUuid::createUuid().toString(QUuid::WithoutBraces);
         orderService.queryOrderHistory({orderListRequestId, {}});
         reservationHistory.clear();
+        walletBinder.activate();
+        reservationService.queryHistory(
+            {QUuid::createUuid().toString(QUuid::WithoutBraces), {}});
     });
     const auto showProfileNotice = [&](const QString &title, const QString &text) {
         QMessageBox::information(&mainWindow, title, text);
@@ -1149,11 +1152,6 @@ int main(int argc, char *argv[])
         if (context.requestId == orderListRequestId)
             orderListRequestId.clear();
         renderChargingOrders(orders);
-        // 214 没有 requestId 回显；先完成订单查询，再启动 100 通用查询，
-        // 避免订单、钱包和预约响应在共享连接上互相抢占。
-        if (orderListOpen && context.requestId != frequentStationsRequestId) {
-            walletBinder.activate();
-        }
     });
     QObject::connect(&mainWindow, &MainWindow::commonStationsPageRequested,
                      &app, [&] {
@@ -1189,24 +1187,20 @@ int main(int argc, char *argv[])
     QObject::connect(&walletBinder, &WalletUiBinder::stateChanged,
                      &app, [&](const WalletViewState &wallet) {
         if (!orderListOpen) return;
-        if (!wallet.recentTransactions.isEmpty()) {
-            OrderListViewState state = appendRechargeOrders(orderListBaseState);
-            orderList.render(state);
-        }
-        if (!reservationHistoryRequested
-            && (wallet.status == WalletPageStatus::Ready
-                || wallet.status == WalletPageStatus::Error
-                || wallet.status == WalletPageStatus::ResultUnknown)) {
-            reservationHistoryRequested = true;
-            reservationService.queryHistory(
-                {QUuid::createUuid().toString(QUuid::WithoutBraces), {}});
-        }
+        Q_UNUSED(wallet);
+        orderList.render(appendRechargeOrders(orderListBaseState));
     });
     QObject::connect(&orderList, &OrderListWindow::refreshRequested,
                      &app, [&] {
         if (!orderListRequestId.isEmpty()) return;
+        orderListBaseState.message = QStringLiteral("正在刷新订单、预约和钱包流水…");
+        orderList.render(appendRechargeOrders(orderListBaseState));
         orderListRequestId = QUuid::createUuid().toString(QUuid::WithoutBraces);
         orderService.queryOrderHistory({orderListRequestId, {}});
+        reservationHistory.clear();
+        walletBinder.activate();
+        reservationService.queryHistory(
+            {QUuid::createUuid().toString(QUuid::WithoutBraces), {}});
     });
     const auto handleOrderAction = [&](const QString &orderId,
                                        OrderBusinessType type,
