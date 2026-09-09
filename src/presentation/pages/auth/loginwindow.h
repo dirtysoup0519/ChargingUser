@@ -23,6 +23,7 @@ protected:
     void resizeEvent(QResizeEvent *event) override;
 
 signals:
+    // Keep credential login as a Qt signal so the real entry can wire it to the user binder.
     void loginRequested(const QString &phone);
     void usernamePasswordLoginRequested(const QString &username,
                                         const QString &password);
