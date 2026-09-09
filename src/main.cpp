@@ -708,7 +708,7 @@ int main(int argc, char *argv[])
                      &app, [&](const ClientError &error) {
         const QString message = error.resultUnknown
                                     ? QStringLiteral("修改结果暂时未知，请退出后分别使用新旧密码登录确认，暂勿重复提交。")
-                                    : (error.code == QString::fromLatin1(BIZ_ERR_AUTH)
+                                    : (error.code == QStringLiteral("AUTH_FAIL")
                                            ? QStringLiteral("原密码不正确，请重新输入。")
                                            : (error.displayMessage.isEmpty()
                                                   ? QStringLiteral("密码修改失败，请稍后重试。")
@@ -720,7 +720,7 @@ int main(int argc, char *argv[])
             return;
         }
         passwordChange.setSubmitting(false, message);
-        if (!error.resultUnknown && error.code == QString::fromLatin1(BIZ_ERR_AUTH)) {
+        if (!error.resultUnknown && error.code == QStringLiteral("AUTH_FAIL")) {
             pendingOldPassword.clear();
             passwordChange.setStep(PasswordChangeStep::VerifyOriginal, message);
         }
