@@ -2,6 +2,9 @@
 
 #include <QObject>
 #include <QJsonObject>
+#include <QQueue>
+
+#include <optional>
 
 #include "common/connectionstate.h"
 #include "inetworktransport.h"
@@ -14,7 +17,8 @@ class QTimer;
  *    把字节流拆成业务帧；
  *  - 心跳（30s）与自动重连（5s），重连前调用 MassageHandler::reset() 丢弃残留半包；
  *  - 上层只看到 frameReceived(type, json) 与 connectionStateChanged(state)。
- * 本类不解析业务语义，不维护请求关联——那是各模块适配器的职责。
+ * 通用查询 100/200 是协议中的例外：部分服务端不回显 table/requestId，
+ * 因此本连接集中串行发送 GETDATA，并在收到 DATA 时补回本地关联字段。
  */
 class BackendClient final : public QObject
 {
@@ -50,6 +54,8 @@ private:
     void handleDisconnected();
     void handleFrame(int msgType, const QByteArray &payload);
     void attemptReconnect();
+    bool enqueueDataQuery(const QJsonObject &payload);
+    bool dispatchNextDataQuery();
 
     INetworkTransport *m_transport;
     MassageHandler *m_handler;
@@ -57,4 +63,6 @@ private:
     QTimer *m_heartbeatTimer;
     QTimer *m_reconnectTimer;
     bool m_started = false;
+    QQueue<QJsonObject> m_dataQueryQueue;
+    std::optional<QJsonObject> m_activeDataQuery;
 };

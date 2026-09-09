@@ -95,6 +95,8 @@ void BackendClient::shutdown()
     m_heartbeatTimer->stop();
     m_reconnectTimer->stop();
     m_handler->reset();
+    m_dataQueryQueue.clear();
+    m_activeDataQuery.reset();
     m_transport->disconnectFromServer();
     setState(ConnectionState::Disconnected);
 }
@@ -120,6 +122,13 @@ bool BackendClient::sendFrame(int msgType, const QJsonObject &payload)
     Q_ASSERT(QThread::currentThread() == thread());
     if (m_state != ConnectionState::Connected) {
         return false;
+    }
+
+    // DATA(200) 在实训服务端不保证回显 table/requestId。若多个模块并发
+    // 发送 GETDATA，所有监听者都会把首个 200 当成自己的结果。连接层将
+    // 这类查询串行化，并在接收处恢复本地关联信息。
+    if (msgType == GETDATA) {
+        return enqueueDataQuery(payload);
     }
 
     // 协议规定 107 心跳是零长度载荷；QJsonObject() 经 pack() 会变成 "{}"，
@@ -166,6 +175,8 @@ void BackendClient::handleDisconnected()
     Q_ASSERT(QThread::currentThread() == thread());
     m_heartbeatTimer->stop();
     m_handler->reset();
+    m_dataQueryQueue.clear();
+    m_activeDataQuery.reset();
 
     if (!m_started) {
         setState(ConnectionState::Disconnected);
@@ -184,7 +195,18 @@ void BackendClient::handleFrame(int msgType, const QByteArray &payload)
         return;
     }
     if (payload.isEmpty()) {
-        emit frameReceived(msgType, QJsonObject());
+        QJsonObject object;
+        if (msgType == DATA && m_activeDataQuery) {
+            object.insert(QStringLiteral("requestId"),
+                          m_activeDataQuery->value(QStringLiteral("requestId")));
+            object.insert(QStringLiteral("table"),
+                          m_activeDataQuery->value(QStringLiteral("table")));
+            m_activeDataQuery.reset();
+            emit frameReceived(msgType, object);
+            dispatchNextDataQuery();
+        } else {
+            emit frameReceived(msgType, object);
+        }
         return;
     }
 
@@ -197,7 +219,35 @@ void BackendClient::handleFrame(int msgType, const QByteArray &payload)
                 .arg(msgType));
         return;
     }
-    emit frameReceived(msgType, document.object());
+    QJsonObject object = document.object();
+    if (msgType == DATA && m_activeDataQuery) {
+        // 本地队首才是应答的可靠归属；服务端字段只能作为诊断信息，不能
+        // 用来关联请求。覆盖而不是仅补缺，避免旧服务端回显错误值。
+        object.insert(QStringLiteral("requestId"),
+                      m_activeDataQuery->value(QStringLiteral("requestId")));
+        object.insert(QStringLiteral("table"),
+                      m_activeDataQuery->value(QStringLiteral("table")));
+        m_activeDataQuery.reset();
+        emit frameReceived(msgType, object);
+        dispatchNextDataQuery();
+        return;
+    }
+    if (msgType >= DATA_NOEXIST && msgType <= OP_FORBIDDEN
+        && m_activeDataQuery) {
+        const QString echoed = object.value(QStringLiteral("requestId")).toString();
+        const QString activeId =
+            m_activeDataQuery->value(QStringLiteral("requestId")).toString();
+        if (echoed.isEmpty() || echoed == activeId) {
+            object.insert(QStringLiteral("requestId"), activeId);
+            object.insert(QStringLiteral("table"),
+                          m_activeDataQuery->value(QStringLiteral("table")));
+            m_activeDataQuery.reset();
+            emit frameReceived(msgType, object);
+            dispatchNextDataQuery();
+            return;
+        }
+    }
+    emit frameReceived(msgType, object);
 }
 
 void BackendClient::attemptReconnect()
@@ -208,4 +258,28 @@ void BackendClient::attemptReconnect()
     }
     setState(ConnectionState::Connecting);
     m_transport->connectToServer();
+}
+
+bool BackendClient::enqueueDataQuery(const QJsonObject &payload)
+{
+    if (payload.value(QStringLiteral("table")).toString().isEmpty())
+        return false;
+    m_dataQueryQueue.enqueue(payload);
+    if (m_activeDataQuery) return true;
+    return dispatchNextDataQuery();
+}
+
+bool BackendClient::dispatchNextDataQuery()
+{
+    if (m_activeDataQuery || m_dataQueryQueue.isEmpty()) return true;
+    if (m_state != ConnectionState::Connected) return false;
+
+    const QJsonObject payload = m_dataQueryQueue.dequeue();
+    const QByteArray frame = MassageHandler::pack(GETDATA, payload);
+    m_activeDataQuery = payload;
+    if (frame.isEmpty() || !m_transport->send(frame)) {
+        m_activeDataQuery.reset();
+        return false;
+    }
+    return true;
 }

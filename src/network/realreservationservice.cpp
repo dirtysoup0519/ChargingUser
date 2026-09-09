@@ -8,6 +8,8 @@
 #include <QTimer>
 #include <QtMath>
 
+#include <algorithm>
+
 namespace {
 QDateTime parseTimestamp(const QJsonValue &value)
 {
@@ -169,14 +171,28 @@ void RealReservationService::handleFrame(int msgType, const QJsonObject &payload
     const QString echoed = payload.value(QStringLiteral("requestId")).toString();
     if (!echoed.isEmpty() && echoed != m_pending->context.requestId) return;
     if (msgType == DATA && m_pending->historyQuery) {
-        const QJsonArray rows = payload.value(QStringLiteral("data")).toArray();
+        QJsonValue data = payload.value(QStringLiteral("data"));
+        if (!data.isArray()) data = payload.value(QStringLiteral("rows"));
+        if (!data.isArray()) data = payload.value(QStringLiteral("records"));
+        if (!data.isArray()) {
+            failPending(QStringLiteral("bad-response"),
+                        QStringLiteral("预约记录响应格式错误。"), true);
+            return;
+        }
+        const QJsonArray rows = data.toArray();
         const PendingRequest pending = *m_pending;
         QVector<ReservationHistoryItem> items;
         for (const QJsonValue &value : rows) {
             if (!value.isObject()) continue;
             const QJsonObject row = value.toObject();
+            const QString rowUser = row.value(QStringLiteral("username"))
+                                        .toString().trimmed();
+            if (!rowUser.isEmpty() && rowUser != m_username) continue;
             ReservationHistoryItem item;
             item.reservationId = row.value(QStringLiteral("id")).toVariant().toString();
+            if (item.reservationId.isEmpty())
+                item.reservationId = row.value(QStringLiteral("reserveId"))
+                                         .toVariant().toString();
             item.stationName = row.value(QStringLiteral("stationName")).toString();
             item.chargerCode = row.value(QStringLiteral("chargerCode")).toString();
             item.depositCents = cents(row, QStringLiteral("depositCents"),
@@ -186,6 +202,15 @@ void RealReservationService::handleFrame(int msgType, const QJsonObject &payload
             item.reserveAtUtc = parseTimestamp(row.value(QStringLiteral("reserveAt")));
             if (!item.reservationId.isEmpty()) items.append(item);
         }
+        std::sort(items.begin(), items.end(),
+                  [](const ReservationHistoryItem &left,
+                     const ReservationHistoryItem &right) {
+            const QDateTime leftTime = left.reserveAtUtc.isValid()
+                                           ? left.reserveAtUtc : left.createdAtUtc;
+            const QDateTime rightTime = right.reserveAtUtc.isValid()
+                                            ? right.reserveAtUtc : right.createdAtUtc;
+            return leftTime > rightTime;
+        });
         finishPending();
         emit reservationHistoryReady(pending.context, items);
         return;
@@ -217,6 +242,12 @@ void RealReservationService::handleFrame(int msgType, const QJsonObject &payload
         result.balanceCents = payload.value(QStringLiteral("balanceCents")).toVariant().toLongLong();
         finishPending();
         emit reservationCancelled(pending.context, result);
+        return;
+    }
+    if (msgType == DATA_NOEXIST && m_pending->historyQuery) {
+        const PendingRequest pending = *m_pending;
+        finishPending();
+        emit reservationHistoryReady(pending.context, {});
         return;
     }
     if (msgType >= 300 && msgType < 400) {

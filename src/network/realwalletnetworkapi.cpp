@@ -255,8 +255,9 @@ void RealWalletNetworkApi::handleFrame(int msgType, const QJsonObject &payload)
                 // a non-empty response that belongs to another GETDATA query;
                 // accepting it would silently overwrite the wallet page with
                 // reservation/profile data when the server omits correlation.
-                if (!row.contains(QStringLiteral("id"))
-                    && !row.contains(QStringLiteral("transactionId"))) {
+                if ((!row.contains(QStringLiteral("id"))
+                     && !row.contains(QStringLiteral("transactionId")))
+                    || !row.contains(QStringLiteral("type"))) {
                     failPending(QStringLiteral("wrong-response"),
                                 QStringLiteral("钱包流水响应归属不明确，请稍后重试。"), true);
                     return;
@@ -410,6 +411,8 @@ WalletTransaction RealWalletNetworkApi::parseTransaction(const QJsonObject &reco
 {
     WalletTransaction value;
     value.transactionId = record.value(QStringLiteral("id")).toVariant().toString();
+    if (value.transactionId.isEmpty())
+        value.transactionId = record.value(QStringLiteral("transactionId")).toString();
     const QString type = record.value(QStringLiteral("type")).toString().toUpper();
     if (type == QLatin1String("RECHARGE")) {
         value.type = WalletTransactionType::Recharge;
