@@ -401,12 +401,12 @@ void NetworkAdapterTests::passwordChangeAuthFailureKeepsRequestIdentity()
     api.changePassword(QStringLiteral("alice"), QStringLiteral("wrong"),
                        QStringLiteral("new12345"),
                        makeContext(QStringLiteral("req-auth")));
-    QJsonObject error{{QStringLiteral("code"), QStringLiteral(BIZ_ERR_AUTH)},
+    QJsonObject error{{QStringLiteral("code"), QString::fromLatin1(BIZ_ERR_AUTH)},
                       {QStringLiteral("err"), QStringLiteral("old password mismatch")}};
     transport.simulateIncoming(MassageHandler::pack(AUTH_ERROR, error));
     QCOMPARE(failures.count(), 1);
     const ClientError result = qvariant_cast<ClientError>(failures.takeFirst().at(0));
-    QCOMPARE(result.code, QStringLiteral(BIZ_ERR_AUTH));
+    QCOMPARE(result.code, QString::fromLatin1(BIZ_ERR_AUTH));
     QCOMPARE(result.requestId, QStringLiteral("req-auth"));
     QCOMPARE(result.operationId, QStringLiteral("req-auth-op"));
     QVERIFY(!result.retryable);
