@@ -145,6 +145,7 @@ QString chargerCodeFromQr(const QString &raw)
     return safeCode.match(value).hasMatch() ? value : QString();
 }
 
+#ifndef CHARGINGUSER_USER_DEMO
 QString connectionStateName(ConnectionState state)
 {
     switch (state) {
@@ -195,6 +196,7 @@ QJsonObject loadTencentMapConfig()
     }
     return {};
 }
+#endif
 
 void enableWidgetInputMethods(QWidget *root)
 {
@@ -392,8 +394,10 @@ int main(int argc, char *argv[])
         qCritical() << "Server port must be an integer from 1 to 65535.";
         return 2;
     }
+#ifndef CHARGINGUSER_USER_DEMO
     QString activeHost = host;
     quint16 activePort = static_cast<quint16>(portValue);
+#endif
 
     QFile theme(QStringLiteral(":/styles/theme.qss"));
     if (theme.open(QIODevice::ReadOnly)) {
@@ -1901,11 +1905,11 @@ int main(int argc, char *argv[])
         walletNetwork.setIdentity(result.session.profile.userId);
         chargingNetwork.setIdentity(result.session.profile.userId);
         reservationService.setIdentity(result.session.profile.userId);
-        restoreReservation(result.session.profile.userId);
         reservationService.queryHistory(
             {QUuid::createUuid().toString(QUuid::WithoutBraces), {}});
         pushDispatcher.setIdentity(result.session.profile.userId);
 #endif
+        restoreReservation(result.session.profile.userId);
         walletBinder.setAccountId(result.session.profile.userId);
         walletBinder.activate();
         RequestContext recoveryContext{
