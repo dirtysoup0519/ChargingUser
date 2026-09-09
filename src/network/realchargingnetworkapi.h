@@ -20,6 +20,7 @@ public:
 
     ChargingBackendCapabilities capabilities() const override;
     void setIdentity(const QString &username);
+    void setUnsafeTestOperationsEnabled(bool enabled);
     void setRequestTimeoutMs(int timeoutMs);
 
 public slots:
@@ -78,6 +79,7 @@ private:
 
     BackendClient *m_backend;
     QString m_username;
+    bool m_unsafeTestOperations = false;
     int m_requestTimeoutMs = 10000;
     std::optional<PendingRequest> m_pending;
 };

@@ -326,8 +326,12 @@ int main(int argc, char *argv[])
     const QCommandLineOption portOption(
         QStringLiteral("server-port"), QStringLiteral("Backend TCP port."),
         QStringLiteral("port"), defaultPort);
+    const QCommandLineOption unsafeOperationsOption(
+        QStringLiteral("allow-unsafe-test-operations"),
+        QStringLiteral("TEST_ONLY: allow start/payment mutations without server result-query guarantees."));
     parser.addOption(hostOption);
     parser.addOption(portOption);
+    parser.addOption(unsafeOperationsOption);
     parser.process(app);
 
     if (!parser.positionalArguments().isEmpty()) {
@@ -363,6 +367,8 @@ int main(int argc, char *argv[])
 
     // 阶段 F：真实站点/电桩确认已接入；启动变更仍受幂等与结果查询能力闸门保护。
     RealChargingNetworkApi chargingNetwork(&backend);
+    chargingNetwork.setUnsafeTestOperationsEnabled(
+        parser.isSet(unsafeOperationsOption));
     ChargingService chargingService(&chargingNetwork);
 
     // 阶段 D：真实订单查询。登录成功后自动恢复活动订单（106/214）；
@@ -370,6 +376,8 @@ int main(int argc, char *argv[])
     RealOrderService orderService(&backend);
     ChargingSessionUiBinder sessionBinder(&orderService);
     RealWalletNetworkApi walletNetwork(&backend);
+    walletNetwork.setUnsafeTestOperationsEnabled(
+        parser.isSet(unsafeOperationsOption));
     WalletService walletService(&walletNetwork);
     WalletUiBinder walletBinder(&walletService);
     SettlementUiBinder settlementBinder(&walletService);
@@ -1478,6 +1486,10 @@ int main(int argc, char *argv[])
         << QStringLiteral("Starting real-network entry for %1:%2.")
                .arg(host)
                .arg(portValue);
+    if (parser.isSet(unsafeOperationsOption)) {
+        qWarning().noquote()
+            << QStringLiteral("TEST_ONLY: unsafe money/charging operations enabled; never use in production.");
+    }
     backend.start();
     return app.exec();
 }

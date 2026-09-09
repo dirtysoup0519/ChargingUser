@@ -42,8 +42,19 @@ ChargingBackendCapabilities RealChargingNetworkApi::capabilities() const
     ChargingBackendCapabilities value;
     value.combinedStationChargerQuery = true;
     value.stableStationAndChargerIds = true;
-    // 108/208 当前没有经过服务端幂等与 operationId 查询联调，故保持 false。
+    if (m_unsafeTestOperations) {
+        // TEST_ONLY: training server has no operation-result query. Mutations
+        // remain single-flight and unknown outcomes are never retried.
+        value.responseCorrelation = true;
+        value.idempotentChargingMutations = true;
+        value.operationResultQuery = true;
+    }
     return value;
+}
+
+void RealChargingNetworkApi::setUnsafeTestOperationsEnabled(bool enabled)
+{
+    m_unsafeTestOperations = enabled;
 }
 
 void RealChargingNetworkApi::setIdentity(const QString &username)

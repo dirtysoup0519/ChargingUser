@@ -64,7 +64,20 @@ WalletBackendCapabilities RealWalletNetworkApi::capabilities() const
     WalletBackendCapabilities value;
     value.walletSnapshotQuery = true;
     value.rechargeMessage = true;
+    if (m_unsafeTestOperations) {
+        // TEST_ONLY: enable 115/215 for the local training server. No retry
+        // is performed; callers must reconcile order and wallet records.
+        value.payOrderMessage = true;
+        value.responseCorrelation = true;
+        value.idempotentMoneyMutations = true;
+        value.operationResultQuery = true;
+    }
     return value;
+}
+
+void RealWalletNetworkApi::setUnsafeTestOperationsEnabled(bool enabled)
+{
+    m_unsafeTestOperations = enabled;
 }
 
 void RealWalletNetworkApi::setIdentity(const QString &username)
