@@ -774,24 +774,43 @@ int main(int argc, char *argv[])
     });
     const auto appendRechargeOrders = [&](OrderListViewState state) {
         const WalletViewState wallet = walletBinder.currentState();
+        QSet<QString> seen;
         for (const WalletTransaction &transaction : wallet.recentTransactions) {
-            if (transaction.type != WalletTransactionType::Recharge) continue;
+            const QString fallbackKey = QStringLiteral("%1|%2|%3")
+                                            .arg(transaction.orderId)
+                                            .arg(transaction.createdAtUtc.toSecsSinceEpoch())
+                                            .arg(transaction.amountCents);
+            const QString key = transaction.transactionId.isEmpty()
+                                    ? fallbackKey : transaction.transactionId;
+            if (seen.contains(key)) continue;
+            seen.insert(key);
             OrderListItemView item;
-            item.businessId = transaction.transactionId;
+            item.businessId = key;
             item.type = OrderBusinessType::Recharge;
             item.stationName = QStringLiteral("钱包账户");
             item.createdAtText = transaction.createdAtUtc.isValid()
                 ? transaction.createdAtUtc.toLocalTime().toString(Qt::ISODate)
                 : QStringLiteral("时间未知");
             item.amountText = QStringLiteral("¥%1").arg(transaction.amountCents / 100.0, 0, 'f', 2);
+            QString kind = QStringLiteral("钱包流水");
+            if (transaction.type == WalletTransactionType::Recharge)
+                kind = QStringLiteral("钱包充值");
+            else if (transaction.type == WalletTransactionType::Payment)
+                kind = QStringLiteral("订单支付");
+            else if (transaction.type == WalletTransactionType::Refund)
+                kind = QStringLiteral("预约/订单退款");
             item.statusText = QStringLiteral("已完成");
             item.statusTone = QStringLiteral("success");
-            item.summaryText = transaction.transactionId.isEmpty()
-                ? QStringLiteral("钱包充值流水")
-                : QStringLiteral("流水号 %1").arg(transaction.transactionId);
+            item.summaryText = transaction.orderId.isEmpty()
+                ? kind
+                : QStringLiteral("%1 · 订单 %2").arg(kind, transaction.orderId);
             item.action = OrderListAction::None;
             state.orders.append(item);
         }
+        std::sort(state.orders.begin(), state.orders.end(),
+                  [](const OrderListItemView &left, const OrderListItemView &right) {
+            return left.createdAtText > right.createdAtText;
+        });
         return state;
     };
     const auto orderItemDetailState = [](const OrderListItemView &order) {
