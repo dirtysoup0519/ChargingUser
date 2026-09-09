@@ -23,6 +23,8 @@ public slots:
     virtual void recoverStopResultRequested() = 0;
     /** Loads every active order. Existing single-session binders may no-op. */
     virtual void activeSessionsRequested() {}
+    /** Clears the in-flight session state (used on back/logout). */
+    virtual void clearSession() {}
     /** Selects which order subsequent refresh/stop intents address. */
     virtual void activeSessionSelected(const QString &orderId)
     {
