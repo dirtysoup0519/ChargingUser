@@ -34,6 +34,7 @@ public:
     void renderHome(const HomeMapViewState &state);
     void renderChargingSession(const ChargingSessionViewState &state);
     void renderChargingSessions(const ChargingSessionCollectionViewState &state);
+    void resetStationSearch();
     void renderSecondaryPage(QWidget *page);
 
 signals:

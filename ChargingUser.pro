@@ -5,10 +5,22 @@ qtHaveModule(multimedia):qtHaveModule(multimediawidgets) {
     DEFINES += CHARGINGUSER_ENABLE_QT_MULTIMEDIA
 }
 
-packagesExist(zxing) {
+packagesExist(zxing-cpp) {
+    CONFIG += link_pkgconfig
+    PKGCONFIG += zxing-cpp
+    DEFINES += CHARGINGUSER_ENABLE_ZXING
+} else:packagesExist(zxing) {
     CONFIG += link_pkgconfig
     PKGCONFIG += zxing
     DEFINES += CHARGINGUSER_ENABLE_ZXING
+} else:unix:exists(/usr/include/ZXing/ReadBarcode.h) {
+    LIBS += -lzxingcore
+    DEFINES += CHARGINGUSER_ENABLE_ZXING
+}
+# Ubuntu 22.04 ships zxing-cpp 1.2: ImageView lives inside ReadBarcode.h
+# and decoding uses DecodeHints/Result instead of ReaderOptions/Barcode.
+unix:exists(/usr/include/ZXing/DecodeHints.h):!exists(/usr/include/ZXing/ImageView.h) {
+    DEFINES += CHARGINGUSER_ZXING_LEGACY
 }
 
 # WebEngine/WebChannel are optional: local Qt kits without these modules must

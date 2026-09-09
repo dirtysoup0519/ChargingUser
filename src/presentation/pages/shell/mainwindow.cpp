@@ -110,7 +110,7 @@ MainWindow::MainWindow(QWidget *parent) : QWidget(parent), ui(new Ui::MainWindow
     connect(ui->searchRetryButton, &QPushButton::clicked,
             this, &MainWindow::stationSearchRetryRequested);
     connect(ui->stationRetryButton, &QPushButton::clicked,
-            this, &MainWindow::stationRefreshRequested);
+            this, &MainWindow::resetStationSearch);
     connect(ui->stationSortCombo,
             QOverload<int>::of(&QComboBox::currentIndexChanged),
             this, [this](int index) {
@@ -182,6 +182,13 @@ void MainWindow::renderChargingSessions(
     ui->chargingSessionWidget->renderSessions(state);
 }
 
+void MainWindow::resetStationSearch()
+{
+    ui->searchBox->clear();
+    ui->searchBox->clearFocus();
+    emit stationSearchCleared();
+}
+
 void MainWindow::setMapKey(const QString &key)
 {
     if (ui && ui->mapView)
@@ -238,7 +245,6 @@ void MainWindow::renderHome(const HomeMapViewState &state)
     QString stationStateMessage;
     QString stationStateKind;
     bool showStationState = false;
-    bool showStationRetry = false;
     if (state.stationsStatus == MapLoadStatus::Loading) {
         stationStateMessage = state.stationsMessage.isEmpty()
                                   ? tr("正在加载附近充电站…")
@@ -257,7 +263,6 @@ void MainWindow::renderHome(const HomeMapViewState &state)
                                   : state.stationsMessage;
         stationStateKind = QStringLiteral("error");
         showStationState = true;
-        showStationRetry = state.canRetryStations;
     }
     // Keep the station toolbar visible after a successful load so the user can
     // manually refresh without first waiting for an error state.

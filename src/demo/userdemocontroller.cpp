@@ -44,9 +44,13 @@
 
 #ifdef CHARGINGUSER_ENABLE_ZXING
 #include <ZXing/BarcodeFormat.h>
-#include <ZXing/ImageView.h>
 #include <ZXing/ReadBarcode.h>
+#ifdef CHARGINGUSER_ZXING_LEGACY
+#include <ZXing/DecodeHints.h>
+#else
+#include <ZXing/ImageView.h>
 #include <ZXing/ReaderOptions.h>
+#endif
 #endif
 
 namespace
@@ -62,12 +66,20 @@ QString decodeQrImage(const QString &path, QString *error)
     image = image.convertToFormat(QImage::Format_Grayscale8);
     const ZXing::ImageView view(image.constBits(), image.width(), image.height(),
                                 ZXing::ImageFormat::Lum, image.bytesPerLine());
+#ifdef CHARGINGUSER_ZXING_LEGACY
+    ZXing::DecodeHints options;
+#else
     ZXing::ReaderOptions options;
+#endif
     options.setFormats(ZXing::BarcodeFormat::QRCode);
     options.setTryHarder(true);
     const auto barcode = ZXing::ReadBarcode(view, options);
     if (!barcode.isValid()) { *error = QStringLiteral("图片中没有识别到有效二维码。"); return {}; }
+#ifdef CHARGINGUSER_ZXING_LEGACY
+    return QString::fromStdWString(barcode.text());
+#else
     return QString::fromStdString(barcode.text());
+#endif
 #else
     Q_UNUSED(path)
     *error = QStringLiteral("当前 DEMO 构建未检测到 ZXing。");

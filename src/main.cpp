@@ -90,9 +90,13 @@
 
 #ifdef CHARGINGUSER_ENABLE_ZXING
 #include <ZXing/BarcodeFormat.h>
-#include <ZXing/ImageView.h>
 #include <ZXing/ReadBarcode.h>
+#ifdef CHARGINGUSER_ZXING_LEGACY
+#include <ZXing/DecodeHints.h>
+#else
+#include <ZXing/ImageView.h>
 #include <ZXing/ReaderOptions.h>
+#endif
 #endif
 
 namespace
@@ -111,15 +115,27 @@ QString decodeQrImage(const QString &path, QString *error)
     image = image.convertToFormat(QImage::Format_Grayscale8);
     const ZXing::ImageView view(image.constBits(), image.width(), image.height(),
                                 ZXing::ImageFormat::Lum, image.bytesPerLine());
+#ifdef CHARGINGUSER_ZXING_LEGACY
+    ZXing::DecodeHints options;
+#else
     ZXing::ReaderOptions options;
+#endif
     options.setFormats(ZXing::BarcodeFormat::QRCode);
     options.setTryHarder(true);
+#ifdef CHARGINGUSER_ZXING_LEGACY
+    const ZXing::Result barcode = ZXing::ReadBarcode(view, options);
+#else
     const ZXing::Barcode barcode = ZXing::ReadBarcode(view, options);
+#endif
     if (!barcode.isValid()) {
         *error = QStringLiteral("图片中没有识别到有效二维码。");
         return {};
     }
+#ifdef CHARGINGUSER_ZXING_LEGACY
+    return QString::fromStdWString(barcode.text());
+#else
     return QString::fromStdString(barcode.text());
+#endif
 #else
     Q_UNUSED(path)
     *error = QStringLiteral("当前构建未检测到 ZXing 二维码解析库。");
@@ -675,6 +691,8 @@ int main(int argc, char *argv[])
     bool settingInitialPassword = false;
     std::optional<ActiveReservationView> activeReservation;
     QString activeUserId;
+    // 退出登录只解除当前界面的预约状态，不能删除同一账号重新登录时的恢复记录。
+    bool preservingReservationOnSignOut = false;
     QSettings reservationStore(QStringLiteral("ChargingUser"), QStringLiteral("ChargingUser"));
     const auto clearReservation = [&] {
         if (!activeUserId.isEmpty())
@@ -745,6 +763,8 @@ int main(int argc, char *argv[])
             return;
         const QString key = QStringLiteral("reservation/%1").arg(activeUserId);
         if (!reservation) {
+            if (preservingReservationOnSignOut)
+                return;
             reservationStore.remove(key);
             return;
         }
@@ -777,6 +797,49 @@ int main(int argc, char *argv[])
     OrderDetailDestination pendingOrderDetailDestination = OrderDetailDestination::None;
     OrderListViewState orderListBaseState;
     QVector<ReservationHistoryItem> reservationHistory;
+    QString reservationHistoryUserId;
+    const auto saveReservationHistory = [&] {
+        if (reservationHistoryUserId.isEmpty())
+            return;
+        const QString key = QStringLiteral("reservation-history/%1")
+                                .arg(reservationHistoryUserId);
+        reservationStore.beginWriteArray(key, reservationHistory.size());
+        for (qsizetype index = 0; index < reservationHistory.size(); ++index) {
+            const ReservationHistoryItem &item = reservationHistory.at(index);
+            reservationStore.setArrayIndex(index);
+            reservationStore.setValue(QStringLiteral("id"), item.reservationId);
+            reservationStore.setValue(QStringLiteral("station"), item.stationName);
+            reservationStore.setValue(QStringLiteral("charger"), item.chargerCode);
+            reservationStore.setValue(QStringLiteral("deposit"), item.depositCents);
+            reservationStore.setValue(QStringLiteral("status"), item.status);
+            reservationStore.setValue(QStringLiteral("created"),
+                                      item.createdAtUtc.toMSecsSinceEpoch());
+            reservationStore.setValue(QStringLiteral("reserve"),
+                                      item.reserveAtUtc.toMSecsSinceEpoch());
+        }
+        reservationStore.endArray();
+    };
+    const auto restoreReservationHistory = [&](const QString &userId) {
+        reservationHistory.clear();
+        const QString key = QStringLiteral("reservation-history/%1").arg(userId);
+        const int count = reservationStore.beginReadArray(key);
+        for (int index = 0; index < count; ++index) {
+            reservationStore.setArrayIndex(index);
+            ReservationHistoryItem item;
+            item.reservationId = reservationStore.value(QStringLiteral("id")).toString();
+            item.stationName = reservationStore.value(QStringLiteral("station")).toString();
+            item.chargerCode = reservationStore.value(QStringLiteral("charger")).toString();
+            item.depositCents = reservationStore.value(QStringLiteral("deposit")).toLongLong();
+            item.status = reservationStore.value(QStringLiteral("status")).toString();
+            item.createdAtUtc = QDateTime::fromMSecsSinceEpoch(
+                reservationStore.value(QStringLiteral("created")).toLongLong(), Qt::UTC);
+            item.reserveAtUtc = QDateTime::fromMSecsSinceEpoch(
+                reservationStore.value(QStringLiteral("reserve")).toLongLong(), Qt::UTC);
+            if (!item.reservationId.isEmpty())
+                reservationHistory.append(item);
+        }
+        reservationStore.endArray();
+    };
     const auto openWallet = [&](WalletEntryPoint entryPoint) {
         walletEntryPoint = entryPoint;
         if (entryPoint == WalletEntryPoint::Payment) paymentOpen = false;
@@ -1172,7 +1235,6 @@ int main(int argc, char *argv[])
         mainWindow.renderSecondaryPage(&orderList);
         orderListRequestId = QUuid::createUuid().toString(QUuid::WithoutBraces);
         orderService.queryOrderHistory({orderListRequestId, {}});
-        reservationHistory.clear();
         walletBinder.activate();
         orderListReservationRequestId =
             QUuid::createUuid().toString(QUuid::WithoutBraces);
@@ -1510,7 +1572,20 @@ int main(int argc, char *argv[])
                      &app, [&](const RequestContext &context, const QVector<ReservationHistoryItem> &items) {
         if (context.requestId == orderListReservationRequestId)
             orderListReservationRequestId.clear();
-        reservationHistory = items;
+        orderListErrorText.clear();
+        for (const ReservationHistoryItem &incoming : items) {
+            const auto existing = std::find_if(
+                reservationHistory.begin(), reservationHistory.end(),
+                [&](const ReservationHistoryItem &saved) {
+                    return !incoming.reservationId.isEmpty()
+                           && saved.reservationId == incoming.reservationId;
+                });
+            if (existing == reservationHistory.end())
+                reservationHistory.append(incoming);
+            else
+                *existing = incoming;
+        }
+        saveReservationHistory();
         // 本地缓存可能因换机器/清理配置而缺失；登录后以服务端 reservation
         // 表中的 Active 记录校准预约状态，确保扫码/启动错误提示使用真实预约。
         if (!activeReservation) {
@@ -1536,8 +1611,11 @@ int main(int argc, char *argv[])
         if (error.requestId != orderListReservationRequestId) return;
         orderListReservationRequestId.clear();
         if (orderListOpen) {
-            orderListErrorText = error.displayMessage.isEmpty()
-                ? QStringLiteral("预约历史加载失败") : error.displayMessage;
+            if (!reservationHistory.isEmpty() || activeReservation) {
+                orderListErrorText.clear();
+            } else {
+                orderListErrorText = QStringLiteral("预约历史暂时无法加载，请稍后刷新重试。");
+            }
             renderOrderList();
         }
     });
@@ -1606,7 +1684,6 @@ int main(int argc, char *argv[])
         orderListErrorText.clear();
         orderListRequestId = QUuid::createUuid().toString(QUuid::WithoutBraces);
         orderService.queryOrderHistory({orderListRequestId, {}});
-        reservationHistory.clear();
         walletBinder.activate();
         orderListReservationRequestId =
             QUuid::createUuid().toString(QUuid::WithoutBraces);
@@ -1957,6 +2034,11 @@ int main(int argc, char *argv[])
     // 阶段 D：登录成功 → 注入身份并自动恢复活动订单（充电中/待结算）。
     QObject::connect(userService, &IUserService::loginSucceeded,
                      &app, [&](const LoginResult &result) {
+        const QString signedInUserId = result.session.profile.userId.trimmed();
+        if (reservationHistoryUserId != signedInUserId) {
+            reservationHistoryUserId = signedInUserId;
+            restoreReservationHistory(signedInUserId);
+        }
 #ifndef CHARGINGUSER_USER_DEMO
         orderService.setIdentity(result.session.profile.userId);
         walletNetwork.setIdentity(result.session.profile.userId);
@@ -1975,7 +2057,14 @@ int main(int argc, char *argv[])
     });
     QObject::connect(userService, &IUserService::logoutSucceeded,
                      &app, [&](const OperationResult &) {
-        clearReservation();
+        mainWindow.resetStationSearch();
+        // 保留该账号的活动预约；下次登录会由 restoreReservation 恢复。
+        preservingReservationOnSignOut = true;
+        reservationBinder.consumeActiveReservation();
+        preservingReservationOnSignOut = false;
+        activeReservation.reset();
+        chargeBinder.setReservationActive(false);
+        mapBinder.setActiveReservation(std::nullopt);
         activeUserId.clear();
 #ifndef CHARGINGUSER_USER_DEMO
         orderService.setIdentity(QString());
@@ -2034,13 +2123,8 @@ int main(int argc, char *argv[])
             }
             return;
         }
-        if (order.status == OrderStatus::Charging) {
-            sessionBinder.showOrder(order);
-            mainWindow.renderPrimaryPage(MainWindow::PrimaryPage::Charging);
-        } else {
-            settlementBinder.showOrder(order);
-            mainWindow.renderSecondaryPage(&settlementWindow);
-        }
+        // 其余详情响应来自充电页的定时刷新或后台通知；对应 Binder 会更新
+        // 数据，不能抢走用户当前正在浏览的页面。
     });
     QObject::connect(&orderService, &IOrderService::requestFailed,
                      &app, [&](const ClientError &error) {
@@ -2160,15 +2244,47 @@ int main(int argc, char *argv[])
                      &ReservationConfirmationWindow::reservationRefreshRequested,
                      &reservationBinder, &ReservationUiBinder::refreshRequested);
     QObject::connect(&reservationService, &IReservationService::reservationCreated,
-                     &app, [&](const RequestContext &, const ReservationResult &) {
+                     &app, [&](const RequestContext &, const ReservationResult &result) {
+        ReservationHistoryItem historyItem;
+        historyItem.reservationId = result.reservationId;
+        historyItem.stationName = pendingReservationPayment.stationName;
+        historyItem.chargerCode = result.chargerId.isEmpty()
+                                      ? pendingReservationPayment.chargerId
+                                      : result.chargerId;
+        historyItem.depositCents = 2000;
+        historyItem.status = QStringLiteral("RESERVED");
+        historyItem.createdAtUtc = result.reservedAtUtc;
+        historyItem.reserveAtUtc = result.expiresAtUtc;
+        const auto existing = std::find_if(
+            reservationHistory.begin(), reservationHistory.end(),
+            [&](const ReservationHistoryItem &saved) {
+                return !result.reservationId.isEmpty()
+                       && saved.reservationId == result.reservationId;
+            });
+        if (existing == reservationHistory.end())
+            reservationHistory.append(historyItem);
+        else
+            *existing = historyItem;
+        saveReservationHistory();
         reservationPaymentOpen = false;
         paymentOpen = false;
         mainWindow.renderPrimaryPage(MainWindow::PrimaryPage::Home);
     });
     QObject::connect(&reservationService, &IReservationService::reservationCancelled,
-                     &app, [&](const RequestContext &, const ReservationCancellationResult &) {
+                     &app, [&](const RequestContext &,
+                               const ReservationCancellationResult &result) {
+        for (ReservationHistoryItem &item : reservationHistory) {
+            if (item.reservationId == result.reservationId) {
+                item.status = QStringLiteral("REFUNDED");
+                break;
+            }
+        }
+        saveReservationHistory();
         mapBinder.stationRefreshRequested();
         walletBinder.activate();
+        // 126 取消预约回执已确认退款；同步个人页使用的用户资料余额，
+        // 避免必须重新登录后才看到退回的押金。
+        userService->refreshCurrentUser();
         mainWindow.renderPrimaryPage(MainWindow::PrimaryPage::Home);
     });
 #ifndef CHARGINGUSER_USER_DEMO

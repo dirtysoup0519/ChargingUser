@@ -19,9 +19,13 @@
 
 #ifdef CHARGINGUSER_ENABLE_ZXING
 #include <ZXing/BarcodeFormat.h>
-#include <ZXing/ImageView.h>
 #include <ZXing/ReadBarcode.h>
+#ifdef CHARGINGUSER_ZXING_LEGACY
+#include <ZXing/DecodeHints.h>
+#else
+#include <ZXing/ImageView.h>
 #include <ZXing/ReaderOptions.h>
+#endif
 #endif
 
 #ifdef CHARGINGUSER_ENABLE_QT_MULTIMEDIA
@@ -49,11 +53,20 @@ QString decodeQrFrame(const QImage &source)
     const QImage image = source.convertToFormat(QImage::Format_Grayscale8);
     const ZXing::ImageView view(image.constBits(), image.width(), image.height(),
                                 ZXing::ImageFormat::Lum, image.bytesPerLine());
+#ifdef CHARGINGUSER_ZXING_LEGACY
+    ZXing::DecodeHints options;
+#else
     ZXing::ReaderOptions options;
+#endif
     options.setFormats(ZXing::BarcodeFormat::QRCode);
     options.setTryHarder(true);
+#ifdef CHARGINGUSER_ZXING_LEGACY
+    const ZXing::Result barcode = ZXing::ReadBarcode(view, options);
+    return barcode.isValid() ? QString::fromStdWString(barcode.text()) : QString();
+#else
     const ZXing::Barcode barcode = ZXing::ReadBarcode(view, options);
     return barcode.isValid() ? QString::fromStdString(barcode.text()) : QString();
+#endif
 #else
     Q_UNUSED(source)
     return {};
