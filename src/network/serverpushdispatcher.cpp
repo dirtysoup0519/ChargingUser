@@ -75,7 +75,10 @@ void ServerPushDispatcher::handleFrame(int msgType, const QJsonObject &payload)
         if (notice.orderId.isEmpty())
             notice.orderId = payload.value(QStringLiteral("orderId")).toString();
         notice.chargerCode = payload.value(QStringLiteral("chargerCode")).toString();
-        notice.energyKwh = payload.value(QStringLiteral("kwh")).toDouble();
+        QJsonValue kwh = payload.value(QStringLiteral("kwh"));
+        if (kwh.isUndefined()) kwh = payload.value(QStringLiteral("energyKwh"));
+        if (kwh.isUndefined()) kwh = payload.value(QStringLiteral("chargedKwh"));
+        notice.energyKwh = kwh.toDouble();
         notice.amountCents = parseAmountCents(payload, &notice.amountPresent);
         notice.amountYuan = payload.value(QStringLiteral("amount")).toDouble();
         notice.percent = payload.value(QStringLiteral("percent")).toInt();

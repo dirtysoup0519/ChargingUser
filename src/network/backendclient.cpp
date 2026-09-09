@@ -99,6 +99,16 @@ void BackendClient::shutdown()
     setState(ConnectionState::Disconnected);
 }
 
+bool BackendClient::switchEndpoint(const QString &host, quint16 port)
+{
+    Q_ASSERT(QThread::currentThread() == thread());
+    if (host.trimmed().isEmpty() || port == 0) return false;
+    if (!m_transport->setEndpoint(host.trimmed(), port)) return false;
+    shutdown();
+    start();
+    return true;
+}
+
 ConnectionState BackendClient::connectionState() const
 {
     Q_ASSERT(QThread::currentThread() == thread());

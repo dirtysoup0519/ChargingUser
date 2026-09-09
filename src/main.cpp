@@ -52,17 +52,23 @@
 #include <QDateTime>
 #include <QDebug>
 #include <QDir>
+#include <QDialog>
+#include <QDialogButtonBox>
+#include <QFormLayout>
 #include <QFile>
 #include <QFileInfo>
 #include <QFileDialog>
 #include <QHash>
 #include <QJsonDocument>
+#include <QJsonArray>
 #include <QJsonObject>
 #include <QJsonParseError>
 #include <QMessageBox>
 #include <QSettings>
+#include <QSpinBox>
 #include <QTimer>
 #include <QImage>
+#include <QLineEdit>
 #include <QUrlQuery>
 #include <QRegularExpression>
 #include <QStringList>
@@ -363,6 +369,8 @@ int main(int argc, char *argv[])
         qCritical() << "Server port must be an integer from 1 to 65535.";
         return 2;
     }
+    QString activeHost = host;
+    quint16 activePort = static_cast<quint16>(portValue);
 
     QFile theme(QStringLiteral(":/styles/theme.qss"));
     if (theme.open(QIODevice::ReadOnly)) {
@@ -535,6 +543,7 @@ int main(int argc, char *argv[])
     WalletEntryPoint walletEntryPoint = WalletEntryPoint::Profile;
     bool orderListOpen = false;
     QString orderListRequestId;
+    bool reservationHistoryRequested = false;
     bool frequentStationsOpen = false;
     QString frequentStationsRequestId;
     bool settlementOpenedFromOrderList = false;
@@ -648,6 +657,43 @@ int main(int argc, char *argv[])
                      binder, &IUserUiBinder::loginRequested);
     QObject::connect(&login, &LoginWindow::usernamePasswordLoginRequested,
                      binder, &IUserUiBinder::usernamePasswordLoginRequested);
+    QObject::connect(&login, &LoginWindow::serverSettingsRequested,
+                     &app, [&] {
+        QDialog dialog(&login);
+        dialog.setWindowTitle(QStringLiteral("服务器连接设置"));
+        auto *form = new QFormLayout(&dialog);
+        auto *hostEdit = new QLineEdit(activeHost, &dialog);
+        auto *portEdit = new QSpinBox(&dialog);
+        portEdit->setRange(1, 65535);
+        portEdit->setValue(activePort);
+        form->addRow(QStringLiteral("IP / 主机"), hostEdit);
+        form->addRow(QStringLiteral("端口"), portEdit);
+        auto *buttons = new QDialogButtonBox(QDialogButtonBox::Ok
+                                               | QDialogButtonBox::Cancel, &dialog);
+        form->addRow(buttons);
+        QObject::connect(buttons, &QDialogButtonBox::accepted,
+                         &dialog, &QDialog::accept);
+        QObject::connect(buttons, &QDialogButtonBox::rejected,
+                         &dialog, &QDialog::reject);
+        if (dialog.exec() != QDialog::Accepted) return;
+        const QString newHost = hostEdit->text().trimmed();
+        const quint16 newPort = static_cast<quint16>(portEdit->value());
+        if (!validHost(newHost)) {
+            QMessageBox::warning(&login, QStringLiteral("服务器设置"),
+                                 QStringLiteral("IP / 主机地址无效。"));
+            return;
+        }
+        if (newHost == activeHost && newPort == activePort) return;
+        if (!backend.switchEndpoint(newHost, newPort)) {
+            QMessageBox::warning(&login, QStringLiteral("服务器设置"),
+                                 QStringLiteral("无法切换服务器地址。"));
+            return;
+        }
+        activeHost = newHost;
+        activePort = newPort;
+        qInfo().noquote() << QStringLiteral("Server endpoint switched to %1:%2.")
+                                 .arg(activeHost).arg(activePort);
+    });
     QObject::connect(&profileEdit, &ProfileEditWindow::profileSaveRequested,
                      binder, &IUserUiBinder::profileSaveRequested);
     QObject::connect(&profileEdit, &ProfileEditWindow::avatarChangeRequested,
@@ -665,14 +711,17 @@ int main(int argc, char *argv[])
         binder->avatarUpdateRequested(dataUri);
     });
     QObject::connect(&profileEdit, &ProfileEditWindow::profileCompletionRequested,
-                     &app, [&](const QString &nickname, const QString &,
+                     &app, [&](const QString &nickname, const QString &phone,
                                const QString &newPassword) {
         if (newPassword.isEmpty()) {
-            binder->profileSaveRequested(nickname);
+            // 新用户未修改资料时，沿用服务端自动注册的手机号昵称，确保保存请求合法。
+            binder->profileSaveRequested(nickname.trimmed().isEmpty()
+                                             ? phone.trimmed() : nickname);
             return;
         }
         settingInitialPassword = true;
-        pendingCompletionNickname = nickname;
+        pendingCompletionNickname = nickname.trimmed().isEmpty()
+                                        ? phone.trimmed() : nickname.trimmed();
         userService->changePassword(QString(), newPassword);
     });
     QObject::connect(&profileEdit, &ProfileEditWindow::passwordChangeRequested,
@@ -863,11 +912,10 @@ int main(int argc, char *argv[])
         orderListBaseState = {};
         orderList.render(OrderListViewState{{}, QStringLiteral("正在加载订单…")});
         mainWindow.renderSecondaryPage(&orderList);
-        walletBinder.activate();
+        reservationHistoryRequested = false;
         orderListRequestId = QUuid::createUuid().toString(QUuid::WithoutBraces);
         orderService.queryOrderHistory({orderListRequestId, {}});
         reservationHistory.clear();
-        reservationService.queryHistory({QUuid::createUuid().toString(QUuid::WithoutBraces), {}});
     });
     const auto showProfileNotice = [&](const QString &title, const QString &text) {
         QMessageBox::information(&mainWindow, title, text);
@@ -955,7 +1003,9 @@ int main(int argc, char *argv[])
             item.chargerCode = reservation.chargerCode;
             const QDateTime time = reservation.reserveAtUtc.isValid() ? reservation.reserveAtUtc : reservation.createdAtUtc;
             item.createdAtText = time.isValid() ? time.toLocalTime().toString(Qt::ISODate) : QStringLiteral("时间未知");
-            item.amountText = QStringLiteral("¥20.00");
+            const qint64 depositCents = reservation.depositCents > 0
+                                            ? reservation.depositCents : 2000;
+            item.amountText = QStringLiteral("¥%1").arg(depositCents / 100.0, 0, 'f', 2);
             item.statusText = reservation.status.isEmpty() ? QStringLiteral("预约记录") : reservation.status;
             item.statusTone = QStringLiteral("neutral");
             item.summaryText = QStringLiteral("预约充电桩 %1").arg(item.chargerCode);
@@ -1086,6 +1136,11 @@ int main(int argc, char *argv[])
         if (context.requestId == orderListRequestId)
             orderListRequestId.clear();
         renderChargingOrders(orders);
+        // 214 没有 requestId 回显；先完成订单查询，再启动 100 通用查询，
+        // 避免订单、钱包和预约响应在共享连接上互相抢占。
+        if (orderListOpen && context.requestId != frequentStationsRequestId) {
+            walletBinder.activate();
+        }
     });
     QObject::connect(&mainWindow, &MainWindow::commonStationsPageRequested,
                      &app, [&] {
@@ -1120,9 +1175,19 @@ int main(int argc, char *argv[])
     });
     QObject::connect(&walletBinder, &WalletUiBinder::stateChanged,
                      &app, [&](const WalletViewState &wallet) {
-        if (!orderListOpen || wallet.recentTransactions.isEmpty()) return;
-        OrderListViewState state = appendRechargeOrders(orderListBaseState);
-        orderList.render(state);
+        if (!orderListOpen) return;
+        if (!wallet.recentTransactions.isEmpty()) {
+            OrderListViewState state = appendRechargeOrders(orderListBaseState);
+            orderList.render(state);
+        }
+        if (!reservationHistoryRequested
+            && (wallet.status == WalletPageStatus::Ready
+                || wallet.status == WalletPageStatus::Error
+                || wallet.status == WalletPageStatus::ResultUnknown)) {
+            reservationHistoryRequested = true;
+            reservationService.queryHistory(
+                {QUuid::createUuid().toString(QUuid::WithoutBraces), {}});
+        }
     });
     QObject::connect(&orderList, &OrderListWindow::refreshRequested,
                      &app, [&] {
@@ -1727,6 +1792,76 @@ int main(int argc, char *argv[])
                      &login, [](ConnectionState state) {
         qInfo().noquote()
             << QStringLiteral("Network state: %1").arg(connectionStateName(state));
+                     });
+    QObject::connect(&backend, &BackendClient::frameReceived,
+                     &app, [](int msgType, const QJsonObject &payload) {
+        // 联调日志：仅输出充电/订单/钱包关键字段，禁止输出完整载荷和敏感凭据。
+        switch (msgType) {
+        case 208:
+            qInfo().noquote() << QStringLiteral("Server 208 start: order=%1 charger=%2")
+                                     .arg(payload.value(QStringLiteral("orderNo")).toString(),
+                                          payload.value(QStringLiteral("chargerCode")).toString());
+            break;
+        case 225:
+            qInfo().noquote() << QStringLiteral("Server 225 progress: order=%1 kwh=%2 amountCents=%3")
+                                     .arg(payload.value(QStringLiteral("orderNo")).toString())
+                                     .arg(payload.value(QStringLiteral("kwh")).toVariant().toString())
+                                     .arg(payload.value(QStringLiteral("amountCents")).toVariant().toString());
+            break;
+        case 209:
+            qInfo().noquote() << QStringLiteral("Server 209 stop: order=%1 kwh=%2 amountCents=%3")
+                                     .arg(payload.value(QStringLiteral("orderNo")).toString())
+                                     .arg(payload.value(QStringLiteral("kwh")).toVariant().toString())
+                                     .arg(payload.value(QStringLiteral("amountCents")).toVariant().toString());
+            break;
+        case 214:
+        {
+            QJsonArray orders = payload.value(QStringLiteral("orders")).toArray();
+            if (orders.isEmpty())
+                orders = payload.value(QStringLiteral("data")).toArray();
+            qInfo().noquote() << QStringLiteral("Server 214 orders: count=%1").arg(orders.size());
+            for (const QJsonValue &value : orders) {
+                if (!value.isObject()) continue;
+                const QJsonObject order = value.toObject();
+                qInfo().noquote()
+                    << QStringLiteral("  order=%1 status=%2 charger=%3 kwh=%4 amountCents=%5")
+                           .arg(order.value(QStringLiteral("orderNo")).toString(),
+                                order.value(QStringLiteral("status")).toString(),
+                                order.value(QStringLiteral("chargerCode")).toString(),
+                                order.value(QStringLiteral("kwh")).toVariant().toString(),
+                                order.value(QStringLiteral("amountCents")).toVariant().toString());
+            }
+            break;
+        }
+        case 200:
+            qInfo().noquote() << QStringLiteral("Server 200 data: table=%1 count=%2")
+                                     .arg(payload.value(QStringLiteral("table")).toString())
+                                     .arg(payload.value(QStringLiteral("data")).toArray().size());
+            break;
+        case 215:
+        case 216:
+            qInfo().noquote() << QStringLiteral("Server %1 wallet result: balanceCents=%2")
+                                     .arg(msgType)
+                                     .arg(payload.value(QStringLiteral("balanceCents")).toVariant().toString());
+            break;
+        case 228:
+            qInfo().noquote()
+                << QStringLiteral("Server 228 profile update: ok=%1 usernamePresent=%2 changed=%3")
+                       .arg(payload.value(QStringLiteral("ok")).toBool())
+                       .arg(!payload.value(QStringLiteral("username")).toString().isEmpty())
+                       .arg(payload.value(QStringLiteral("changed")).toArray().size());
+            break;
+        default:
+            if (msgType >= 300 && msgType < 400) {
+                QString message = payload.value(QStringLiteral("err")).toString();
+                if (message.isEmpty()) message = payload.value(QStringLiteral("reason")).toString();
+                qWarning().noquote()
+                    << QStringLiteral("Server %1 error: code=%2 message=%3")
+                           .arg(msgType)
+                           .arg(payload.value(QStringLiteral("code")).toString(), message);
+            }
+            break;
+        }
     });
     QObject::connect(&backend, &BackendClient::networkError,
                      &login, [](const QString &message) {

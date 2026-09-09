@@ -69,6 +69,16 @@ void QtNetworkTransport::disconnectFromServer()
     }
 }
 
+bool QtNetworkTransport::setEndpoint(const QString &host, quint16 port)
+{
+    Q_ASSERT(QThread::currentThread() == thread());
+    if (host.trimmed().isEmpty() || port == 0) return false;
+    m_host = host.trimmed();
+    m_port = port;
+    disconnectFromServer();
+    return true;
+}
+
 bool QtNetworkTransport::send(const QByteArray &data)
 {
     Q_ASSERT(QThread::currentThread() == thread());

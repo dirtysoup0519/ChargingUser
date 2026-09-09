@@ -28,6 +28,7 @@ struct ReservationHistoryItem
     QString reservationId;
     QString stationName;
     QString chargerCode;
+    qint64 depositCents = 0;
     QString status;
     QDateTime createdAtUtc;
     QDateTime reserveAtUtc;

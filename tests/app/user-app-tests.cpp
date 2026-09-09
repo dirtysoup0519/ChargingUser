@@ -132,7 +132,7 @@ void UserAppTests::newUserLoginPublishesProfileState()
         fixture.binder()->currentProfileEditViewState();
     QCOMPARE(state.submitState, SubmitState::Idle);
     QCOMPARE(state.phone, phone);
-    QCOMPARE(state.nicknameInput, QStringLiteral("用户1234"));
+    QCOMPARE(state.nicknameInput, phone);
     QVERIFY(state.canSubmit);
     QCOMPARE(navigationSpy.last().at(0).value<NavigationTarget>(),
              NavigationTarget::ProfileEdit);

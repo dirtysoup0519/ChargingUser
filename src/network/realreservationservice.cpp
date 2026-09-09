@@ -6,6 +6,28 @@
 #include <QDateTime>
 #include <QJsonArray>
 #include <QTimer>
+#include <QtMath>
+
+namespace {
+QDateTime parseTimestamp(const QJsonValue &value)
+{
+    if (!value.isString()) return {};
+    const QString text = value.toString();
+    QDateTime result = QDateTime::fromString(text, Qt::ISODate);
+    if (!result.isValid())
+        result = QDateTime::fromString(text, QStringLiteral("yyyy-MM-dd hh:mm:ss"));
+    return result;
+}
+
+qint64 cents(const QJsonObject &row, const QString &key, const QString &yuanKey)
+{
+    bool ok = false;
+    const qint64 value = row.value(key).toVariant().toLongLong(&ok);
+    if (ok) return value;
+    const double yuan = row.value(yuanKey).toVariant().toDouble(&ok);
+    return ok ? qRound64(yuan * 100.0) : 0;
+}
+}
 
 RealReservationService::RealReservationService(BackendClient *backend,
                                                QObject *parent)
@@ -157,9 +179,11 @@ void RealReservationService::handleFrame(int msgType, const QJsonObject &payload
             item.reservationId = row.value(QStringLiteral("id")).toVariant().toString();
             item.stationName = row.value(QStringLiteral("stationName")).toString();
             item.chargerCode = row.value(QStringLiteral("chargerCode")).toString();
+            item.depositCents = cents(row, QStringLiteral("depositCents"),
+                                      QStringLiteral("deposit"));
             item.status = row.value(QStringLiteral("status")).toString();
-            item.createdAtUtc = QDateTime::fromString(row.value(QStringLiteral("createdAt")).toString(), Qt::ISODate);
-            item.reserveAtUtc = QDateTime::fromString(row.value(QStringLiteral("reserveAt")).toString(), Qt::ISODate);
+            item.createdAtUtc = parseTimestamp(row.value(QStringLiteral("createdAt")));
+            item.reserveAtUtc = parseTimestamp(row.value(QStringLiteral("reserveAt")));
             if (!item.reservationId.isEmpty()) items.append(item);
         }
         finishPending();

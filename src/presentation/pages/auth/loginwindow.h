@@ -27,6 +27,7 @@ signals:
     void loginRequested(const QString &phone);
     void usernamePasswordLoginRequested(const QString &username,
                                         const QString &password);
+    void serverSettingsRequested();
 
 private:
     void submitCurrentInput();
@@ -37,5 +38,6 @@ private:
     LegalDocumentPage *m_legalPage = nullptr;
     QLineEdit *m_passwordEdit = nullptr;
     QPushButton *m_loginModeButton = nullptr;
+    QPushButton *m_serverSettingsButton = nullptr;
     bool m_usernameLogin = false;
 };

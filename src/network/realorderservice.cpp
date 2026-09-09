@@ -542,7 +542,10 @@ ChargingOrder RealOrderService::parseOrderRecord(const QJsonObject &record)
     }
 
     bool ok = false;
-    const double priceCents = numberValue(record.value(QStringLiteral("priceCents")), &ok);
+    const double priceCents = numberValue(
+        record.contains(QStringLiteral("priceCentsSnapshot"))
+            ? record.value(QStringLiteral("priceCentsSnapshot"))
+            : record.value(QStringLiteral("priceCents")), &ok);
     if (ok) {
         order.priceCentsPerKwhSnapshot = static_cast<qint64>(priceCents);
     } else {
@@ -552,9 +555,10 @@ ChargingOrder RealOrderService::parseOrderRecord(const QJsonObject &record)
         }
     }
 
-    const QJsonValue kwhValue = record.contains(QStringLiteral("kwh"))
-                                    ? record.value(QStringLiteral("kwh"))
-                                    : record.value(QStringLiteral("energyKwh"));
+    QJsonValue kwhValue = record.value(QStringLiteral("kwh"));
+    if (kwhValue.isUndefined()) kwhValue = record.value(QStringLiteral("energyKwh"));
+    if (kwhValue.isUndefined()) kwhValue = record.value(QStringLiteral("chargedKwh"));
+    if (kwhValue.isUndefined()) kwhValue = record.value(QStringLiteral("energy"));
     const double kwh = numberValue(kwhValue, &ok);
     if (ok && kwh >= 0.0) {
         order.energyKwh = kwh;

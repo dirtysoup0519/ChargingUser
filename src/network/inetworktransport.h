@@ -2,6 +2,7 @@
 
 #include <QObject>
 #include <QByteArray>
+#include <QString>
 
 /* 网络传输抽象（合同 §7 步骤 7）：
  * BackendClient 只依赖本接口，不直接接触 QTcpSocket，
@@ -23,6 +24,14 @@ public:
 
     virtual void connectToServer() = 0;
     virtual void disconnectFromServer() = 0;
+
+    // 运行时切换后端地址；不支持的测试传输返回 false。
+    virtual bool setEndpoint(const QString &host, quint16 port)
+    {
+        Q_UNUSED(host);
+        Q_UNUSED(port);
+        return false;
+    }
 
     // 未连接或发送失败返回 false；成功入队返回 true
     virtual bool send(const QByteArray &data) = 0;

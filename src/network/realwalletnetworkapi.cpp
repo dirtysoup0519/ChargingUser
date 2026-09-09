@@ -247,8 +247,10 @@ void RealWalletNetworkApi::handleFrame(int msgType, const QJsonObject &payload)
         snapshot.fetchedAtUtc = QDateTime::currentDateTimeUtc();
         for (const QJsonValue &value : data.toArray()) {
             if (value.isObject()) {
-                snapshot.recentTransactions.append(
-                    parseTransaction(value.toObject()));
+                const QJsonObject row = value.toObject();
+                const QString rowUser = row.value(QStringLiteral("username")).toString().trimmed();
+                if (!rowUser.isEmpty() && rowUser != m_username) continue;
+                snapshot.recentTransactions.append(parseTransaction(row));
             }
         }
         finishPending();

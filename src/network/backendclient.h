@@ -26,6 +26,7 @@ public:
 
     void start();
     void shutdown();
+    bool switchEndpoint(const QString &host, quint16 port);
 
     // 供测试与部署调节；默认 RECONNECT_INTERVAL_MS
     void setReconnectIntervalMs(int intervalMs);

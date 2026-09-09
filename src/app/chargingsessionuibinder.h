@@ -7,6 +7,7 @@
 
 class IOrderService;
 struct ChargingProgressNotice;
+class QTimer;
 
 class ChargingSessionUiBinder final : public IChargingSessionUiBinder
 {
@@ -43,4 +44,5 @@ private:
     ChargingSessionViewState m_state;
     QString m_requestId;
     QString m_operationId;
+    QTimer *m_refreshTimer = nullptr;
 };

@@ -131,7 +131,7 @@ void UserFlowTests::frozenUserNavigatesRestrictedHome()
     QCOMPARE(f2.coordinator.currentFlow().target, NavigationTarget::RestrictedHome);
 }
 
-/* 新用户 → 默认昵称请求 → ProfileEdit */
+/* 新用户直接使用 217 返回资料进入 ProfileEdit，不额外发送 118。 */
 void UserFlowTests::newUserGoesProfileEditWithDefaultNickname()
 {
     FlowFixture f;
@@ -145,13 +145,12 @@ void UserFlowTests::newUserGoesProfileEditWithDefaultNickname()
 
     QTRY_COMPARE(f.coordinator.currentFlow().state, UserFlowState::ProfileRequired);
     QCOMPARE(f.coordinator.currentFlow().target, NavigationTarget::ProfileEdit);
-    // 默认昵称 = "用户" + 手机号后四位（合同 §11.2 R8）
-    QCOMPARE(f.network.lastNickname(), QStringLiteral("用户8000"));
-    QCOMPARE(f.coordinator.currentFlow().draftNickname, QStringLiteral("用户8000"));
+    QCOMPARE(f.network.nicknameRequestCount(), 0);
+    QCOMPARE(f.coordinator.currentFlow().draftNickname, QStringLiteral("13800138000"));
     QVERIFY(f.coordinator.currentFlow().session.authenticated);
 }
 
-/* 新用户默认昵称提交失败 → 仍进 ProfileEdit 且保留默认昵称草稿、保留会话 */
+/* 新用户未修改服务端默认昵称时，本地完成资料流程，不发送 no-op 118。 */
 void UserFlowTests::newUserDefaultNicknameFailureStillProfileEdit()
 {
     FlowFixture f;
@@ -167,9 +166,10 @@ void UserFlowTests::newUserDefaultNicknameFailureStillProfileEdit()
     f.coordinator.login(QStringLiteral("13800138000"));
 
     QTRY_COMPARE(f.coordinator.currentFlow().state, UserFlowState::ProfileRequired);
-    QCOMPARE(f.coordinator.currentFlow().target, NavigationTarget::ProfileEdit);
-    QCOMPARE(f.coordinator.currentFlow().draftNickname, QStringLiteral("用户8000"));
-    QVERIFY(f.coordinator.currentFlow().session.authenticated);
+    f.coordinator.saveNickname(QStringLiteral("13800138000"));
+    QCOMPARE(f.coordinator.currentFlow().state, UserFlowState::Ready);
+    QCOMPARE(f.coordinator.currentFlow().target, NavigationTarget::Home);
+    QCOMPARE(f.network.nicknameRequestCount(), 0);
 }
 
 /* 资料完善场景保存成功（Normal）→ Home */
@@ -359,7 +359,7 @@ void UserFlowTests::logoutGoesLoginImmediatelyAndLateResponsesIgnored()
 void UserFlowTests::reloginClearsPreviousAccountContext()
 {
     FlowFixture f;
-    // 账号 A：新用户，默认昵称失败 → ProfileRequired + 草稿"用户8000"
+    // 账号 A：新用户直接进入 ProfileRequired，草稿沿用服务端手机号昵称。
     LoginResult loginA;
     loginA.session.profile.userId = QStringLiteral("13800138000");
     loginA.session.profile.phone = QStringLiteral("13800138000");
@@ -371,7 +371,7 @@ void UserFlowTests::reloginClearsPreviousAccountContext()
     f.network.setNicknameBehavior(nickFailure);
     f.coordinator.login(QStringLiteral("13800138000"));
     QTRY_COMPARE(f.coordinator.currentFlow().state, UserFlowState::ProfileRequired);
-    QCOMPARE(f.coordinator.currentFlow().draftNickname, QStringLiteral("用户8000"));
+    QCOMPARE(f.coordinator.currentFlow().draftNickname, QStringLiteral("13800138000"));
 
     f.coordinator.logout();
     QTRY_COMPARE(f.coordinator.currentFlow().state, UserFlowState::SignedOut);
@@ -567,7 +567,7 @@ void UserFlowTests::saveNicknameBlockedAfterLoginOrRefreshFailure()
     QVERIFY(f.coordinator.currentFlow().draftNickname.isEmpty());
 }
 
-/* 双重登录竞态下，默认昵称必须取自登录应答的 phone，而非 m_phone。 */
+/* 双重登录竞态下，首次资料必须取自登录应答，而非后续登录输入。 */
 void UserFlowTests::defaultNicknameUsesLoginResultPhoneNotStaleState()
 {
     FlowFixture f;
@@ -584,12 +584,10 @@ void UserFlowTests::defaultNicknameUsesLoginResultPhoneNotStaleState()
     f.coordinator.login(QStringLiteral("13800138000"));
     f.coordinator.login(QStringLiteral("13900139000"));
 
-    f.network.setUserProfileResult(makeProfileResult(QStringLiteral("U13800138000"),
-                                                     QStringLiteral("用户8000"),
-                                                     AccountStatus::Normal));
-    QTRY_COMPARE(f.network.lastNickname(), QStringLiteral("用户8000"));
+    QTRY_COMPARE(f.coordinator.currentFlow().state, UserFlowState::ProfileRequired);
+    QCOMPARE(f.network.nicknameRequestCount(), 0);
     QCOMPARE(f.coordinator.currentFlow().state, UserFlowState::ProfileRequired);
-    QCOMPARE(f.coordinator.currentFlow().draftNickname, QStringLiteral("用户8000"));
+    QCOMPARE(f.coordinator.currentFlow().draftNickname, QStringLiteral("13800138000"));
     QCOMPARE(f.network.loginRequestCount(), 1);
 }
 

@@ -462,9 +462,14 @@ UserDemoController::UserDemoController(MockUserNetworkApi *network,
     connect(m_profileEdit, &ProfileEditWindow::profileCompletionRequested,
             this, [this](const QString &nickname, const QString &phone,
                          const QString &newPassword) {
+        // 测试后端自动注册时以手机号作为默认资料；空昵称也必须落成
+        // 非空值，否则资料保存请求会一直停留在“保存中”。
+        const QString effectiveNickname = nickname.trimmed().isEmpty()
+                                              ? phone.trimmed()
+                                              : nickname.trimmed();
         if (m_usernameFirstSetup) {
             DemoUserData user;
-            user.nickname = nickname;
+            user.nickname = effectiveNickname;
             user.password = m_pendingUsernamePassword;
             user.avatarDataUri = m_pendingAvatarDataUri;
             user.status = AccountStatus::Normal;
@@ -474,7 +479,7 @@ UserDemoController::UserDemoController(MockUserNetworkApi *network,
             m_pendingUsername.clear();
             m_pendingUsernamePassword.clear();
             ProfileViewState profile;
-            profile.nickname = nickname;
+            profile.nickname = effectiveNickname;
             profile.maskedPhone = phone.left(3) + QStringLiteral("****") + phone.right(4);
             profile.balanceText = m_paymentBalanceText;
             profile.avatarDataUri = m_pendingAvatarDataUri;
@@ -488,8 +493,8 @@ UserDemoController::UserDemoController(MockUserNetworkApi *network,
         }
         if (!newPassword.isEmpty())
             m_demoUsers[m_currentAccountKey].password = newPassword;
-        configureNicknameSave(nickname);
-        m_binder->profileSaveRequested(nickname);
+        configureNicknameSave(effectiveNickname);
+        m_binder->profileSaveRequested(effectiveNickname);
     });
     connect(m_mainWindow, &MainWindow::logoutRequested,
             m_binder, &IUserUiBinder::logoutRequested);

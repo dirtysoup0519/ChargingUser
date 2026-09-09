@@ -376,8 +376,8 @@ void NetworkAdapterTests::avatarUpdateUsesProfileUpdate()
              QStringLiteral("alice"));
     QCOMPARE(frames.first().second.value(QStringLiteral("avatar")).toString(), avatar);
 
+    // 部分实训服务端的 228 只回显 ok/changed，不携带 username。
     QJsonObject ack{{QStringLiteral("ok"), true},
-                    {QStringLiteral("username"), QStringLiteral("alice")},
                     {QStringLiteral("changed"), QJsonArray{QStringLiteral("avatar")}}};
     transport.simulateIncoming(MassageHandler::pack(PROFILE_UPD_ACK, ack));
     QCOMPARE(successes.count(), 1);

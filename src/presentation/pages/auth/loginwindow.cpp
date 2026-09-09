@@ -100,6 +100,16 @@ LoginWindow::LoginWindow(QWidget *parent) : QWidget(parent), ui(new Ui::LoginWin
     m_loginModeButton->setStyleSheet(QStringLiteral(
         "border:none;background:transparent;color:#1677FF;font-size:12px;text-align:left;padding:7px 2px;"));
     ui->rootLayout->insertWidget(accountFieldIndex + 2, m_loginModeButton);
+    auto *serverBar = new QWidget(this);
+    auto *serverLayout = new QHBoxLayout(serverBar);
+    serverLayout->setContentsMargins(0, 0, 0, 4);
+    m_serverSettingsButton = new QPushButton(tr("服务器设置"), serverBar);
+    m_serverSettingsButton->setCursor(Qt::PointingHandCursor);
+    m_serverSettingsButton->setStyleSheet(QStringLiteral(
+        "QPushButton{border:none;background:transparent;color:#1677FF;font-size:12px;padding:4px 2px;}"));
+    serverLayout->addWidget(m_serverSettingsButton, 0, Qt::AlignLeft);
+    serverLayout->addStretch();
+    ui->rootLayout->insertWidget(0, serverBar);
     m_legalPage = new LegalDocumentPage(this);
     m_legalPage->setGeometry(rect());
     m_legalPage->hide();
@@ -110,6 +120,8 @@ LoginWindow::LoginWindow(QWidget *parent) : QWidget(parent), ui(new Ui::LoginWin
     connect(m_loginModeButton, &QPushButton::clicked, this, [this] {
         setUsernameLogin(!m_usernameLogin);
     });
+    connect(m_serverSettingsButton, &QPushButton::clicked,
+            this, &LoginWindow::serverSettingsRequested);
     connect(m_passwordEdit, &QLineEdit::returnPressed,
             this, &LoginWindow::submitCurrentInput);
     DragScrollHelper::enableFor(this);

@@ -475,7 +475,7 @@ ClientError RealUserNetworkApi::makeTimeoutError(PendingKind kind,
                                       kind == PendingKind::UpdatePassword
                                           ? QStringLiteral("Password change result is unknown. Sign in again to verify it.")
                                           : kind == PendingKind::UpdateAvatar
-                                                ? QStringLiteral("Avatar update result is unknown. Refresh the profile before retrying.")
+                                                ? QStringLiteral("头像更新结果暂时未知，正在等待资料同步确认，请勿重复上传。")
                                                 : QStringLiteral("Nickname update result is unknown."),
                                       false);
         error.resultUnknown = true;
@@ -632,8 +632,11 @@ bool RealUserNetworkApi::successPayloadValid(PendingKind kind,
     case PendingKind::UpdateNickname:
     case PendingKind::UpdateAvatar:
     case PendingKind::UpdatePassword:
+        // v2.6 文档示例回显 username，但部分实训服务端的 228 只返回
+        // {ok, changed}。缺少 username 时仍可由当前唯一资料变更请求
+        // 安全归属；若服务端确实回显，则必须与目标账号一致。
         return payload.value(QStringLiteral("ok")).toBool(false)
-               && username == requestedUserId;
+               && (username.isEmpty() || username == requestedUserId);
     case PendingKind::Logout:
         return payload.value(QStringLiteral("ok")).toBool(false);
     }

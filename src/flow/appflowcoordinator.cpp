@@ -171,9 +171,18 @@ void AppFlowCoordinator::saveNickname(const QString &nickname)
     default:
         return;
     }
-    m_snapshot.draftNickname = nickname;
+    const QString normalized = nickname.trimmed();
+    // 首次资料完善时，如果昵称与 217 登录应答中的服务端昵称一致，说明
+    // 用户没有修改资料。此时无需发送 118；直接完成流程可避免旧服务端
+    // 对 no-op 更新不返回 228，导致界面永久停在“保存中”。
+    if (m_profileRequired && !normalized.isEmpty()
+        && normalized == m_snapshot.session.profile.nickname.trimmed()) {
+        finishByAccountStatus();
+        return;
+    }
+    m_snapshot.draftNickname = normalized;
     publishFlow();
-    m_userService->updateNickname(nickname);
+    m_userService->updateNickname(normalized);
 }
 
 void AppFlowCoordinator::retry()
@@ -229,19 +238,17 @@ void AppFlowCoordinator::handleLoginSucceeded(const LoginResult &result)
     m_snapshot.error = ClientError{};
 
     if (result.isNewUser) {
-        // 新用户：提交默认昵称"用户+手机号后四位"（合同 §11.2 R8 的编排层落点）。
-        // 手机号取自登录应答本身（217 携带 phone），而非 m_phone——
-        // 双重登录竞态下 m_phone 可能已被后续登录尝试覆盖（复查修正）。
+        // 217 已经返回服务端自动注册后的昵称。直接进入资料完善页；不要在
+        // 登录阶段再发送一次 118，否则旧服务端遇到 no-op 更新可能不回 228。
         m_newUserFlow = true;
         m_profileRequired = true;
         const QString phone = !result.session.profile.phone.isEmpty()
                                   ? result.session.profile.phone
                                   : m_phone;
-        const QString defaultNickname = QStringLiteral("用户") + phone.right(4);
-        m_snapshot.draftNickname = defaultNickname;
-        m_snapshot.state = UserFlowState::InitializingNewUser;
-        publishFlow();
-        m_userService->updateNickname(defaultNickname);
+        const QString initialNickname = result.session.profile.nickname.trimmed().isEmpty()
+                                            ? phone : result.session.profile.nickname.trimmed();
+        m_snapshot.session.profile.nickname = initialNickname;
+        enterProfileRequired(initialNickname);
         return;
     }
 
@@ -372,6 +379,17 @@ void AppFlowCoordinator::handleOperationFailed(const ClientError &error)
         // 昵称修改结果未知：禁止直接重发，转资料刷新确认（规格 §5）
         m_pendingConfirmNickname = m_snapshot.draftNickname;
         m_snapshot.state = UserFlowState::RecoveringProfileUpdate;
+        m_retryable = Retryable::None;
+        publishFlow();
+        m_userService->refreshCurrentUser();
+        return;
+    }
+
+    if (error.resultUnknown
+        && m_userService->operationStatus(UserOperation::UpdateAvatar).state
+               == UserOperationState::ResultUnknown) {
+        // 头像 118 的 228 丢失时，通过 100 查询当前用户资料解除结果未知锁。
+        // 查询成功后 UserService 会以服务端 avatar 覆盖本地预览并恢复提交能力。
         m_retryable = Retryable::None;
         publishFlow();
         m_userService->refreshCurrentUser();

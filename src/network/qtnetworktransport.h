@@ -26,6 +26,7 @@ public:
 
     void connectToServer() override;
     void disconnectFromServer() override;
+    bool setEndpoint(const QString &host, quint16 port) override;
     bool send(const QByteArray &data) override;
     bool isConnected() const override;
 

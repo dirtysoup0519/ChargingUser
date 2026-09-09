@@ -4,6 +4,7 @@
 #include "network/serverpushdispatcher.h"
 
 #include <QUuid>
+#include <QTimer>
 #include <QtMath>
 
 ChargingSessionUiBinder::ChargingSessionUiBinder(IOrderService *service,
@@ -11,6 +12,10 @@ ChargingSessionUiBinder::ChargingSessionUiBinder(IOrderService *service,
     : IChargingSessionUiBinder(parent), m_service(service)
 {
     Q_ASSERT(m_service);
+    m_refreshTimer = new QTimer(this);
+    m_refreshTimer->setInterval(2000);
+    connect(m_refreshTimer, &QTimer::timeout,
+            this, &ChargingSessionUiBinder::refreshRequested);
     qRegisterMetaType<ChargingSessionViewState>();
     connect(m_service, &IOrderService::orderDetailReady,
             this, &ChargingSessionUiBinder::handleOrderDetailReady);
@@ -258,15 +263,20 @@ void ChargingSessionUiBinder::applyOrder(const ChargingOrder &order)
     if (order.status == OrderStatus::Charging) {
         m_state.status = ChargingSessionStatus::Charging;
         m_state.canStop = true;
+        // 225 推送并非所有服务端版本都会发送；在途订单同时轮询
+        // 214/订单详情，读取服务端虚拟电桩写入的 kwh/amount。
+        if (!m_refreshTimer->isActive()) m_refreshTimer->start();
     } else if (order.status == OrderStatus::PendingSettlement
                || order.status == OrderStatus::Settled
                || order.status == OrderStatus::Cancelled) {
         m_state.status = ChargingSessionStatus::Ended;
         m_state.canStop = false;
+        m_refreshTimer->stop();
     } else {
         m_state.status = ChargingSessionStatus::Error;
         m_state.message = QStringLiteral("订单状态未知，请刷新后重试。");
         m_state.canStop = false;
+        m_refreshTimer->stop();
     }
 }
 

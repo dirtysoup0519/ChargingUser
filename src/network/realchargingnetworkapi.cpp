@@ -104,6 +104,8 @@ void RealChargingNetworkApi::startCharging(const RequestContext &context,
     Q_UNUSED(stationId);
     QJsonObject payload{{QStringLiteral("username"), m_username},
                         {QStringLiteral("chargerCode"), chargerId}};
+    qInfo().noquote() << QStringLiteral("Client 108 start request: charger=%1")
+                             .arg(chargerId);
     if (!m_backend->sendFrame(START_CHARGING_REQ, payload)) {
         failPending(QStringLiteral("send-failed"),
                     QStringLiteral("启动充电请求发送失败。"), false, true);

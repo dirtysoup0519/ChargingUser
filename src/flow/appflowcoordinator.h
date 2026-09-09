@@ -4,9 +4,8 @@
  * 状态机（业务规则对应规格条款）：
  *   login()                 LoggingIn
  *   登录成功（老用户）        RefreshingProfile → 刷新成功按账号状态分流
- *   登录成功（新用户）        InitializingNewUser → 默认昵称提交
- *                             ├ 成功 / 普通失败 / 恢复完成 → ProfileRequired + ProfileEdit
- *                             └ ResultUnknown → RecoveringProfileUpdate（刷新确认）
+ *   登录成功（新用户）        直接采用 217 返回资料 → ProfileRequired + ProfileEdit
+ *   新用户未修改资料          本地完成流程，不发送无意义的 118 更新
  *   昵称保存 ResultUnknown    RecoveringProfileUpdate（禁止自动重发，只能刷新确认）
  *   刷新确认昵称一致          保存成功：资料完善场景分流 Home/RestrictedHome，否则 Ready
  *   刷新确认昵称不一致        Error（保留草稿，不自动重发）
