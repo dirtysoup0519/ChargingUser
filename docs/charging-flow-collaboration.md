@@ -892,3 +892,10 @@ UI 的“原密码”步骤仅临时收集输入；v2.6 没有独立的只验证
 服务端以 `PROFILE_UPD_ACK(228)` 返回 `ok=true`、同一 `username` 和 `changed:["avatar"]`。成功后 `UserService` 只更新当前会话的 `profile.avatarKey`，不会覆盖手机号、昵称、余额或账号状态；会话变化会同时刷新资料编辑页和“我的”页头像。登录 `101/201`、手机号登录 `116/217` 以及用户查询 `100/200` 返回的 `avatar` 字段也会写入同一属性，因此重新登录和服务端资料刷新后仍以服务端头像为准。
 
 模拟网络实现走相同的 service/binder 接口并回显本次 data URI，便于 `CONFIG+=user_demo` 在不改页面代码的情况下测试。服务端接入时保留 `IUserService` 和 `IUserNetworkApi` 的语义接口，只替换网络适配器即可。
+# Demo/main 统一迁移：站点与电桩状态（第一步）
+
+预约与充电服务确认状态变化后，正式入口和 Demo 入口都必须调用 `IMapUiBinder::chargerStatusConfirmed(stationId, chargerId, status)`。公共 `MapUiBinder` 负责立即同步首页可用数、详情页状态、选桩和操作权限，并向当前 `IChargerService` 发起查询校准。禁止页面或入口再次单独扣减 `availableCount`。
+
+数据源差异只保留在 `IChargerService` 实现中：`MockChargerService::applyConfirmedChargerStatus` 更新由 tmp 初始化的内存目录，使后续 Demo 查询返回新状态；`RealChargerService` 不本地伪造服务端数据，因为预约和充电操作已经由服务端持久化，随后通过 119/229 查询校准。两种模式共用状态事件规则：预约成功为 `Reserved`，扫码启动成功为 `Charging`，取消、过期或结束充电为 `Idle`。
+
+迁移前，Demo 使用 `m_demoAvailabilityConsumedKeys` 在渲染首页时重复扣减可用数，而正式 main 只设置预约浮窗，导致 main 的首页和详情可能继续显示旧状态。该集合及渲染期扣减已移除；状态变化现在由公共 Binder 幂等处理，`Reserved → Charging` 不重复扣减，`Charging/Reserved → Idle` 只恢复一次。

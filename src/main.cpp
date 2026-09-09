@@ -522,12 +522,19 @@ int main(int argc, char *argv[])
         }
         mapBinder.setActiveReservation(activeReservation);
         chargeBinder.setReservationActive(activeReservation.has_value());
+        if (activeReservation)
+            mapBinder.chargerStatusConfirmed(activeReservation->stationId,
+                                             activeReservation->chargerId,
+                                             ChargerBusinessStatus::Reserved);
     };
     const auto clearExpiredReservation = [&] {
         if (activeReservation && activeReservation->expiresAtUtc.isValid()
             && activeReservation->expiresAtUtc <= QDateTime::currentDateTimeUtc()) {
+            const ActiveReservationView expired = *activeReservation;
             activeReservation.reset();
             mapBinder.setActiveReservation(std::nullopt);
+            mapBinder.chargerStatusConfirmed(expired.stationId, expired.chargerId,
+                                             ChargerBusinessStatus::Idle);
         }
     };
     QTimer reservationExpiryTimer;
@@ -1528,6 +1535,9 @@ int main(int argc, char *argv[])
                      &app, [&](const RequestContext &,
                                const std::optional<ChargingOrder> &active) {
         if (active.has_value()) {
+            if (active->status == OrderStatus::Charging)
+                mapBinder.chargerStatusConfirmed(active->stationId, active->chargerId,
+                                                 ChargerBusinessStatus::Charging);
             // 214 已携带完整订单，直接渲染，避免旧服务端上重复详情查询
             // 因不回显 requestId 而长期停留在 Loading。
             sessionBinder.showOrder(*active);
@@ -1541,6 +1551,9 @@ int main(int argc, char *argv[])
     QObject::connect(&orderService, &IOrderService::chargingStopped,
                      &app, [&](const RequestContext &,
                                const StopChargingResult &result) {
+        mapBinder.chargerStatusConfirmed(result.order.stationId,
+                                         result.order.chargerId,
+                                         ChargerBusinessStatus::Idle);
         settlementBinder.showOrder(result.order);
         mainWindow.renderSecondaryPage(&settlementWindow);
     });
@@ -1703,10 +1716,17 @@ int main(int argc, char *argv[])
             reservationStore.endGroup();
         }
         mapBinder.setActiveReservation(activeReservation);
+        mapBinder.chargerStatusConfirmed(view.stationId, view.chargerId,
+                                         ChargerBusinessStatus::Reserved);
     });
     QObject::connect(&reservationService, &IReservationService::reservationCancelled,
                      &app, [&](const RequestContext &, const ReservationCancellationResult &) {
+        const auto cancelledReservation = activeReservation;
         clearReservation();
+        if (cancelledReservation)
+            mapBinder.chargerStatusConfirmed(cancelledReservation->stationId,
+                                             cancelledReservation->chargerId,
+                                             ChargerBusinessStatus::Idle);
         mapBinder.stationRefreshRequested();
         walletBinder.activate();
         mainWindow.renderPrimaryPage(MainWindow::PrimaryPage::Home);
@@ -1715,11 +1735,19 @@ int main(int argc, char *argv[])
                      &app, [&](const QString &reservationId, const QString &) {
         if (activeReservation && (reservationId.isEmpty()
                                    || reservationId == activeReservation->reservationId)) {
+            const ActiveReservationView expired = *activeReservation;
             clearReservation();
+            mapBinder.chargerStatusConfirmed(expired.stationId, expired.chargerId,
+                                             ChargerBusinessStatus::Idle);
             chargeBinder.setReservationActive(false);
             QMessageBox::information(&mainWindow, QStringLiteral("预约已过期"),
                                      QStringLiteral("您的预约已失效，可以重新选择充电桩。"));
         }
+    });
+    QObject::connect(&chargingService, &IChargingService::chargingStarted,
+                     &app, [&](const RequestContext &, const StartChargingResult &result) {
+        mapBinder.chargerStatusConfirmed(result.stationId, result.chargerId,
+                                         ChargerBusinessStatus::Charging);
     });
     QObject::connect(&reservationBinder, &ReservationUiBinder::stateChanged,
                      &reservationConfirmation, &ReservationConfirmationWindow::render);

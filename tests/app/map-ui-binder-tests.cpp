@@ -262,6 +262,36 @@ private slots:
                      .canContinueToConfirmation);
     }
 
+    void confirmedChargerStatusSynchronizesHomeAndDetail()
+    {
+        Fixture fixture;
+        fixture.activate();
+        fixture.binder.stationDetailsRequested(fixture.first.stationId);
+        QTRY_COMPARE(fixture.binder.currentStationDetailState().status,
+                     MapLoadStatus::Ready);
+
+        const QString chargerId = fixture.first.chargers.first().chargerId;
+        fixture.binder.chargerStatusConfirmed(fixture.first.stationId, chargerId,
+                                              ChargerBusinessStatus::Reserved);
+        QTRY_COMPARE(fixture.binder.currentHomeState().stations.first().availableCount, 2);
+        QCOMPARE(fixture.binder.currentStationDetailState().chargers.first().statusText,
+                 QStringLiteral("已预约"));
+        QVERIFY(!fixture.binder.currentStationDetailState().chargers.first().canCharge);
+
+        fixture.binder.chargerStatusConfirmed(fixture.first.stationId, chargerId,
+                                              ChargerBusinessStatus::Charging);
+        QCOMPARE(fixture.binder.currentHomeState().stations.first().availableCount, 2);
+        QCOMPARE(fixture.binder.currentStationDetailState().chargers.first().statusText,
+                 QStringLiteral("使用中"));
+
+        fixture.binder.chargerStatusConfirmed(fixture.first.stationId, chargerId,
+                                              ChargerBusinessStatus::Idle);
+        QTRY_COMPARE(fixture.binder.currentHomeState().stations.first().availableCount, 3);
+        QCOMPARE(fixture.binder.currentStationDetailState().chargers.first().statusText,
+                 QStringLiteral("空闲"));
+        QVERIFY(fixture.binder.currentStationDetailState().chargers.first().canCharge);
+    }
+
     void manualOriginRequiresExplicitCandidateSelection()
     {
         Fixture fixture;

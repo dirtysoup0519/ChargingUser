@@ -46,6 +46,9 @@ public slots:
     void stationDetailsRequested(const QString &stationId) override;
     void stationRefreshRequested() override;
     void chargerSelected(const QString &chargerId) override;
+    void chargerStatusConfirmed(const QString &stationId,
+                                const QString &chargerId,
+                                ChargerBusinessStatus status) override;
     void chargeConfirmationRequested(const QString &stationId,
                                      const QString &chargerId) override;
     void routePreviewRequested(TravelMode mode) override;
@@ -91,6 +94,7 @@ private:
     MapPageTarget m_currentPage = MapPageTarget::Home;
     QHash<QString, StationSummary> m_stationsById;
     QHash<QString, GeoPoint> m_candidatePoints;
+    QHash<QString, ChargerBusinessStatus> m_confirmedChargerStatuses;
     std::optional<StationQuery> m_lastStationQuery;
     QString m_stationsRequestId;
     QString m_detailRequestId;

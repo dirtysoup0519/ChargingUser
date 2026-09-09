@@ -105,6 +105,35 @@ void MockChargerService::cancel(const QString &requestId)
     m_pendingRequests.remove(requestId);
 }
 
+void MockChargerService::applyConfirmedChargerStatus(
+    const QString &stationId, const QString &chargerId,
+    ChargerBusinessStatus status)
+{
+    for (StationDetail &station : m_stationCatalog) {
+        if (station.stationId != stationId)
+            continue;
+        for (ChargerSummary &charger : station.chargers) {
+            if (charger.chargerId != chargerId)
+                continue;
+            charger.businessStatus = status;
+            charger.canStartCharging = charger.online
+                                       && status == ChargerBusinessStatus::Idle;
+            charger.disabledReason = charger.canStartCharging
+                                         ? QString()
+                                         : status == ChargerBusinessStatus::Reserved
+                                               ? QStringLiteral("该充电桩已被预约。")
+                                               : status == ChargerBusinessStatus::Charging
+                                                     ? QStringLiteral("该充电桩正在充电。")
+                                                     : QStringLiteral("该充电桩当前不可用。");
+        }
+        station.summary.totalCount = station.chargers.size();
+        station.summary.availableCount = std::count_if(
+            station.chargers.cbegin(), station.chargers.cend(),
+            [](const ChargerSummary &charger) { return charger.canStartCharging; });
+        return;
+    }
+}
+
 bool MockChargerService::validateContext(const RequestContext &context)
 {
     if (!context.isValid()) {

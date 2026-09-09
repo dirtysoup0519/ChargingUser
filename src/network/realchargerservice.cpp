@@ -140,6 +140,16 @@ void RealChargerService::cancel(const QString &requestId)
     }
 }
 
+void RealChargerService::applyConfirmedChargerStatus(
+    const QString &stationId, const QString &chargerId,
+    ChargerBusinessStatus status)
+{
+    Q_UNUSED(stationId)
+    Q_UNUSED(chargerId)
+    Q_UNUSED(status)
+    // 正式环境的预约/充电服务已经在服务端完成持久化；下次 119/229 查询负责校准。
+}
+
 bool RealChargerService::startQuery(QueryKind kind, const RequestContext &context,
                                     const StationQuery &query, const QString &stationId)
 {

@@ -29,6 +29,15 @@ public slots:
     virtual void queryStationDetail(const RequestContext &context,
                                     const QString &stationId) = 0;
     virtual void cancel(const QString &requestId) = 0;
+    /** 将其他领域服务已经确认的状态写入当前数据源；真实适配器由服务端持久化，Mock 更新内存目录。 */
+    virtual void applyConfirmedChargerStatus(const QString &stationId,
+                                             const QString &chargerId,
+                                             ChargerBusinessStatus status)
+    {
+        Q_UNUSED(stationId)
+        Q_UNUSED(chargerId)
+        Q_UNUSED(status)
+    }
 
 signals:
     void stationsReady(const RequestContext &context,

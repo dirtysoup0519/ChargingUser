@@ -367,9 +367,10 @@ UserDemoController::UserDemoController(MockUserNetworkApi *network,
             const QString chargerKey = m_orderChargerKeys.take(session.orderId);
             if (!chargerKey.isEmpty()) {
                 m_demoChargingChargerKeys.remove(chargerKey);
-                m_demoAvailabilityConsumedKeys.remove(chargerKey);
                 const QString stationId = chargerKey.section(QLatin1Char('\n'), 0, 0);
                 const QString chargerId = chargerKey.section(QLatin1Char('\n'), 1, 1);
+                m_mapBinder->chargerStatusConfirmed(stationId, chargerId,
+                                                    ChargerBusinessStatus::Idle);
                 if (m_reservedDetailState.stationId == stationId) {
                     for (ChargerListItemView &charger : m_reservedDetailState.chargers) {
                         if (charger.chargerId != chargerId) continue;
@@ -851,6 +852,8 @@ UserDemoController::UserDemoController(MockUserNetworkApi *network,
             this, [this] {
         if (!m_reservedDetailState.activeReservation.has_value()) return;
         const QString chargerId = m_reservedDetailState.activeReservation->chargerId;
+        m_mapBinder->chargerStatusConfirmed(m_reservedDetailState.stationId, chargerId,
+                                            ChargerBusinessStatus::Idle);
         for (ChargerListItemView &charger : m_reservedDetailState.chargers) {
             if (charger.chargerId != chargerId) continue;
             charger.statusText = QStringLiteral("空闲");
@@ -927,6 +930,8 @@ UserDemoController::UserDemoController(MockUserNetworkApi *network,
                 return;
             }
             const QString chargerId = m_reservedDetailState.activeReservation->chargerId;
+            m_mapBinder->chargerStatusConfirmed(m_reservedDetailState.stationId, chargerId,
+                                                ChargerBusinessStatus::Idle);
             for (ChargerListItemView &charger : m_reservedDetailState.chargers) {
                 if (charger.chargerId != chargerId) continue;
                 charger.statusText = QStringLiteral("空闲");
@@ -1035,6 +1040,8 @@ UserDemoController::UserDemoController(MockUserNetworkApi *network,
             }
             const bool consumedReservation = !consumedReservationId.isEmpty();
             m_demoChargingChargerKeys.insert(chargerKey);
+            m_mapBinder->chargerStatusConfirmed(stationId, chargerId,
+                                                ChargerBusinessStatus::Charging);
             m_orderChargerKeys.insert(session.orderId, chargerKey);
             if (m_reservedDetailState.stationId == stationId) {
                 for (ChargerListItemView &charger : m_reservedDetailState.chargers) {
@@ -1047,7 +1054,6 @@ UserDemoController::UserDemoController(MockUserNetworkApi *network,
             }
             // Keep one occupied key across idle→charging and reserved→charging.
             // Home rendering de-duplicates it with an active reservation.
-            m_demoAvailabilityConsumedKeys.insert(chargerKey);
             if (consumedReservation) {
                 if (m_reservedDetailState.activeReservation
                     && m_reservedDetailState.activeReservation->reservationId == consumedReservationId)
@@ -1197,6 +1203,8 @@ UserDemoController::UserDemoController(MockUserNetworkApi *network,
                     m_pendingReservationDurationSeconds);
                 active.canCancel = true;
                 m_reservedDetailState.activeReservation = active;
+                m_mapBinder->chargerStatusConfirmed(active.stationId, active.chargerId,
+                                                    ChargerBusinessStatus::Reserved);
                 OrderListItemView reservationOrder;
                 reservationOrder.businessId = active.reservationId;
                 reservationOrder.stationId = active.stationId;
@@ -1644,23 +1652,6 @@ void UserDemoController::renderHomeWithReservation(HomeMapViewState state)
         state.activeReservation = m_reservedDetailState.activeReservation;
     else
         state.activeReservation.reset();
-    for (StationListItemView &station : state.stations) {
-        int newlyOccupied = 0;
-        const QString prefix = station.stationId + QLatin1Char('\n');
-        QSet<QString> occupiedKeys;
-        for (const QString &key : m_demoAvailabilityConsumedKeys) {
-            if (key.startsWith(prefix)) occupiedKeys.insert(key);
-        }
-        if (state.activeReservation
-            && state.activeReservation->stationId == station.stationId) {
-            occupiedKeys.insert(prefix + state.activeReservation->chargerId);
-        }
-        newlyOccupied = occupiedKeys.size();
-        station.availableCount = qMax(0, station.availableCount - newlyOccupied);
-        station.availabilityText = tr("可用 %1/%2")
-                                       .arg(station.availableCount)
-                                       .arg(qMax(0, station.totalCount));
-    }
     m_mainWindow->renderHome(state);
 }
 

@@ -126,7 +126,6 @@ private:
     QString m_pendingReservationFocusChargerId;
     QSet<QString> m_reservationCancellationLockedAccounts;
     QSet<QString> m_demoChargingChargerKeys;
-    QSet<QString> m_demoAvailabilityConsumedKeys;
     QHash<QString, QString> m_orderChargerKeys;
     QString m_selectedChargingOrderId;
     SettlementViewState m_settlementState;
