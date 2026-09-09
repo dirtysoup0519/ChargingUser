@@ -18,6 +18,8 @@ public:
     void loginByCredentials(const QString &username, const QString &password) override;
     void refreshCurrentUser() override;
     void updateNickname(const QString &nickname) override;
+    void changePassword(const QString &oldPassword,
+                        const QString &newPassword) override;
     void logout() override;
 
     UserSession currentSession() const override;
@@ -27,6 +29,7 @@ private slots:
     void handleLoginSucceeded(const LoginResult &result);
     void handleCurrentUserQuerySucceeded(const UserProfileResult &result);
     void handleNicknameUpdateSucceeded(const UserProfileResult &result);
+    void handlePasswordChangeSucceeded(const OperationResult &result);
     void handleLogoutSucceeded(const OperationResult &result);
     void handleRequestFailed(const ClientError &error);
 
@@ -36,6 +39,7 @@ private:
         Login,
         QueryCurrentUser,
         UpdateNickname,
+        ChangePassword,
         Logout
     };
 
@@ -65,5 +69,6 @@ private:
     QHash<QString, PendingRequest> m_pendingRequests;
     quint64 m_sessionGeneration = 0;
     bool m_profileUpdateResultUnknown = false;
+    bool m_passwordChangeResultUnknown = false;
     QHash<int, UserOperationStatus> m_operationStates;
 };

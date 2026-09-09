@@ -40,6 +40,7 @@ private slots:
     void rejectsNicknameLongerThanTwentyCharacters();
     void rejectsNicknameWithControlCharacters();
     void trimsNicknameBeforeSending();
+    void changesPasswordThroughDedicatedOperation();
 };
 
 void UserModuleTests::initTestCase()
@@ -50,6 +51,27 @@ void UserModuleTests::initTestCase()
     qRegisterMetaType<UserOperation>();
     qRegisterMetaType<UserOperationState>();
     qRegisterMetaType<UserOperationStatus>();
+    qRegisterMetaType<OperationResult>();
+}
+
+void UserModuleTests::changesPasswordThroughDedicatedOperation()
+{
+    MockUserNetworkApi network;
+    LoginResult login;
+    login.session.profile.userId = QStringLiteral("alice");
+    login.session.accountStatus = AccountStatus::Normal;
+    network.setLoginResult(login);
+    UserService service(&network);
+    service.loginByCredentials(QStringLiteral("alice"), QStringLiteral("old123"));
+    QTRY_VERIFY(service.currentSession().authenticated);
+
+    QSignalSpy changed(&service, &IUserService::passwordChanged);
+    service.changePassword(QStringLiteral("old123"), QStringLiteral("new12345"));
+    QCOMPARE(service.operationStatus(UserOperation::ChangePassword).state,
+             UserOperationState::Running);
+    QTRY_COMPARE(changed.count(), 1);
+    QCOMPARE(service.operationStatus(UserOperation::ChangePassword).state,
+             UserOperationState::Idle);
 }
 
 void UserModuleTests::rejectsInvalidPhoneWithoutNetworkRequest()

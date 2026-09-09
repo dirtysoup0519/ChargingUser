@@ -30,6 +30,8 @@ public:
 public slots:
     /* 发起登录：状态进入 LoggingIn；同时开始新的流程生命周期（清空上一账号痕迹） */
     virtual void login(const QString &phone) = 0;
+    virtual void loginByCredentials(const QString &username,
+                                    const QString &password) = 0;
 
     /* 显式保存昵称：草稿随调用更新；结果未知恢复期间不允许调用 */
     virtual void saveNickname(const QString &nickname) = 0;

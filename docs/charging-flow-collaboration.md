@@ -843,3 +843,34 @@ tmp 加载、内存余额扣减、内存设备占用、Demo 密码校验与计�
 伙伴拉取该调整后需清理旧构建目录或至少删除旧 Makefile，再重新运行 qmake；仅增量 make
 会继续沿用旧的重复规则。腾讯地图的 WebEngine/WebChannel 探测位于根 `ChargingUser.pro`，
 与本次去重无关。
+
+## 23. 协议 v2.6 用户密码链路（2026-09-09）
+
+客户端同时保留两种登录方式，禁止用其中一条替换另一条：手机号免密登录继续使用
+`PHONE_LOGIN_REQ(116) → PHONE_LOGIN_ACK(217)`；用户名密码登录使用
+`LOGIN_REQ(101) → LOGIN_ACK(201)`，请求字段为 `username/password/role=user`。201 只保证
+返回 username/role，客户端登录成功后继续通过既有资料查询刷新 phone、nickname、status
+和 balance。302 表示账号或密码错误，仍停留登录页；密码不得写入日志、ViewState 或持久化。
+
+`RealUserNetworkApi` 必须按应答消息号区分 217 与 201。旧实现把 201 先归入手机号登录，
+导致 `CredentialLogin` 在途请求无法匹配并最终超时；现已修正为 217→Phone Login、
+201→Credential Login。`AppFlowCoordinator::loginByCredentials()` 与手机号登录共享后续
+会话刷新和页面分流，但用户名密码失败不缓存密码做自动重试，用户应在保留输入的登录页
+重新提交。
+
+密码修改使用 `PROFILE_UPD_REQ(118) → PROFILE_UPD_ACK(228)`：普通修改发送
+`username/oldPassword/newPassword/requestId/operationId`；手机号免密账户首次设置密码不发送
+oldPassword。服务端 306 + `AUTH_FAIL` 表示旧密码错误，303 + `DUPLICATE` 等业务错误按
+原错误映射展示。成功应答必须满足 `ok=true` 且 username 与当前会话一致；`changed` 可用于
+诊断，但页面不依赖它宣告成功。
+
+密码修改作为独立 `UserOperation::ChangePassword`，与昵称修改共享 118/228 协议但不共享
+业务状态。网络适配层同时只允许一个资料变更请求，优先按 requestId 匹配 228；服务端未
+回显 requestId 时，只回退到唯一在途的昵称或密码变更。断线、超时或损坏的 228 均视为
+结果未知，锁定重复提交并提示用户退出后分别使用新旧密码登录确认。成功修改后清除临时
+旧密码并退出当前会话，要求用新密码重新登录。
+
+UI 的“原密码”步骤仅临时收集输入；v2.6 没有独立的只验证密码接口，因此客户端不能在
+进入新密码页面前声称服务端已验证成功。最终提交新密码时一次性发送 118，由服务端原子
+校验旧密码并修改。手机号首次资料完善则先设置初始密码，228 成功后再走原昵称保存，避免
+两个 118 请求并发。任何密码字符串都不得保存在 PendingRequest、订单数据或 tmp 文件中。

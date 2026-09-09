@@ -16,6 +16,8 @@ UserService::UserService(IUserNetworkApi *networkApi, QObject *parent)
             this, &UserService::handleCurrentUserQuerySucceeded);
     connect(m_networkApi, &IUserNetworkApi::nicknameUpdateSucceeded,
             this, &UserService::handleNicknameUpdateSucceeded);
+    connect(m_networkApi, &IUserNetworkApi::passwordChangeSucceeded,
+            this, &UserService::handlePasswordChangeSucceeded);
     connect(m_networkApi, &IUserNetworkApi::logoutSucceeded,
             this, &UserService::handleLogoutSucceeded);
     connect(m_networkApi, &IUserNetworkApi::requestFailed,
@@ -58,6 +60,11 @@ void UserService::loginByCredentials(const QString &username,
     if (hasPendingRequest(RequestKind::Login)) {
         failLocal(QStringLiteral("request-in-progress"),
                   QStringLiteral("Login is already in progress."));
+        return;
+    }
+    if (hasPendingRequest(RequestKind::Logout)) {
+        failLocal(QStringLiteral("request-in-progress"),
+                  QStringLiteral("Logout is still in progress. Please try again."));
         return;
     }
     const RequestContext context = createContext(true);
@@ -110,7 +117,8 @@ void UserService::updateNickname(const QString &nickname)
         }
         return;
     }
-    if (hasPendingRequest(RequestKind::UpdateNickname)) {
+    if (hasPendingRequest(RequestKind::UpdateNickname)
+        || hasPendingRequest(RequestKind::ChangePassword)) {
         failLocal(QStringLiteral("request-in-progress"),
                   QStringLiteral("Profile update is already in progress."));
         return;
@@ -127,6 +135,41 @@ void UserService::updateNickname(const QString &nickname)
     publishOperationState(RequestKind::UpdateNickname,
                           UserOperationState::Running, context);
     m_networkApi->updateNickname(m_session.profile.userId, trimmed, context);
+}
+
+void UserService::changePassword(const QString &oldPassword,
+                                 const QString &newPassword)
+{
+    if (!m_session.authenticated || m_session.profile.userId.isEmpty()) {
+        failLocal(QStringLiteral("not-authenticated"),
+                  QStringLiteral("No active user session."));
+        return;
+    }
+    if (newPassword.size() < 6) {
+        failLocal(QStringLiteral("invalid-new-password"),
+                  QStringLiteral("New password must contain at least 6 characters."));
+        return;
+    }
+    if (hasPendingRequest(RequestKind::ChangePassword)
+        || hasPendingRequest(RequestKind::UpdateNickname)) {
+        failLocal(QStringLiteral("request-in-progress"),
+                  QStringLiteral("A profile change is already in progress."));
+        return;
+    }
+    if (m_passwordChangeResultUnknown) {
+        failLocal(QStringLiteral("result-unknown-pending"),
+                  QStringLiteral("Previous password change result is unknown. Please sign in again to verify it."));
+        return;
+    }
+
+    const RequestContext context = createContext(true);
+    m_pendingRequests.insert(context.requestId,
+                             {RequestKind::ChangePassword,
+                              m_sessionGeneration, context});
+    publishOperationState(RequestKind::ChangePassword,
+                          UserOperationState::Running, context);
+    m_networkApi->changePassword(m_session.profile.userId, oldPassword,
+                                 newPassword, context);
 }
 
 void UserService::logout()
@@ -176,12 +219,14 @@ void UserService::handleLoginSucceeded(const LoginResult &result)
     // 会抑制默认 Idle 的无效广播，因此首次普通登录仍只有 Login 两次迁移。
     publishOperationState(RequestKind::QueryCurrentUser, UserOperationState::Idle);
     publishOperationState(RequestKind::UpdateNickname, UserOperationState::Idle);
+    publishOperationState(RequestKind::ChangePassword, UserOperationState::Idle);
     publishOperationState(RequestKind::Logout, UserOperationState::Idle);
 
     LoginResult confirmed = result;
     confirmed.session.authenticated = true;
     m_session = confirmed.session;
     m_profileUpdateResultUnknown = false;
+    m_passwordChangeResultUnknown = false;
     publishOperationState(RequestKind::Login, UserOperationState::Idle, pending.context);
     emit sessionChanged(m_session);
     emit loginSucceeded(confirmed);
@@ -249,6 +294,19 @@ void UserService::handleNicknameUpdateSucceeded(const UserProfileResult &result)
     emit nicknameUpdated(result);
 }
 
+void UserService::handlePasswordChangeSucceeded(const OperationResult &result)
+{
+    PendingRequest pending;
+    if (!takePendingRequest(result.requestId, RequestKind::ChangePassword, &pending)
+        || pending.sessionGeneration != m_sessionGeneration) {
+        return;
+    }
+    m_passwordChangeResultUnknown = false;
+    publishOperationState(RequestKind::ChangePassword, UserOperationState::Idle,
+                          pending.context);
+    emit passwordChanged(result);
+}
+
 void UserService::handleLogoutSucceeded(const OperationResult &result)
 {
     PendingRequest pending;
@@ -274,8 +332,13 @@ void UserService::handleRequestFailed(const ClientError &error)
     if (pending.sessionGeneration != m_sessionGeneration) {
         return;
     }
-    if (pending.kind == RequestKind::UpdateNickname && error.resultUnknown) {
-        m_profileUpdateResultUnknown = true;
+    if ((pending.kind == RequestKind::UpdateNickname
+         || pending.kind == RequestKind::ChangePassword)
+        && error.resultUnknown) {
+        if (pending.kind == RequestKind::UpdateNickname)
+            m_profileUpdateResultUnknown = true;
+        else
+            m_passwordChangeResultUnknown = true;
         publishOperationState(pending.kind, UserOperationState::ResultUnknown,
                               RequestContext{error.requestId, error.operationId});
     } else {
@@ -283,6 +346,8 @@ void UserService::handleRequestFailed(const ClientError &error)
                               RequestContext{error.requestId, error.operationId});
     }
 
+    if (pending.kind == RequestKind::ChangePassword)
+        emit passwordChangeFailed(error);
     emit operationFailed(error);
 }
 
@@ -333,6 +398,8 @@ UserOperation UserService::toUserOperation(RequestKind kind) const
         return UserOperation::RefreshProfile;
     case RequestKind::UpdateNickname:
         return UserOperation::UpdateNickname;
+    case RequestKind::ChangePassword:
+        return UserOperation::ChangePassword;
     case RequestKind::Logout:
         return UserOperation::Logout;
     }
@@ -402,10 +469,12 @@ void UserService::clearSession()
     m_pendingRequests.clear();
     m_session = UserSession{};
     m_profileUpdateResultUnknown = false;
+    m_passwordChangeResultUnknown = false;
     // 会话清理后所有操作回到 Idle（第一步规格 §二.5）
     publishOperationState(RequestKind::Login, UserOperationState::Idle);
     publishOperationState(RequestKind::QueryCurrentUser, UserOperationState::Idle);
     publishOperationState(RequestKind::UpdateNickname, UserOperationState::Idle);
+    publishOperationState(RequestKind::ChangePassword, UserOperationState::Idle);
     publishOperationState(RequestKind::Logout, UserOperationState::Idle);
     emit sessionChanged(m_session);
 }

@@ -53,6 +53,7 @@ enum class UserOperation
     Login,
     RefreshProfile,
     UpdateNickname,
+    ChangePassword,
     Logout
 };
 

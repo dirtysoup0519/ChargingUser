@@ -101,6 +101,7 @@ void AppFlowCoordinator::login(const QString &phone)
     m_pendingConfirmNickname.clear();
     m_retryable = Retryable::None;
     m_phone = phone;
+    m_credentialLogin = false;
 
     m_snapshot = UserFlowSnapshot{};
     m_snapshot.state = UserFlowState::LoggingIn;
@@ -114,6 +115,22 @@ void AppFlowCoordinator::login(const QString &phone)
         return;
     }
     m_userService->loginByPhone(phone);
+}
+
+void AppFlowCoordinator::loginByCredentials(const QString &username,
+                                            const QString &password)
+{
+    m_terminated = false;
+    m_newUserFlow = false;
+    m_profileRequired = false;
+    m_pendingConfirmNickname.clear();
+    m_retryable = Retryable::None;
+    m_phone.clear();
+    m_credentialLogin = true;
+    m_snapshot = UserFlowSnapshot{};
+    m_snapshot.state = UserFlowState::LoggingIn;
+    publishFlow();
+    m_userService->loginByCredentials(username, password);
 }
 
 /* 排队登录的执行入口：Logout 已到终态，重新走 login() 统一生命周期 */
@@ -191,6 +208,7 @@ void AppFlowCoordinator::logout()
     m_retryable = Retryable::None;
     m_phone.clear();
     m_pendingLoginPhone.clear();   // 退出会终止排队中的登录（评审 P1-2）
+    m_credentialLogin = false;
 
     m_snapshot = UserFlowSnapshot{};   // 回到 SignedOut + Login 起点
     publishFlow();
@@ -350,7 +368,7 @@ void AppFlowCoordinator::handleOperationFailed(const ClientError &error)
 
     if (m_snapshot.state == UserFlowState::LoggingIn) {
         // 登录失败：可 retry()（规格 §7）
-        m_retryable = Retryable::Login;
+        m_retryable = m_credentialLogin ? Retryable::None : Retryable::Login;
         m_snapshot.state = UserFlowState::Error;
         m_snapshot.target = NavigationTarget::Login;
         publishFlow();
