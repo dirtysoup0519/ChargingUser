@@ -56,12 +56,6 @@ ProfileEditWindow::ProfileEditWindow(QWidget *parent)
     ui->formLayout->addWidget(m_confirmPasswordLabel);
     ui->formLayout->addWidget(m_confirmPasswordEdit);
     ui->formLayout->addWidget(m_changePasswordButton);
-    // 密码设置/修改暂不属于客户端产品流程，Demo 与正式入口均隐藏。
-    m_newPasswordLabel->hide();
-    m_newPasswordEdit->hide();
-    m_confirmPasswordLabel->hide();
-    m_confirmPasswordEdit->hide();
-    m_changePasswordButton->hide();
     connect(ui->backButton, &QPushButton::clicked,
             this, &ProfileEditWindow::backRequested);
     connect(ui->saveButton, &QPushButton::clicked,
@@ -96,11 +90,11 @@ void ProfileEditWindow::setEditMode(ProfileEditMode mode, const QString &usernam
     ui->hintLabel2->setText(usernameSetup
                                 ? tr("首次使用用户名登录必须绑定手机号")
                                 : tr("手机号码来自登录账号，暂不支持在此修改"));
-    m_newPasswordLabel->hide();
-    m_newPasswordEdit->hide();
-    m_confirmPasswordLabel->hide();
-    m_confirmPasswordEdit->hide();
-    m_changePasswordButton->hide();
+    m_newPasswordLabel->setVisible(phoneSetup);
+    m_newPasswordEdit->setVisible(phoneSetup);
+    m_confirmPasswordLabel->setVisible(phoneSetup);
+    m_confirmPasswordEdit->setVisible(phoneSetup);
+    m_changePasswordButton->setVisible(existing);
     ui->avatarLabel->setVisible(existing);
     ui->avatarButton->setVisible(existing);
 }
@@ -147,6 +141,14 @@ void ProfileEditWindow::submitCurrentInput()
         ui->errorLabel->show();
         return;
     }
-    // 服务端兼容字段仍由 Binder/API 处理；此入口不再要求或采集密码。
-    emit profileCompletionRequested(nickname, phone, QString());
+    const QString password = m_newPasswordEdit->text();
+    if (m_mode == ProfileEditMode::PhoneFirstSetup
+        && (password.size() < 6 || password != m_confirmPasswordEdit->text())) {
+        ui->errorLabel->setText(password.size() < 6
+                                    ? tr("新密码至少需要 6 位")
+                                    : tr("两次输入的密码不一致"));
+        ui->errorLabel->show();
+        return;
+    }
+    emit profileCompletionRequested(nickname, phone, password);
 }

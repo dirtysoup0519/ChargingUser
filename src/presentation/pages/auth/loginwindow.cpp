@@ -100,10 +100,6 @@ LoginWindow::LoginWindow(QWidget *parent) : QWidget(parent), ui(new Ui::LoginWin
     m_loginModeButton->setStyleSheet(QStringLiteral(
         "border:none;background:transparent;color:#1677FF;font-size:12px;text-align:left;padding:7px 2px;"));
     ui->rootLayout->insertWidget(accountFieldIndex + 2, m_loginModeButton);
-    // 产品界面统一使用手机号免密登录；用户名/密码入口保留接口兼容，但不呈现。
-    m_loginModeButton->hide();
-    m_passwordEdit->hide();
-    m_usernameLogin = false;
     m_legalPage = new LegalDocumentPage(this);
     m_legalPage->setGeometry(rect());
     m_legalPage->hide();
@@ -214,5 +210,14 @@ void LoginWindow::submitCurrentInput()
         return;
     }
     const QString account = ui->editPhoneNumber->text().trimmed();
-    emit loginRequested(account);
+    if (m_usernameLogin) {
+        if (account.isEmpty() || m_passwordEdit->text().isEmpty()) {
+            ui->errorLabel->setText(tr("请输入用户名和密码"));
+            ui->errorLabel->show();
+            return;
+        }
+        emit usernamePasswordLoginRequested(account, m_passwordEdit->text());
+    } else {
+        emit loginRequested(account);
+    }
 }
