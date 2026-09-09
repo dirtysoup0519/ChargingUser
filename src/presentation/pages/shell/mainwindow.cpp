@@ -256,6 +256,14 @@ void MainWindow::renderHome(const HomeMapViewState &state)
         showStationState = true;
         showStationRetry = state.canRetryStations;
     }
+    // Keep the station toolbar visible after a successful load so the user can
+    // manually refresh without first waiting for an error state.
+    if (!state.stations.isEmpty()) {
+        showStationState = true;
+        if (stationStateMessage.isEmpty())
+            stationStateMessage = tr("附近充电站");
+        stationStateKind = QStringLiteral("ready");
+    }
     ui->stationStateBar->setProperty("state", stationStateKind);
     ui->stationStateLabel->setText(stationStateMessage);
     ui->stationRetryButton->setText(state.stationsStatus == MapLoadStatus::Loading
