@@ -32,9 +32,15 @@ ChargeConfirmationViewState ChargingUiBinder::currentState() const
     return m_state;
 }
 
+void ChargingUiBinder::setReservationActive(bool active)
+{
+    m_reservationActive = active;
+}
+
 void ChargingUiBinder::chargeConfirmationRequested(const QString &stationId,
                                                     const QString &chargerId)
 {
+    if (m_reservationActive) return;
     if (stationId.trimmed().isEmpty() || chargerId.trimmed().isEmpty())
         return;
     if (!m_requestId.isEmpty()) {
@@ -51,6 +57,7 @@ void ChargingUiBinder::chargeConfirmationRequested(const QString &stationId,
 void ChargingUiBinder::chargeConfirmationByChargerCodeRequested(
     const QString &chargerCode)
 {
+    if (m_reservationActive) return;
     const QString normalized = chargerCode.trimmed();
     if (normalized.isEmpty()) return;
     if (!m_requestId.isEmpty()) {

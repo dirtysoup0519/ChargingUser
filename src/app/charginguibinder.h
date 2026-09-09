@@ -14,6 +14,7 @@ public:
     explicit ChargingUiBinder(IChargingService *service,
                               QObject *parent = nullptr);
     ChargeConfirmationViewState currentState() const override;
+    void setReservationActive(bool active);
 
 public slots:
     void chargeConfirmationRequested(const QString &stationId,
@@ -45,4 +46,5 @@ private:
     ChargeConfirmationViewState m_state;
     QString m_requestId;
     QString m_operationId;
+    bool m_reservationActive = false;
 };

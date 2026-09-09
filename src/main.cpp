@@ -483,6 +483,7 @@ int main(int argc, char *argv[])
         if (!activeUserId.isEmpty())
             reservationStore.remove(QStringLiteral("reservation/%1").arg(activeUserId));
         activeReservation.reset();
+        chargeBinder.setReservationActive(false);
         mapBinder.setActiveReservation(std::nullopt);
     };
     const auto restoreReservation = [&](const QString &userId) {
@@ -502,6 +503,7 @@ int main(int argc, char *argv[])
             activeReservation = view;
         }
         mapBinder.setActiveReservation(activeReservation);
+        chargeBinder.setReservationActive(activeReservation.has_value());
     };
     const auto clearExpiredReservation = [&] {
         if (activeReservation && activeReservation->expiresAtUtc.isValid()
@@ -1496,6 +1498,7 @@ int main(int argc, char *argv[])
             ? QStringLiteral("预约已生效，截止 %1").arg(result.expiresAtUtc.toLocalTime().toString(QStringLiteral("MM-dd HH:mm")))
             : QStringLiteral("预约已生效");
         activeReservation = view;
+        chargeBinder.setReservationActive(true);
         if (!activeUserId.isEmpty()) {
             reservationStore.beginGroup(QStringLiteral("reservation/%1").arg(activeUserId));
             reservationStore.setValue(QStringLiteral("id"), view.reservationId);
@@ -1511,6 +1514,7 @@ int main(int argc, char *argv[])
         if (activeReservation && (reservationId.isEmpty()
                                    || reservationId == activeReservation->reservationId)) {
             clearReservation();
+            chargeBinder.setReservationActive(false);
             QMessageBox::information(&mainWindow, QStringLiteral("预约已过期"),
                                      QStringLiteral("您的预约已失效，可以重新选择充电桩。"));
         }
