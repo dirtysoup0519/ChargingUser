@@ -60,6 +60,7 @@
 #include <QJsonObject>
 #include <QJsonParseError>
 #include <QMessageBox>
+#include <QSettings>
 #include <QImage>
 #include <QUrlQuery>
 #include <QRegularExpression>
@@ -476,6 +477,32 @@ int main(int argc, char *argv[])
     ScanEntryPoint scanEntryPoint = ScanEntryPoint::PrimaryCharging;
     bool confirmationOpenedFromScanner = false;
     std::optional<ActiveReservationView> activeReservation;
+    QString activeUserId;
+    QSettings reservationStore(QStringLiteral("ChargingUser"), QStringLiteral("ChargingUser"));
+    const auto clearReservation = [&] {
+        if (!activeUserId.isEmpty())
+            reservationStore.remove(QStringLiteral("reservation/%1").arg(activeUserId));
+        activeReservation.reset();
+        mapBinder.setActiveReservation(std::nullopt);
+    };
+    const auto restoreReservation = [&](const QString &userId) {
+        activeUserId = userId.trimmed();
+        activeReservation.reset();
+        reservationStore.beginGroup(QStringLiteral("reservation/%1").arg(activeUserId));
+        ActiveReservationView view;
+        view.reservationId = reservationStore.value(QStringLiteral("id")).toString();
+        view.stationId = reservationStore.value(QStringLiteral("station")).toString();
+        view.chargerId = reservationStore.value(QStringLiteral("charger")).toString();
+        view.expiresAtUtc = QDateTime::fromMSecsSinceEpoch(reservationStore.value(QStringLiteral("expires")).toLongLong(), Qt::UTC);
+        reservationStore.endGroup();
+        if (!view.stationId.isEmpty() && !view.chargerId.isEmpty()
+            && (!view.expiresAtUtc.isValid() || view.expiresAtUtc > QDateTime::currentDateTimeUtc())) {
+            view.canCancel = true;
+            view.remainingText = QStringLiteral("预约已恢复");
+            activeReservation = view;
+        }
+        mapBinder.setActiveReservation(activeReservation);
+    };
     const auto clearExpiredReservation = [&] {
         if (activeReservation && activeReservation->expiresAtUtc.isValid()
             && activeReservation->expiresAtUtc <= QDateTime::currentDateTimeUtc()) {
@@ -1299,12 +1326,23 @@ int main(int argc, char *argv[])
         walletNetwork.setIdentity(result.session.profile.userId);
         chargingNetwork.setIdentity(result.session.profile.userId);
         reservationService.setIdentity(result.session.profile.userId);
+        restoreReservation(result.session.profile.userId);
         pushDispatcher.setIdentity(result.session.profile.userId);
         walletBinder.setAccountId(result.session.profile.userId);
         walletBinder.activate();
         RequestContext recoveryContext{
             QUuid::createUuid().toString(QUuid::WithoutBraces), {}};
         orderService.queryActiveOrder(recoveryContext);
+    });
+    QObject::connect(userService, &IUserService::logoutSucceeded,
+                     &app, [&](const OperationResult &) {
+        clearReservation();
+        activeUserId.clear();
+        orderService.setIdentity(QString());
+        walletNetwork.setIdentity(QString());
+        chargingNetwork.setIdentity(QString());
+        reservationService.setIdentity(QString());
+        pushDispatcher.setIdentity(QString());
     });
     // 活动订单存在时交由会话 Binder 拉取详情；待支付订单直达结算页（合同 §3.4）。
     QObject::connect(&orderService, &IOrderService::activeOrderReady,
@@ -1458,7 +1496,24 @@ int main(int argc, char *argv[])
             ? QStringLiteral("预约已生效，截止 %1").arg(result.expiresAtUtc.toLocalTime().toString(QStringLiteral("MM-dd HH:mm")))
             : QStringLiteral("预约已生效");
         activeReservation = view;
+        if (!activeUserId.isEmpty()) {
+            reservationStore.beginGroup(QStringLiteral("reservation/%1").arg(activeUserId));
+            reservationStore.setValue(QStringLiteral("id"), view.reservationId);
+            reservationStore.setValue(QStringLiteral("station"), view.stationId);
+            reservationStore.setValue(QStringLiteral("charger"), view.chargerId);
+            reservationStore.setValue(QStringLiteral("expires"), view.expiresAtUtc.toMSecsSinceEpoch());
+            reservationStore.endGroup();
+        }
         mapBinder.setActiveReservation(activeReservation);
+    });
+    QObject::connect(&pushDispatcher, &ServerPushDispatcher::reservationExpired,
+                     &app, [&](const QString &reservationId, const QString &) {
+        if (activeReservation && (reservationId.isEmpty()
+                                   || reservationId == activeReservation->reservationId)) {
+            clearReservation();
+            QMessageBox::information(&mainWindow, QStringLiteral("预约已过期"),
+                                     QStringLiteral("您的预约已失效，可以重新选择充电桩。"));
+        }
     });
     QObject::connect(&reservationBinder, &ReservationUiBinder::stateChanged,
                      &reservationConfirmation, &ReservationConfirmationWindow::render);
