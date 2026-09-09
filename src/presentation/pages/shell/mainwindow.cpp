@@ -109,7 +109,7 @@ MainWindow::MainWindow(QWidget *parent) : QWidget(parent), ui(new Ui::MainWindow
     connect(ui->searchRetryButton, &QPushButton::clicked,
             this, &MainWindow::stationSearchRetryRequested);
     connect(ui->stationRetryButton, &QPushButton::clicked,
-            this, &MainWindow::stationSearchRetryRequested);
+            this, &MainWindow::stationRefreshRequested);
     connect(ui->stationSortCombo,
             QOverload<int>::of(&QComboBox::currentIndexChanged),
             this, [this](int index) {
@@ -258,7 +258,10 @@ void MainWindow::renderHome(const HomeMapViewState &state)
     }
     ui->stationStateBar->setProperty("state", stationStateKind);
     ui->stationStateLabel->setText(stationStateMessage);
-    ui->stationRetryButton->setVisible(showStationRetry);
+    ui->stationRetryButton->setText(state.stationsStatus == MapLoadStatus::Loading
+                                        ? tr("刷新中…") : tr("刷新"));
+    ui->stationRetryButton->setEnabled(state.stationsStatus != MapLoadStatus::Loading);
+    ui->stationRetryButton->setVisible(showStationState || !state.stations.isEmpty());
     ui->stationStateBar->setVisible(showStationState);
     ui->stationStateBar->style()->unpolish(ui->stationStateBar);
     ui->stationStateBar->style()->polish(ui->stationStateBar);

@@ -5,6 +5,7 @@
 
 #include <QMetaType>
 #include <QUuid>
+#include <QTimer>
 
 #include <algorithm>
 #include <limits>
@@ -105,6 +106,11 @@ MapUiBinder::MapUiBinder(IChargerService *chargerService,
 {
     Q_ASSERT(m_chargerService);
     Q_ASSERT(m_mapService);
+
+    m_autoRefreshTimer = new QTimer(this);
+    m_autoRefreshTimer->setInterval(15000);
+    connect(m_autoRefreshTimer, &QTimer::timeout,
+            this, &MapUiBinder::autoRefresh);
 
     qRegisterMetaType<HomeMapViewState>();
     qRegisterMetaType<StationDetailViewState>();
@@ -220,6 +226,7 @@ NavigationViewState MapUiBinder::currentNavigationState() const
 void MapUiBinder::activateHome()
 {
     m_currentPage = MapPageTarget::Home;
+    m_autoRefreshTimer->start();
     emit pageRequested(MapPageTarget::Home, m_home.selectedStationId);
     publishHome();
     if (!m_home.currentLocation && m_locationRequestId.isEmpty()
@@ -349,17 +356,36 @@ void MapUiBinder::stationDetailsRequested(const QString &stationId)
         return;
     }
     m_currentPage = MapPageTarget::StationDetail;
+    m_autoRefreshTimer->start();
     startDetailQuery(stationId, false);
     emit pageRequested(MapPageTarget::StationDetail, stationId);
 }
 
 void MapUiBinder::stationRefreshRequested()
 {
+    if (m_currentPage == MapPageTarget::Home) {
+        if (m_lastStationQuery && m_stationsRequestId.isEmpty())
+            startStationQuery(*m_lastStationQuery);
+        return;
+    }
     if (m_detail.stationId.isEmpty()
         || m_detail.status == MapLoadStatus::Loading) {
         return;
     }
     startDetailQuery(m_detail.stationId, true);
+}
+
+void MapUiBinder::autoRefresh()
+{
+    if (m_currentPage == MapPageTarget::Home) {
+        if (m_lastStationQuery && m_stationsRequestId.isEmpty())
+            startStationQuery(*m_lastStationQuery);
+    } else if (m_currentPage == MapPageTarget::StationDetail) {
+        if (!m_detail.stationId.isEmpty() && m_detailRequestId.isEmpty())
+            startDetailQuery(m_detail.stationId, true);
+    } else {
+        m_autoRefreshTimer->stop();
+    }
 }
 
 void MapUiBinder::chargerSelected(const QString &chargerId)

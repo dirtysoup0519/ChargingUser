@@ -10,6 +10,7 @@
 
 class IChargerService;
 class IMapService;
+class QTimer;
 
 /**
  * 地图、站点详情与路线预览的应用编排器。
@@ -59,6 +60,7 @@ public slots:
     void backRequested() override;
 
 private slots:
+    void autoRefresh();
     void handleStationsReady(const RequestContext &context,
                              const StationPage &page);
     void handleStationDetailReady(const RequestContext &context,
@@ -102,4 +104,5 @@ private:
     QString m_geocodeRequestId;
     QString m_routeRequestId;
     quint64 m_cameraRevision = 0;
+    QTimer *m_autoRefreshTimer = nullptr;
 };

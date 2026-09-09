@@ -44,6 +44,7 @@ signals:
     void locateRequested();
     void stationSearchRequested(const QString &keyword);
     void stationSearchRetryRequested();
+    void stationRefreshRequested();
     void stationSearchCleared();
     void searchAreaRequested(const GeoBounds &bounds);
     void stationSelected(const QString &stationId);

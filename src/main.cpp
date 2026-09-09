@@ -1104,6 +1104,8 @@ int main(int argc, char *argv[])
                      &mapBinder, &IMapUiBinder::backRequested);
     QObject::connect(&stationDetail, &StationDetailWindow::stationRefreshRequested,
                      &mapBinder, &IMapUiBinder::stationRefreshRequested);
+    QObject::connect(&mainWindow, &MainWindow::stationRefreshRequested,
+                     &mapBinder, &IMapUiBinder::stationRefreshRequested);
     QObject::connect(&stationDetail, &StationDetailWindow::routePreviewRequested,
                      &mapBinder, &IMapUiBinder::routePreviewRequested);
     QObject::connect(&navigation, &NavigationWindow::backRequested,
@@ -1191,6 +1193,8 @@ int main(int argc, char *argv[])
     QObject::connect(&mainWindow, &MainWindow::ordersPageRequested,
                      &app, [&] {
         orderListOpen = true;
+        orderListLoadingHint = false;
+        orderListErrorText.clear();
         orderList.resetFilter();
         orderListBaseState = OrderListViewState{
             {}, QStringLiteral("正在加载订单、预约和钱包流水…")};
@@ -1200,8 +1204,9 @@ int main(int argc, char *argv[])
         orderService.queryOrderHistory({orderListRequestId, {}});
         reservationHistory.clear();
         walletBinder.activate();
-        reservationService.queryHistory(
-            {QUuid::createUuid().toString(QUuid::WithoutBraces), {}});
+        orderListReservationRequestId =
+            QUuid::createUuid().toString(QUuid::WithoutBraces);
+        reservationService.queryHistory({orderListReservationRequestId, {}});
     });
     const auto showProfileNotice = [&](const QString &title, const QString &text) {
         QMessageBox::information(&mainWindow, title, text);
@@ -1305,11 +1310,61 @@ int main(int argc, char *argv[])
             item.actionText = QStringLiteral("查看详情");
             state.orders.append(item);
         }
+        // 服务端可能无法返回预约历史（未知表）；本地已知的进行中预约
+        // 仍按预约订单展示，避免用户看不到自己的预约。
+        if (activeReservation && !activeReservation->reservationId.isEmpty()) {
+            const QString activeId = activeReservation->reservationId;
+            const bool alreadyListed = std::any_of(
+                state.orders.begin(), state.orders.end(),
+                [&](const OrderListItemView &order) {
+                    return order.type == OrderBusinessType::Reservation
+                           && order.businessId == activeId;
+                });
+            if (!alreadyListed) {
+                OrderListItemView item;
+                item.businessId = activeId;
+                item.type = OrderBusinessType::Reservation;
+                item.stationName = activeReservation->stationId;
+                item.chargerCode = activeReservation->chargerId;
+                item.createdAtText = activeReservation->expiresAtUtc.isValid()
+                    ? activeReservation->expiresAtUtc.toLocalTime().toString(Qt::ISODate)
+                    : QStringLiteral("时间未知");
+                item.amountText = QStringLiteral("¥%1").arg(
+                    RESERVE_DEPOSIT_CENTS / 100.0, 0, 'f', 2);
+                item.statusText = QStringLiteral("预约中");
+                item.statusTone = QStringLiteral("warning");
+                item.summaryText = QStringLiteral("预约充电桩 %1").arg(item.chargerCode);
+                item.action = OrderListAction::ViewDetails;
+                item.actionText = QStringLiteral("查看详情");
+                state.orders.append(item);
+            }
+        }
         std::sort(state.orders.begin(), state.orders.end(),
                   [](const OrderListItemView &left, const OrderListItemView &right) {
             return left.createdAtText > right.createdAtText;
         });
         return state;
+    };
+    const auto renderOrderList = [&] {
+        if (!orderListOpen) return;
+        OrderListViewState state = appendRechargeOrders(orderListBaseState);
+        const bool walletBusy =
+            walletBinder.currentState().status == WalletPageStatus::Loading;
+        const bool pending = !orderListRequestId.isEmpty()
+                             || !orderListReservationRequestId.isEmpty()
+                             || walletBusy;
+        if (pending) {
+            state.message = orderListLoadingHint
+                ? QStringLiteral("正在刷新订单、预约和钱包流水…")
+                : QStringLiteral("正在加载订单、预约和钱包流水…");
+        } else if (!orderListErrorText.isEmpty()) {
+            state.message = QStringLiteral("%1，点击右上角刷新重试。")
+                                .arg(orderListErrorText);
+            state.messageIsError = true;
+        } else if (state.orders.isEmpty()) {
+            state.message = QStringLiteral("暂无订单");
+        }
+        orderList.render(state);
     };
     const auto orderItemDetailState = [](const OrderListItemView &order) {
         OrderDetailViewState detail;
@@ -1406,13 +1461,13 @@ int main(int argc, char *argv[])
             state.orders.append(item);
         }
         orderListBaseState = state;
-        state = appendRechargeOrders(state);
-        state.message = state.orders.isEmpty() ? QStringLiteral("暂无订单") : QString();
-        if (orderListOpen) orderList.render(state);
+        renderOrderList();
         if (frequentStationsOpen) renderFrequentStations();
     };
     QObject::connect(&reservationService, &IReservationService::reservationHistoryReady,
-                     &app, [&](const RequestContext &, const QVector<ReservationHistoryItem> &items) {
+                     &app, [&](const RequestContext &context, const QVector<ReservationHistoryItem> &items) {
+        if (context.requestId == orderListReservationRequestId)
+            orderListReservationRequestId.clear();
         reservationHistory = items;
         // 本地缓存可能因换机器/清理配置而缺失；登录后以服务端 reservation
         // 表中的 Active 记录校准预约状态，确保扫码/启动错误提示使用真实预约。
@@ -1432,7 +1487,17 @@ int main(int argc, char *argv[])
                 break;
             }
         }
-        if (orderListOpen) orderList.render(appendRechargeOrders(orderListBaseState));
+        if (orderListOpen) renderOrderList();
+    });
+    QObject::connect(&reservationService, &IReservationService::requestFailed,
+                     &app, [&](const ClientError &error) {
+        if (error.requestId != orderListReservationRequestId) return;
+        orderListReservationRequestId.clear();
+        if (orderListOpen) {
+            orderListErrorText = error.displayMessage.isEmpty()
+                ? QStringLiteral("预约历史加载失败") : error.displayMessage;
+            renderOrderList();
+        }
     });
     QObject::connect(&orderService, &IOrderService::activeOrdersReady,
                      &app, [&](const RequestContext &, const QVector<ChargingOrder> &orders) {
@@ -1476,25 +1541,35 @@ int main(int argc, char *argv[])
         orderListOpen = false;
         if (!orderListRequestId.isEmpty()) orderService.cancel(orderListRequestId);
         orderListRequestId.clear();
+        if (!orderListReservationRequestId.isEmpty())
+            reservationService.cancel(orderListReservationRequestId);
+        orderListReservationRequestId.clear();
         mainWindow.renderPrimaryPage(MainWindow::PrimaryPage::Profile);
     });
     QObject::connect(&walletBinder, &WalletUiBinder::stateChanged,
                      &app, [&](const WalletViewState &wallet) {
         if (!orderListOpen) return;
-        Q_UNUSED(wallet);
-        orderList.render(appendRechargeOrders(orderListBaseState));
+        if (wallet.status == WalletPageStatus::Error
+            || wallet.status == WalletPageStatus::ResultUnknown) {
+            orderListErrorText = wallet.message.isEmpty()
+                ? QStringLiteral("钱包数据加载失败") : wallet.message;
+        }
+        renderOrderList();
     });
     QObject::connect(&orderList, &OrderListWindow::refreshRequested,
                      &app, [&] {
-        if (!orderListRequestId.isEmpty()) return;
-        orderListBaseState.message = QStringLiteral("正在刷新订单、预约和钱包流水…");
-        orderList.render(appendRechargeOrders(orderListBaseState));
+        if (!orderListRequestId.isEmpty()
+            || !orderListReservationRequestId.isEmpty()) return;
+        orderListLoadingHint = true;
+        orderListErrorText.clear();
         orderListRequestId = QUuid::createUuid().toString(QUuid::WithoutBraces);
         orderService.queryOrderHistory({orderListRequestId, {}});
         reservationHistory.clear();
         walletBinder.activate();
-        reservationService.queryHistory(
-            {QUuid::createUuid().toString(QUuid::WithoutBraces), {}});
+        orderListReservationRequestId =
+            QUuid::createUuid().toString(QUuid::WithoutBraces);
+        reservationService.queryHistory({orderListReservationRequestId, {}});
+        renderOrderList();
     });
     const auto handleOrderAction = [&](const QString &orderId,
                                        OrderBusinessType type,
@@ -1509,7 +1584,7 @@ int main(int argc, char *argv[])
             const QString activeOrderId = cached && !cached->relatedBusinessId.isEmpty()
                                               ? cached->relatedBusinessId : orderId;
             sessionBinder.sessionRequested(activeOrderId);
-            mainWindow.renderSecondaryPage(&sessionWindow);
+            mainWindow.renderPrimaryPage(MainWindow::PrimaryPage::Charging);
             return;
         }
         if (type != OrderBusinessType::Charging) {
@@ -1564,7 +1639,7 @@ int main(int argc, char *argv[])
         pendingOrderDetailRequestId.clear();
         pendingOrderDetailOrderId.clear();
         pendingOrderDetailDestination = OrderDetailDestination::None;
-        orderList.render(appendRechargeOrders(orderListBaseState));
+        renderOrderList();
         mainWindow.renderSecondaryPage(&orderList);
     });
     QObject::connect(&walletRecharge, &WalletRechargeWindow::backRequested,
@@ -1801,8 +1876,9 @@ int main(int argc, char *argv[])
             settlementOpenedFromOrderList = false;
             mainWindow.renderSecondaryPage(&orderList);
         } else {
-            sessionWindow.render(sessionBinder.currentState());
-            mainWindow.renderSecondaryPage(&sessionWindow);
+            sessionBinder.clearSession();
+            mainWindow.renderPrimaryPage(MainWindow::PrimaryPage::Home);
+            mapBinder.activateHome();
         }
     });
     QObject::connect(&settlementBinder, &SettlementUiBinder::orderRefreshRequested,
@@ -1897,7 +1973,7 @@ int main(int argc, char *argv[])
         }
         if (order.status == OrderStatus::Charging) {
             sessionBinder.showOrder(order);
-            mainWindow.renderSecondaryPage(&sessionWindow);
+            mainWindow.renderPrimaryPage(MainWindow::PrimaryPage::Charging);
         } else {
             settlementBinder.showOrder(order);
             mainWindow.renderSecondaryPage(&settlementWindow);
@@ -1908,11 +1984,9 @@ int main(int argc, char *argv[])
         if (error.requestId == orderListRequestId) {
             orderListRequestId.clear();
             if (orderListOpen) {
-                OrderListViewState state = appendRechargeOrders(orderListBaseState);
-                state.message = error.displayMessage.isEmpty()
-                                    ? QStringLiteral("订单加载失败，请点击刷新重试。")
-                                    : error.displayMessage;
-                orderList.render(state);
+                orderListErrorText = error.displayMessage.isEmpty()
+                    ? QStringLiteral("订单加载失败") : error.displayMessage;
+                renderOrderList();
             }
             return;
         }
