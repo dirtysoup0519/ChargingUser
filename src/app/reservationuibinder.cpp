@@ -135,6 +135,10 @@ void ReservationUiBinder::handleCreated(const RequestContext &context,
     active.stationId = result.stationId.isEmpty() ? m_state.stationId : result.stationId;
     active.chargerId = result.chargerId.isEmpty() ? m_state.chargerId : result.chargerId;
     active.expiresAtUtc = result.expiresAtUtc;
+    active.remainingText = result.expiresAtUtc.isValid()
+        ? QStringLiteral("预约已生效，截止 %1")
+              .arg(result.expiresAtUtc.toLocalTime().toString(QStringLiteral("MM-dd HH:mm")))
+        : QStringLiteral("预约已生效");
     active.canCancel = true;
     m_activeReservation = active;
     emit activeReservationChanged(m_activeReservation);
