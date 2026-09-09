@@ -77,7 +77,7 @@ private slots:
         QCOMPARE(network.resultQueryCalls, 1);
     }
 
-    void mockSupportsReadOnlyDataAndNeverFakesMoneyMutation()
+    void mockSupportsWalletMutationsThroughServiceContract()
     {
         MockWalletService service;
         WalletSnapshot snapshot;
@@ -91,8 +91,10 @@ private slots:
         QTRY_COMPARE(ready.count(), 1);
         QCOMPARE(ready.first().at(1).value<WalletSnapshot>().balanceCents, 1234);
         service.recharge({QStringLiteral("recharge-1"), QStringLiteral("op-1")}, 1000);
-        QCOMPARE(failed.count(), 1);
-        QCOMPARE(succeeded.count(), 0);
+        QTRY_COMPARE(succeeded.count(), 1);
+        QCOMPARE(failed.count(), 0);
+        QCOMPARE(succeeded.first().at(1).value<MoneyOperationResult>().balanceCents,
+                 2234);
     }
 
     void binderRejectsInvalidAmountAndRefreshesAfterRecharge()
