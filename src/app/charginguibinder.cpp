@@ -1,6 +1,7 @@
 #include "app/charginguibinder.h"
 
 #include "modules/charging/ichargingservice.h"
+#include "protocol.h"
 
 #include <QUuid>
 
@@ -59,17 +60,48 @@ void ChargingUiBinder::setReservationChargerCode(const QString &chargerCode)
     }
 }
 
+bool ChargingUiBinder::matchesReservationCharger(const QString &chargerCode) const
+{
+    const QString reserved = m_reservationChargerCode.trimmed();
+    const QString scanned = chargerCode.trimmed();
+    if (reserved.isEmpty() || scanned.isEmpty())
+        return false;
+    if (reserved.compare(scanned, Qt::CaseInsensitive) == 0)
+        return true;
+
+    // 预约记录有时只保存桩号（如“05”），二维码则是完整设备编码
+    // （如“TC-0GCM1-05”）。两者末尾的数字桩号一致时视为同一桩。
+    const auto tailNumber = [](const QString &value) {
+        int begin = value.size();
+        while (begin > 0 && value.at(begin - 1).isDigit())
+            --begin;
+        bool ok = false;
+        const int number = value.mid(begin).toInt(&ok);
+        return ok ? number : -1;
+    };
+    const int reservedNumber = tailNumber(reserved);
+    const int scannedNumber = tailNumber(scanned);
+    return reservedNumber >= 0 && scannedNumber >= 0
+           && reservedNumber == scannedNumber;
+}
+
+void ChargingUiBinder::showReservationChargerError(const QString &chargerCode)
+{
+    m_state = ChargeConfirmationViewState{};
+    m_state.chargerId = chargerCode.trimmed();
+    m_state.status = ChargeConfirmationStatus::Error;
+    m_state.canStart = false;
+    m_state.message = QStringLiteral("当前账号已有预约，请前往预约充电桩。");
+    m_state.disabledReason = m_state.message;
+    emit confirmationPageRequested();
+    publish();
+}
+
 void ChargingUiBinder::chargeConfirmationRequested(const QString &stationId,
                                                     const QString &chargerId)
 {
-    if (m_reservationActive
-        && (m_reservationChargerCode.isEmpty()
-            || m_reservationChargerCode.compare(chargerId, Qt::CaseInsensitive) != 0)) {
-        m_state.status = ChargeConfirmationStatus::Error;
-        m_state.canStart = false;
-        m_state.message = QStringLiteral("当前账号已有预约，请前往预约充电桩。");
-        m_state.disabledReason = m_state.message;
-        publish();
+    if (m_reservationActive && !matchesReservationCharger(chargerId)) {
+        showReservationChargerError(chargerId);
         return;
     }
     if (stationId.trimmed().isEmpty() || chargerId.trimmed().isEmpty())
@@ -88,14 +120,8 @@ void ChargingUiBinder::chargeConfirmationRequested(const QString &stationId,
 void ChargingUiBinder::chargeConfirmationByChargerCodeRequested(
     const QString &chargerCode)
 {
-    if (m_reservationActive
-        && (m_reservationChargerCode.isEmpty()
-            || m_reservationChargerCode.compare(chargerCode, Qt::CaseInsensitive) != 0)) {
-        m_state.status = ChargeConfirmationStatus::Error;
-        m_state.canStart = false;
-        m_state.message = QStringLiteral("当前账号已有预约，请前往预约充电桩。");
-        m_state.disabledReason = m_state.message;
-        publish();
+    if (m_reservationActive && !matchesReservationCharger(chargerCode)) {
+        showReservationChargerError(chargerCode);
         return;
     }
     const QString normalized = chargerCode.trimmed();
@@ -182,13 +208,18 @@ void ChargingUiBinder::handleConfirmationReady(
     m_state.powerText = snapshot.powerKw
                             ? QStringLiteral("%1 kW").arg(*snapshot.powerKw, 0, 'f', 1)
                             : QStringLiteral("功率未知");
-    m_state.chargerStatusText = snapshot.canStart
-                                    ? QStringLiteral("空闲")
-                                    : QStringLiteral("不可启动");
+    const bool reservedForCurrentUser = m_reservationActive
+                                        && matchesReservationCharger(snapshot.chargerId)
+                                        && snapshot.businessStatus == CHARGER_RESERVED;
+    const bool canStartReservedCharger = snapshot.canStart || reservedForCurrentUser;
+    m_state.chargerStatusText = reservedForCurrentUser
+                                    ? QStringLiteral("已预约")
+                                    : snapshot.canStart ? QStringLiteral("空闲")
+                                                        : QStringLiteral("不可启动");
     m_state.energyPriceText = moneyText(snapshot.priceCentsPerKwh)
                               + QStringLiteral("/kWh");
     m_state.walletBalanceText = moneyText(snapshot.walletBalanceCents);
-    m_state.canStart = snapshot.canStart && snapshot.startOperationSupported
+    m_state.canStart = canStartReservedCharger && snapshot.startOperationSupported
                        && !snapshot.hasActiveOrder;
     m_state.canRetry = false;
     m_state.canRecharge = snapshot.canRecharge;
@@ -198,10 +229,10 @@ void ChargingUiBinder::handleConfirmationReady(
                                      : QStringLiteral("当前账号已有订单 %1。")
                                            .arg(snapshot.activeOrderId);
     } else {
-        m_state.disabledReason = snapshot.canStart
+        m_state.disabledReason = canStartReservedCharger
                                      && !snapshot.startOperationSupported
                                  ? QStringLiteral("订单启动接口待接入。")
-                                 : snapshot.disabledReason;
+                                 : m_state.canStart ? QString() : snapshot.disabledReason;
     }
     m_state.message.clear();
     publish();

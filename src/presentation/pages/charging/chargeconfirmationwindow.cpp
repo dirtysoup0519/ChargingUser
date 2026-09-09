@@ -49,7 +49,6 @@ void ChargeConfirmationWindow::render(const ChargeConfirmationViewState &state)
     ui->chargerPowerLabel->setText(textOr(state.powerText, tr("-- kW")));
     ui->chargerStatusLabel->setText(textOr(state.chargerStatusText, tr("状态待加载")));
     ui->energyPriceLabel->setText(textOr(state.energyPriceText, tr("--")));
-    ui->serviceFeeLabel->setText(tr("待接入"));
     ui->walletBalanceLabel->setText(textOr(state.walletBalanceText, tr("--")));
 
     const bool loading = state.status == ChargeConfirmationStatus::Loading;

@@ -34,7 +34,6 @@
 #include <QDateTime>
 #include <QTimer>
 #include <QMessageBox>
-#include <QInputDialog>
 #include <QLineEdit>
 #include <QFileDialog>
 #include <QImage>
@@ -556,27 +555,8 @@ UserDemoController::UserDemoController(MockUserNetworkApi *network,
     });
     connect(m_profileEdit, &ProfileEditWindow::passwordChangeRequested,
             this, [this] {
-        bool accepted = false;
-        const QString password = QInputDialog::getText(
-            m_profileEdit, tr("验证原密码"),
-            tr("请输入当前登录密码"), QLineEdit::Password,
-            QString(), &accepted);
-        if (!accepted)
-            return;
-        if (password.isEmpty()) {
-            QMessageBox::warning(m_profileEdit, tr("无法验证"),
-                                 tr("请输入原密码。"));
-            return;
-        }
-        if (m_demoUsers.value(m_currentAccountKey).password != password) {
-            QMessageBox::warning(m_profileEdit, tr("验证失败"),
-                                 tr("原密码不正确，请重新输入。"));
-            return;
-        }
-        QMessageBox::information(m_profileEdit, tr("验证成功"),
-                                 tr("原密码验证正确，即将进入密码修改页面。"));
         m_passwordChange->setGeometry(m_profileEdit->geometry());
-        m_passwordChange->setStep(PasswordChangeStep::EnterNewPassword);
+        m_passwordChange->reset();
         showOnly(m_passwordChange);
     });
     connect(m_passwordChange, &PasswordChangeWindow::backRequested,
@@ -584,20 +564,13 @@ UserDemoController::UserDemoController(MockUserNetworkApi *network,
         m_profileEdit->setEditMode(ProfileEditMode::ExistingProfile);
         showOnly(m_profileEdit);
     });
-    connect(m_passwordChange, &PasswordChangeWindow::originalPasswordSubmitted,
-            this, [this](const QString &password) {
-        if (m_demoUsers.value(m_currentAccountKey).password != password) {
-            m_passwordChange->setStep(PasswordChangeStep::VerifyOriginal,
-                                      tr("原密码不正确，请重新输入"));
+    connect(m_passwordChange, &PasswordChangeWindow::passwordSubmitted,
+            this, [this](const QString &oldPassword, const QString &newPassword) {
+        if (m_demoUsers.value(m_currentAccountKey).password != oldPassword) {
+            m_passwordChange->setSubmitting(false, tr("原密码不正确，请重新输入。"));
             return;
         }
-        QMessageBox::information(m_passwordChange, tr("验证成功"),
-                                 tr("原密码验证正确，请继续设置新密码。"));
-        m_passwordChange->setStep(PasswordChangeStep::EnterNewPassword);
-    });
-    connect(m_passwordChange, &PasswordChangeWindow::newPasswordSubmitted,
-            this, [this](const QString &password) {
-        m_demoUsers[m_currentAccountKey].password = password;
+        m_demoUsers[m_currentAccountKey].password = newPassword;
         QMessageBox::information(m_passwordChange, tr("修改成功"),
                                  tr("登录密码已修改。"));
         m_profileEdit->setEditMode(ProfileEditMode::ExistingProfile);

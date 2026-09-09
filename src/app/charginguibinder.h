@@ -40,6 +40,8 @@ private slots:
     void handleRequestFailed(const ClientError &error);
 
 private:
+    bool matchesReservationCharger(const QString &chargerCode) const;
+    void showReservationChargerError(const QString &chargerCode);
     void load();
     void queryStartResult();
     void publish();

@@ -319,6 +319,7 @@ void RealChargingNetworkApi::publishConfirmation(const PendingRequest &pending)
     snapshot.walletBalanceCents = pending.balanceCents;
     snapshot.hasActiveOrder = !pending.activeOrderId.isEmpty();
     snapshot.activeOrderId = pending.activeOrderId;
+    snapshot.businessStatus = businessStatus;
     snapshot.canStart = online && businessStatus == CHARGER_IDLE;
     snapshot.startOperationSupported = capabilities().canStartChargingSafely();
     snapshot.canRecharge = true;

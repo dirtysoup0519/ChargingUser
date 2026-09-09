@@ -686,7 +686,6 @@ int main(int argc, char *argv[])
     enum class OrderDetailDestination { None, Detail, Settlement };
     ScanEntryPoint scanEntryPoint = ScanEntryPoint::PrimaryCharging;
     bool confirmationOpenedFromScanner = false;
-    QString pendingOldPassword;
     QString pendingCompletionNickname;
     bool settingInitialPassword = false;
     std::optional<ActiveReservationView> activeReservation;
@@ -1059,33 +1058,18 @@ int main(int argc, char *argv[])
     });
     QObject::connect(&profileEdit, &ProfileEditWindow::passwordChangeRequested,
                      &app, [&] {
-        pendingOldPassword.clear();
         passwordChange.setGeometry(profileEdit.geometry());
-        passwordChange.setStep(PasswordChangeStep::VerifyOriginal);
+        passwordChange.reset();
         showOnly(&passwordChange);
     });
     QObject::connect(&passwordChange, &PasswordChangeWindow::backRequested,
                      &app, [&] {
-        pendingOldPassword.clear();
         showOnly(&profileEdit);
     });
-    QObject::connect(&passwordChange, &PasswordChangeWindow::originalPasswordSubmitted,
-                     &app, [&](const QString &oldPassword) {
-        pendingOldPassword = oldPassword;
-        QMessageBox::information(
-            &passwordChange, QStringLiteral("继续修改密码"),
-            QStringLiteral("原密码已记录。设置新密码并提交后，将由服务端统一验证原密码。"));
-        passwordChange.setStep(PasswordChangeStep::EnterNewPassword);
-    });
-    QObject::connect(&passwordChange, &PasswordChangeWindow::newPasswordSubmitted,
-                     &app, [&](const QString &newPassword) {
-        if (pendingOldPassword.isEmpty()) {
-            passwordChange.setStep(PasswordChangeStep::VerifyOriginal,
-                                   QStringLiteral("请重新输入当前密码。"));
-            return;
-        }
+    QObject::connect(&passwordChange, &PasswordChangeWindow::passwordSubmitted,
+                     &app, [&](const QString &oldPassword, const QString &newPassword) {
         passwordChange.setSubmitting(true, QStringLiteral("正在由服务端验证并修改密码…"));
-        userService->changePassword(pendingOldPassword, newPassword);
+        userService->changePassword(oldPassword, newPassword);
     });
     QObject::connect(userService, &IUserService::passwordChanged,
                      &app, [&](const OperationResult &) {
@@ -1096,7 +1080,6 @@ int main(int argc, char *argv[])
             binder->profileSaveRequested(nickname);
             return;
         }
-        pendingOldPassword.clear();
         passwordChange.setSubmitting(false);
         QMessageBox::information(&passwordChange, QStringLiteral("修改成功"),
                                  QStringLiteral("登录密码已修改，请使用新密码登录。"));
@@ -1118,10 +1101,6 @@ int main(int argc, char *argv[])
             return;
         }
         passwordChange.setSubmitting(false, message);
-        if (!error.resultUnknown && error.code == QStringLiteral("AUTH_FAIL")) {
-            pendingOldPassword.clear();
-            passwordChange.setStep(PasswordChangeStep::VerifyOriginal, message);
-        }
     });
     QObject::connect(&mainWindow, &MainWindow::logoutRequested,
                      binder, &IUserUiBinder::logoutRequested);

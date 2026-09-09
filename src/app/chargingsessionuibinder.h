@@ -45,6 +45,7 @@ private:
     void load();
     void queryStopResult();
     void applyOrder(const ChargingOrder &order);
+    void updateRemainingText();
     void publish();
 
     IOrderService *m_service;

@@ -7,24 +7,20 @@ class QLabel;
 class QLineEdit;
 class QPushButton;
 
-enum class PasswordChangeStep { VerifyOriginal, EnterNewPassword };
-
 class PasswordChangeWindow final : public QWidget
 {
     Q_OBJECT
 public:
     explicit PasswordChangeWindow(QWidget *parent = nullptr);
-    void setStep(PasswordChangeStep step, const QString &message = QString());
+    void reset(const QString &message = QString());
     void setSubmitting(bool submitting, const QString &message = QString());
 
 signals:
     void backRequested();
-    void originalPasswordSubmitted(const QString &password);
-    void newPasswordSubmitted(const QString &newPassword);
+    void passwordSubmitted(const QString &oldPassword, const QString &newPassword);
 
 private:
     void submit();
-    PasswordChangeStep m_step = PasswordChangeStep::VerifyOriginal;
     QLabel *m_title = nullptr;
     QLabel *m_instruction = nullptr;
     QLabel *m_originalLabel = nullptr;
@@ -36,5 +32,3 @@ private:
     QLabel *m_message = nullptr;
     QPushButton *m_submit = nullptr;
 };
-
-Q_DECLARE_METATYPE(PasswordChangeStep)

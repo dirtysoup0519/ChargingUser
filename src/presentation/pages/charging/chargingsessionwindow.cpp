@@ -145,8 +145,9 @@ void ChargingSessionWindow::render(const ChargingSessionViewState &state)
     ui->stopChargingButton->setText(stopping ? tr("正在结束…")
                                               : unknown ? tr("确认结束结果")
                                                         : tr("结束充电"));
-    ui->scanChargingButton->setText(hasSession ? tr("扫码充电")
-                                                  : tr("扫码开始充电"));
+    // 已有充电任务时不允许从会话页再次扫码；无任务状态保留启动充电入口。
+    ui->scanChargingButton->setVisible(!hasSession);
+    ui->scanChargingButton->setText(tr("扫码开始充电"));
 }
 
 void ChargingSessionWindow::renderSessions(const ChargingSessionCollectionViewState &state)

@@ -116,6 +116,7 @@ void ChargingSessionUiBinder::applyProgress(const ChargingProgressNotice &notice
     if (notice.amountPresent || amountCents > 0)
         m_state.amountText = QStringLiteral("¥%1").arg(amountCents / 100.0, 0, 'f', 2);
     if (notice.percent >= 0) m_state.progressPercent = notice.percent;
+    updateRemainingText();
     m_state.canRefresh = true;
     publish();
 }
@@ -346,13 +347,7 @@ void ChargingSessionUiBinder::applyOrder(const ChargingOrder &order)
     m_state.startedAtText = order.startedAtUtc.isValid()
                                 ? order.startedAtUtc.toLocalTime().toString(Qt::ISODate)
                                 : QStringLiteral("--");
-    if (order.startedAtUtc.isValid()) {
-        const qint64 minutes = qMax<qint64>(
-            0, order.startedAtUtc.secsTo(QDateTime::currentDateTimeUtc()) / 60);
-        m_state.durationText = QStringLiteral("%1 分钟").arg(minutes);
-    } else {
-        m_state.durationText = QStringLiteral("--");
-    }
+    updateRemainingText();
     m_state.message.clear();
     m_state.canRecoverResult = false;
     m_state.canRefresh = true;
@@ -376,6 +371,17 @@ void ChargingSessionUiBinder::applyOrder(const ChargingOrder &order)
         m_state.canStop = false;
         m_refreshTimer->stop();
     }
+}
+
+void ChargingSessionUiBinder::updateRemainingText()
+{
+    const int percent = m_state.progressPercent;
+    if (percent < 0) {
+        m_state.durationText = QStringLiteral("--");
+        return;
+    }
+    const int boundedPercent = qBound(0, percent, 100);
+    m_state.durationText = QStringLiteral("%1%").arg(100 - boundedPercent);
 }
 
 void ChargingSessionUiBinder::publish()

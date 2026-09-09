@@ -20,6 +20,8 @@ struct ChargeConfirmationSnapshot
     std::optional<qint64> walletBalanceCents;
     bool hasActiveOrder = false;
     QString activeOrderId;
+    /** 服务端电桩业务状态，供预约桩确认页保留“已预约”语义。 */
+    int businessStatus = -1;
     bool canStart = false;
     /** 服务端具备 operationId 幂等和结果查询能力后才能置 true。 */
     bool startOperationSupported = false;
