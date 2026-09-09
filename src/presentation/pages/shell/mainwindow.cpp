@@ -30,6 +30,7 @@
 MainWindow::MainWindow(QWidget *parent) : QWidget(parent), ui(new Ui::MainWindow)
 {
     ui->setupUi(this);
+    ui->chargingSessionWidget->setEmbeddedMode(true);
     DragScrollHelper::enableFor(this);
 
     m_homeReservationCard = new QFrame(ui->homePage);
@@ -326,7 +327,7 @@ void MainWindow::renderHome(const HomeMapViewState &state)
 
 bool MainWindow::eventFilter(QObject *watched, QEvent *event)
 {
-    if (watched == m_homeReservationCard && event->type() == QEvent::MouseButtonRelease
+    if (watched == m_homeReservationCard && event->type() == QEvent::MouseButtonPress
         && m_homeActiveReservation) {
         auto *mouseEvent = static_cast<QMouseEvent *>(event);
         if (mouseEvent->button() != Qt::LeftButton) return true;

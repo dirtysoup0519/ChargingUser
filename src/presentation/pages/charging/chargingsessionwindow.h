@@ -9,6 +9,7 @@ class QPropertyAnimation;
 class QListWidget;
 class QFrame;
 class QLabel;
+class QPushButton;
 class QResizeEvent;
 
 /** Displays one selected charging order and lets the user switch active orders. */
@@ -18,6 +19,7 @@ class ChargingSessionWindow final : public QWidget
 public:
     explicit ChargingSessionWindow(QWidget *parent = nullptr);
     ~ChargingSessionWindow() override;
+    void setEmbeddedMode(bool embedded);
     void render(const ChargingSessionViewState &state);
     void renderSessions(const ChargingSessionCollectionViewState &state);
 
@@ -45,5 +47,6 @@ private:
     QFrame *m_sessionChooserPanel = nullptr;
     QFrame *m_emptyState = nullptr;
     QListWidget *m_sessionChooser = nullptr;
+    QPushButton *m_backButton = nullptr;
     bool m_updatingSelector = false;
 };

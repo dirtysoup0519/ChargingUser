@@ -38,7 +38,12 @@ void ReservationConfirmationWindow::render(const ReservationConfirmationViewStat
     m_state = state;
     ui->stationNameLabel->setText(shown(state.stationName, tr("站点信息待加载")));
     ui->stationAddressLabel->setText(shown(state.stationAddress, tr("地址待加载")));
-    ui->chargerCodeLabel->setText(shown(state.chargerCode, tr("--")));
+    QString chargerCode = state.chargerCode.trimmed();
+    QString displayCode = chargerCode;
+    if (displayCode.size() > 8)
+        displayCode = displayCode.section(QLatin1Char('-'), -1).toUpper();
+    ui->chargerCodeLabel->setText(shown(displayCode, tr("--")));
+    ui->chargerCodeLabel->setToolTip(chargerCode);
     ui->chargerTypeLabel->setText(shown(state.chargerTypeText, tr("类型待加载")));
     ui->chargerPowerLabel->setText(shown(state.powerText, tr("-- kW")));
     ui->depositLabel->setText(shown(state.depositText, tr("--")));

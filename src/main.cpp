@@ -145,6 +145,14 @@ QString chargerCodeFromQr(const QString &raw)
     return safeCode.match(value).hasMatch() ? value : QString();
 }
 
+bool validHost(const QString &host)
+{
+    return !host.isEmpty()
+           && !host.contains(
+               QRegularExpression(QStringLiteral("[\\x00-\\x1f\\x7f]")));
+}
+
+#ifndef CHARGINGUSER_USER_DEMO
 QString connectionStateName(ConnectionState state)
 {
     switch (state) {
@@ -158,13 +166,6 @@ QString connectionStateName(ConnectionState state)
         return QStringLiteral("reconnecting");
     }
     return QStringLiteral("unknown");
-}
-
-bool validHost(const QString &host)
-{
-    return !host.isEmpty()
-           && !host.contains(
-               QRegularExpression(QStringLiteral("[\\x00-\\x1f\\x7f]")));
 }
 
 QJsonObject loadTencentMapConfig()
@@ -195,16 +196,7 @@ QJsonObject loadTencentMapConfig()
     }
     return {};
 }
-
-void enableWidgetInputMethods(QWidget *root)
-{
-    if (!root)
-        return;
-    for (QLineEdit *edit : root->findChildren<QLineEdit *>()) {
-        if (!edit->isReadOnly())
-            edit->setAttribute(Qt::WA_InputMethodEnabled, true);
-    }
-}
+#endif
 
 void configureWebEngineProcess(const char *executablePath)
 {
@@ -392,8 +384,10 @@ int main(int argc, char *argv[])
         qCritical() << "Server port must be an integer from 1 to 65535.";
         return 2;
     }
+#ifndef CHARGINGUSER_USER_DEMO
     QString activeHost = host;
     quint16 activePort = static_cast<quint16>(portValue);
+#endif
 
     QFile theme(QStringLiteral(":/styles/theme.qss"));
     if (theme.open(QIODevice::ReadOnly)) {
@@ -569,17 +563,17 @@ int main(int argc, char *argv[])
 
     const QJsonObject locationConfig =
         mapConfig.value(QStringLiteral("defaultLocation")).toObject();
-    // 配置缺失时仍以北京理工大学为默认定位，避免本地配置只有 key/region
-    // 时回退到地图 SDK 的未知位置。
-    LocationResult fallback;
-    fallback.point.latitude =
-        locationConfig.value(QStringLiteral("latitude")).toDouble(39.731782);
-    fallback.point.longitude =
-        locationConfig.value(QStringLiteral("longitude")).toDouble(116.172130);
-    fallback.capturedAtUtc = QDateTime::currentDateTimeUtc();
-    fallback.source = LocationSource::Manual;
-    if (fallback.point.isValid()) {
-        mapService.setFallbackLocation(fallback);
+    if (!locationConfig.isEmpty()) {
+        LocationResult fallback;
+        fallback.point.latitude =
+            locationConfig.value(QStringLiteral("latitude")).toDouble();
+        fallback.point.longitude =
+            locationConfig.value(QStringLiteral("longitude")).toDouble();
+        fallback.capturedAtUtc = QDateTime::currentDateTimeUtc();
+        fallback.source = LocationSource::Manual;
+        if (fallback.point.isValid()) {
+            mapService.setFallbackLocation(fallback);
+        }
     }
 #endif
     MapUiBinder mapBinder(&chargerService, &mapService);
@@ -663,12 +657,6 @@ int main(int argc, char *argv[])
     ChargingSessionWindow sessionWindow(&mainWindow);
     SettlementWindow settlementWindow(&mainWindow);
     PasswordChangeWindow passwordChange;
-    enableWidgetInputMethods(&login);
-    enableWidgetInputMethods(&profileEdit);
-    enableWidgetInputMethods(&mainWindow);
-    enableWidgetInputMethods(&navigation);
-    enableWidgetInputMethods(&walletRecharge);
-    enableWidgetInputMethods(&passwordChange);
     mainWindow.registerSecondaryPage(&sessionWindow);
     mainWindow.registerSecondaryPage(&settlementWindow);
     if (!mapKey.isEmpty()) {
@@ -678,7 +666,7 @@ int main(int argc, char *argv[])
     IUserService *userService = assembly.userService();
     bool profileEditOpenedFromMain = false;
     enum class WalletEntryPoint { Profile, ChargeConfirmation, Payment };
-    enum class ScanEntryPoint { PrimaryCharging, Session };
+    enum class ScanEntryPoint { PrimaryCharging, StationDetail, Session };
     enum class OrderDetailDestination { None, Detail, Settlement };
     ScanEntryPoint scanEntryPoint = ScanEntryPoint::PrimaryCharging;
     bool confirmationOpenedFromScanner = false;
@@ -770,9 +758,7 @@ int main(int argc, char *argv[])
     });
     const auto openStationDetails = [&](const QString &requestedStation) {
         clearExpiredReservation();
-        mapBinder.stationDetailsRequested(activeReservation
-                                              ? activeReservation->stationId
-                                              : requestedStation);
+        mapBinder.stationDetailsRequested(requestedStation);
     };
     WalletEntryPoint walletEntryPoint = WalletEntryPoint::Profile;
     bool orderListOpen = false;
@@ -1122,34 +1108,10 @@ int main(int argc, char *argv[])
                      &mapBinder, &IMapUiBinder::routeRetryRequested);
 
     // ===== 阶段 B：充电确认链路（详情 → 确认 → 钱包/会话）=====
-    QObject::connect(&stationDetail, &StationDetailWindow::chargeConfirmationRequested,
-                     &app, [&](const QString &stationId, const QString &chargerId) {
-        clearExpiredReservation();
-        if (activeReservation) {
-            openStationDetails(activeReservation->stationId);
-            return;
-        }
-        confirmationOpenedFromScanner = false;
-        chargeBinder.chargeConfirmationRequested(stationId, chargerId);
-    });
     // 兼容详情页旧版意图信号：正式入口统一转入当前选桩链路。
     QObject::connect(&stationDetail, &StationDetailWindow::navigationRequested,
                      &app, [&] {
         mapBinder.routePreviewRequested(TravelMode::Driving);
-    });
-    QObject::connect(&stationDetail, &StationDetailWindow::chargeRequested,
-                     &app, [&] {
-        const StationDetailViewState state = mapBinder.currentStationDetailState();
-        clearExpiredReservation();
-        if (activeReservation) {
-            openStationDetails(activeReservation->stationId);
-            return;
-        }
-        if (!state.stationId.isEmpty() && !state.selectedChargerId.isEmpty()) {
-            confirmationOpenedFromScanner = false;
-            chargeBinder.chargeConfirmationRequested(state.stationId,
-                                                     state.selectedChargerId);
-        }
     });
     QObject::connect(&chargeBinder, &IChargingUiBinder::confirmationStateChanged,
                      &chargeConfirmation, &ChargeConfirmationWindow::render);
@@ -1162,8 +1124,13 @@ int main(int argc, char *argv[])
                      &app, [&] {
         if (confirmationOpenedFromScanner) {
             confirmationOpenedFromScanner = false;
-            mainWindow.renderPrimaryPage(MainWindow::PrimaryPage::Home);
-            mapBinder.activateHome();
+            if (scanEntryPoint == ScanEntryPoint::StationDetail) {
+                stationDetail.render(mapBinder.currentStationDetailState());
+                mainWindow.renderSecondaryPage(&stationDetail);
+            } else {
+                mainWindow.renderPrimaryPage(MainWindow::PrimaryPage::Home);
+                mapBinder.activateHome();
+            }
         } else {
             stationDetail.render(mapBinder.currentStationDetailState());
             mainWindow.renderSecondaryPage(&stationDetail);
@@ -1254,6 +1221,12 @@ int main(int argc, char *argv[])
         if (!stationId.trimmed().isEmpty())
             openStationDetails(stationId);
     });
+    QObject::connect(&mainWindow, &MainWindow::activeReservationRequested,
+                     &app, [&](const QString &, const QString &stationId,
+                               const QString &) {
+        if (!stationId.trimmed().isEmpty())
+            openStationDetails(stationId);
+    });
     const auto appendRechargeOrders = [&](OrderListViewState state) {
         const WalletViewState wallet = walletBinder.currentState();
         QSet<QString> seen;
@@ -1295,22 +1268,88 @@ int main(int argc, char *argv[])
             item.action = OrderListAction::None;
             state.orders.append(item);
         }
-        for (const ReservationHistoryItem &reservation : reservationHistory) {
+        QVector<ReservationHistoryItem> visibleReservationHistory = reservationHistory;
+        if (activeReservation) {
+            const bool alreadyIncluded = std::any_of(
+                visibleReservationHistory.cbegin(), visibleReservationHistory.cend(),
+                [&](const ReservationHistoryItem &item) {
+                    return item.reservationId == activeReservation->reservationId;
+                });
+            if (!alreadyIncluded) {
+                ReservationHistoryItem restored;
+                restored.reservationId = activeReservation->reservationId;
+                restored.chargerCode = activeReservation->chargerId;
+                restored.depositCents = 2000;
+                restored.status = QStringLiteral("RESERVED");
+                restored.reserveAtUtc = activeReservation->expiresAtUtc;
+                const HomeMapViewState homeState = mapBinder.currentHomeState();
+                for (const StationListItemView &station : homeState.stations) {
+                    if (station.stationId == activeReservation->stationId) {
+                        restored.stationName = station.name;
+                        break;
+                    }
+                }
+                visibleReservationHistory.append(restored);
+            }
+        }
+        for (const ReservationHistoryItem &reservation : visibleReservationHistory) {
             OrderListItemView item;
             item.businessId = reservation.reservationId;
             item.type = OrderBusinessType::Reservation;
             item.stationName = reservation.stationName;
             item.chargerCode = reservation.chargerCode;
+            QString reservationStationId;
+            if (activeReservation
+                && activeReservation->reservationId == reservation.reservationId) {
+                reservationStationId = activeReservation->stationId;
+                item.chargerCode = activeReservation->chargerId;
+            }
+            const HomeMapViewState homeState = mapBinder.currentHomeState();
+            for (const StationListItemView &station : homeState.stations) {
+                if ((!reservationStationId.isEmpty()
+                     && station.stationId == reservationStationId)
+                    || station.stationId == item.stationName) {
+                    item.stationId = station.stationId;
+                    item.stationName = station.name;
+                    break;
+                }
+            }
+            if (item.stationName.isEmpty() || item.stationName.startsWith(
+                    QStringLiteral("station-"), Qt::CaseInsensitive))
+                item.stationName = QStringLiteral("预约充电站");
+            if (item.chargerCode.size() > 8)
+                item.chargerCode = item.chargerCode.section(
+                    QLatin1Char('-'), -1).toUpper();
             const QDateTime time = reservation.reserveAtUtc.isValid() ? reservation.reserveAtUtc : reservation.createdAtUtc;
             item.createdAtText = time.isValid() ? time.toLocalTime().toString(Qt::ISODate) : QStringLiteral("时间未知");
             const qint64 depositCents = reservation.depositCents > 0
                                             ? reservation.depositCents : 2000;
             item.amountText = QStringLiteral("¥%1").arg(depositCents / 100.0, 0, 'f', 2);
-            item.statusText = reservation.status.isEmpty() ? QStringLiteral("预约记录") : reservation.status;
-            item.statusTone = QStringLiteral("neutral");
+            const QString reservationStatus = reservation.status.trimmed().toUpper();
+            if (reservationStatus == QLatin1String("RESERVED")) {
+                item.statusText = QStringLiteral("已预约");
+                item.statusTone = QStringLiteral("warning");
+                item.action = OrderListAction::StartReservedCharging;
+                item.actionText = QStringLiteral("前往充电");
+            } else if (reservationStatus == QLatin1String("CHARGING")) {
+                item.statusText = QStringLiteral("充电中");
+                item.statusTone = QStringLiteral("warning");
+            } else if (reservationStatus == QLatin1String("REFUNDED")
+                       || reservationStatus == QLatin1String("CANCELLED")) {
+                item.statusText = QStringLiteral("已退回");
+                item.statusTone = QStringLiteral("success");
+            } else if (reservationStatus == QLatin1String("EXPIRED")) {
+                item.statusText = QStringLiteral("已过期");
+                item.statusTone = QStringLiteral("neutral");
+            } else {
+                item.statusText = reservation.status.isEmpty()
+                                      ? QStringLiteral("预约记录")
+                                      : reservation.status;
+                item.statusTone = QStringLiteral("neutral");
+            }
             item.summaryText = QStringLiteral("预约充电桩 %1").arg(item.chargerCode);
-            item.action = OrderListAction::ViewDetails;
-            item.actionText = QStringLiteral("查看详情");
+            if (item.action == OrderListAction::ViewDetails)
+                item.actionText = QStringLiteral("查看详情");
             state.orders.append(item);
         }
         // 服务端可能无法返回预约历史（未知表）；本地已知的进行中预约
@@ -1598,10 +1637,22 @@ int main(int argc, char *argv[])
             }
             OrderDetailViewState detail = orderItemDetailState(*cached);
             if (action == OrderListAction::StartReservedCharging) {
-                detail.message = QStringLiteral(
-                    "预约记录已展示；正式服务端尚未提供预约历史到扫码上下文的查询合同。请从站点详情进入扫码充电。");
-                detail.action = OrderListAction::None;
-                detail.actionEnabled = false;
+                if (!activeReservation
+                    || activeReservation->reservationId != orderId
+                    || activeReservation->stationId.isEmpty()) {
+                    showProfileNotice(QStringLiteral("预约充电"),
+                                      QStringLiteral("当前预约信息已经失效，请刷新后重试。"));
+                    return;
+                }
+                if (QMessageBox::question(
+                        &mainWindow, QStringLiteral("前往充电"),
+                        QStringLiteral("是否前往预约充电桩并扫码充电？"),
+                        QMessageBox::Yes | QMessageBox::No,
+                        QMessageBox::Yes) == QMessageBox::Yes) {
+                    orderListOpen = false;
+                    openStationDetails(activeReservation->stationId);
+                }
+                return;
             }
             orderDetail.render(detail);
             mainWindow.renderSecondaryPage(&orderDetail);
@@ -1714,10 +1765,6 @@ int main(int argc, char *argv[])
                      &sessionBinder, &IChargingSessionUiBinder::activeSessionSelected);
     const auto openScanner = [&](ScanEntryPoint entryPoint) {
         clearExpiredReservation();
-        if (activeReservation) {
-            openStationDetails(activeReservation->stationId);
-            return;
-        }
         scanEntryPoint = entryPoint;
         ScanViewState scanState;
         scanState.status = qrScanner.cameraAvailable() ? ScanStatus::RequestingPermission : ScanStatus::Error;
@@ -1731,16 +1778,19 @@ int main(int argc, char *argv[])
         qrScanner.render(scanState);
         mainWindow.renderSecondaryPage(&qrScanner);
     };
+    QObject::connect(&stationDetail,
+                     &StationDetailWindow::chargeConfirmationRequested,
+                     &app, [&](const QString &, const QString &) {
+        openScanner(ScanEntryPoint::StationDetail);
+    });
+    QObject::connect(&stationDetail, &StationDetailWindow::chargeRequested,
+                     &app, [&] { openScanner(ScanEntryPoint::StationDetail); });
     QObject::connect(&mainWindow, &MainWindow::scanChargingRequested,
                      &app, [&] { openScanner(ScanEntryPoint::PrimaryCharging); });
     QObject::connect(&sessionWindow, &ChargingSessionWindow::scanChargingRequested,
                      &app, [&] { openScanner(ScanEntryPoint::Session); });
     const auto handleDetectedQr = [&](const QString &raw) {
         clearExpiredReservation();
-        if (activeReservation) {
-            openStationDetails(activeReservation->stationId);
-            return;
-        }
         ScanViewState state;
         state.canImportImage = true;
         const QString chargerCode = chargerCodeFromQr(raw);
@@ -1822,8 +1872,18 @@ int main(int argc, char *argv[])
     QObject::connect(&settlementBinder, &SettlementUiBinder::stateChanged,
                      &settlementWindow, &SettlementWindow::render);
     QObject::connect(&settlementBinder, &SettlementUiBinder::stateChanged,
-                     &app, [&](const SettlementViewState &) {
-        if (paymentOpen) renderPayment();
+                     &app, [&](const SettlementViewState &state) {
+        if (!paymentOpen) return;
+        if (!reservationPaymentOpen
+            && state.status == SettlementPageStatus::Settled) {
+            paymentOpen = false;
+            settlementOpenedFromOrderList = false;
+            orderListOpen = false;
+            mainWindow.renderPrimaryPage(MainWindow::PrimaryPage::Home);
+            mapBinder.activateHome();
+            return;
+        }
+        renderPayment();
     });
     QObject::connect(&settlementWindow, &SettlementWindow::paymentRequested,
                      &app, [&](const QString &) {
@@ -1902,11 +1962,11 @@ int main(int argc, char *argv[])
         walletNetwork.setIdentity(result.session.profile.userId);
         chargingNetwork.setIdentity(result.session.profile.userId);
         reservationService.setIdentity(result.session.profile.userId);
-        restoreReservation(result.session.profile.userId);
         reservationService.queryHistory(
             {QUuid::createUuid().toString(QUuid::WithoutBraces), {}});
         pushDispatcher.setIdentity(result.session.profile.userId);
 #endif
+        restoreReservation(result.session.profile.userId);
         walletBinder.setAccountId(result.session.profile.userId);
         walletBinder.activate();
         RequestContext recoveryContext{
@@ -2054,8 +2114,9 @@ int main(int argc, char *argv[])
         orderService.queryActiveOrder(
             {QUuid::createUuid().toString(QUuid::WithoutBraces), {}});
     });
+#endif
 
-    // ===== 预约真实网络链路：页面仅负责渲染，协议与状态由 Binder/Service 承担 =====
+    // ===== 预约共用链路：页面仅负责渲染，协议与状态由 Binder/Service 承担 =====
     QObject::connect(&stationDetail,
                      &StationDetailWindow::reservationConfirmationRequested,
                      &app, [&](const QString &stationId, const QString &chargerId) {
@@ -2125,9 +2186,13 @@ int main(int argc, char *argv[])
         }
     });
 #endif
-#endif
     QObject::connect(&chargingService, &IChargingService::chargingStarted,
                      &app, [&](const RequestContext &, const StartChargingResult &result) {
+        if (activeReservation
+            && activeReservation->stationId == result.stationId
+            && activeReservation->chargerId == result.chargerId) {
+            clearReservation();
+        }
         mapBinder.chargerStatusConfirmed(result.stationId, result.chargerId,
                                          ChargerBusinessStatus::Charging);
 #ifdef CHARGINGUSER_USER_DEMO
@@ -2164,6 +2229,10 @@ int main(int argc, char *argv[])
                      &app, [&] {
         if (scanEntryPoint == ScanEntryPoint::Session)
             mainWindow.renderPrimaryPage(MainWindow::PrimaryPage::Charging);
+        else if (scanEntryPoint == ScanEntryPoint::StationDetail) {
+            stationDetail.render(mapBinder.currentStationDetailState());
+            mainWindow.renderSecondaryPage(&stationDetail);
+        }
         else
             mainWindow.renderPrimaryPage(MainWindow::PrimaryPage::Home);
     });
