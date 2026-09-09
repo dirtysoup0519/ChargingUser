@@ -52,4 +52,5 @@ private:
     QString m_requestId;
     QString m_operationId;
     std::optional<ActiveReservationView> m_activeReservation;
+    bool m_cancelling = false;
 };

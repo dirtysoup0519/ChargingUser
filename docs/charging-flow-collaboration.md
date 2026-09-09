@@ -899,3 +899,16 @@ UI 的“原密码”步骤仅临时收集输入；v2.6 没有独立的只验证
 数据源差异只保留在 `IChargerService` 实现中：`MockChargerService::applyConfirmedChargerStatus` 更新由 tmp 初始化的内存目录，使后续 Demo 查询返回新状态；`RealChargerService` 不本地伪造服务端数据，因为预约和充电操作已经由服务端持久化，随后通过 119/229 查询校准。两种模式共用状态事件规则：预约成功为 `Reserved`，扫码启动成功为 `Charging`，取消、过期或结束充电为 `Idle`。
 
 迁移前，Demo 使用 `m_demoAvailabilityConsumedKeys` 在渲染首页时重复扣减可用数，而正式 main 只设置预约浮窗，导致 main 的首页和详情可能继续显示旧状态。该集合及渲染期扣减已移除；状态变化现在由公共 Binder 幂等处理，`Reserved → Charging` 不重复扣减，`Charging/Reserved → Idle` 只恢复一次。
+
+# Demo/main 统一迁移：预约状态与操作
+
+预约创建、取消、失败、结果未知、恢复、到期和被扫码充电消费，统一由
+`ReservationUiBinder` 管理活动预约状态。`CONFIG+=user_demo` 注入
+`MockReservationService`，正式入口注入 `RealReservationService`；页面及流程控制层只依赖
+同一个 Binder 信号。Demo 的 tmp 文件只配置 Mock 的延迟和结果，不再由
+`UserDemoController` 使用定时器直接宣告预约或取消成功。
+
+支付成功后才调用 `ReservationUiBinder::reserveRequested()`。服务确认创建后，Binder 发出
+`activeReservationChanged`，流程层据此同步站点详情、首页可用数量和预约订单；取消、到期
+或转入充电后由同一信号清除活动预约。正式与 Demo 的差异因此仅位于
+`IReservationService` 实现和数据来源。

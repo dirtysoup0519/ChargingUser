@@ -69,6 +69,7 @@ void ReservationUiBinder::reserveRequested(const QString &stationId,
         || chargerId.trimmed().isEmpty() || durationSeconds <= 0) return;
     m_requestId = QUuid::createUuid().toString(QUuid::WithoutBraces);
     m_operationId = QUuid::createUuid().toString(QUuid::WithoutBraces);
+    m_cancelling = false;
     m_state.stationId = stationId;
     m_state.chargerId = chargerId;
     m_state.durationSeconds = durationSeconds;
@@ -84,7 +85,7 @@ void ReservationUiBinder::refreshRequested()
 {
     if (m_state.status == ReservationConfirmationStatus::ResultUnknown) return;
     m_state.status = ReservationConfirmationStatus::Ready;
-    m_state.canReserve = true;
+    m_state.canReserve = !m_activeReservation.has_value();
     publish();
 }
 
@@ -93,10 +94,18 @@ void ReservationUiBinder::cancelReservationRequested(const QString &reservationI
     if (!m_requestId.isEmpty() || reservationId.trimmed().isEmpty()) return;
     m_requestId = QUuid::createUuid().toString(QUuid::WithoutBraces);
     m_operationId = QUuid::createUuid().toString(QUuid::WithoutBraces);
+    m_cancelling = true;
     m_state.status = ReservationConfirmationStatus::Submitting;
     m_state.canReserve = false;
     m_state.message = QStringLiteral("正在取消预约…");
     publish();
+    if (m_activeReservation) {
+        m_activeReservation->cancellationStatus = ReservationCancellationStatus::Submitting;
+        m_activeReservation->cancellationMessage = m_state.message;
+        m_activeReservation->canCancel = false;
+        m_activeReservation->canRetryCancel = false;
+        emit activeReservationChanged(m_activeReservation);
+    }
     m_service->cancelReservation({m_requestId, m_operationId});
 }
 
@@ -111,6 +120,7 @@ void ReservationUiBinder::handleCreated(const RequestContext &context,
     if (context.requestId != m_requestId || context.operationId != m_operationId) return;
     m_requestId.clear();
     m_operationId.clear();
+    m_cancelling = false;
     m_state.status = ReservationConfirmationStatus::Ready;
     m_state.canReserve = false;
     m_state.canRetry = false;
@@ -133,8 +143,10 @@ void ReservationUiBinder::handleCreated(const RequestContext &context,
 void ReservationUiBinder::handleFailure(const ClientError &error)
 {
     if (error.requestId != m_requestId) return;
+    const bool cancellationFailed = m_cancelling;
     m_requestId.clear();
     m_operationId.clear();
+    m_cancelling = false;
     m_state.status = error.resultUnknown ? ReservationConfirmationStatus::ResultUnknown
                                          : ReservationConfirmationStatus::Error;
     m_state.canReserve = false;
@@ -142,6 +154,15 @@ void ReservationUiBinder::handleFailure(const ClientError &error)
     m_state.message = error.displayMessage.isEmpty()
                           ? QStringLiteral("预约失败。") : error.displayMessage;
     publish();
+    if (cancellationFailed && m_activeReservation) {
+        m_activeReservation->cancellationStatus = error.resultUnknown
+            ? ReservationCancellationStatus::ResultUnknown
+            : ReservationCancellationStatus::Error;
+        m_activeReservation->cancellationMessage = m_state.message;
+        m_activeReservation->canCancel = false;
+        m_activeReservation->canRetryCancel = !error.resultUnknown && error.retryable;
+        emit activeReservationChanged(m_activeReservation);
+    }
 }
 
 void ReservationUiBinder::handleCancelled(const RequestContext &context,
@@ -150,6 +171,7 @@ void ReservationUiBinder::handleCancelled(const RequestContext &context,
     if (context.requestId != m_requestId || context.operationId != m_operationId) return;
     m_requestId.clear();
     m_operationId.clear();
+    m_cancelling = false;
     m_state.status = ReservationConfirmationStatus::Ready;
     m_state.canReserve = false;
     m_state.message = QStringLiteral("预约已取消，押金已退回钱包。");

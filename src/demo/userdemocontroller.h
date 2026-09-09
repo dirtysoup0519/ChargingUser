@@ -17,6 +17,7 @@
 
 class IUserUiBinder;
 class IMapUiBinder;
+class ReservationUiBinder;
 class LoginWindow;
 class MainWindow;
 class MockUserNetworkApi;
@@ -57,6 +58,7 @@ public:
     UserDemoController(MockUserNetworkApi *network,
                        IUserUiBinder *binder,
                        IMapUiBinder *mapBinder,
+                       ReservationUiBinder *reservationBinder,
                        LoginWindow *login,
                        ProfileEditWindow *profileEdit,
                        MainWindow *mainWindow,
@@ -82,6 +84,7 @@ private:
     MockUserNetworkApi *m_network;
     IUserUiBinder *m_binder;
     IMapUiBinder *m_mapBinder;
+    ReservationUiBinder *m_reservationBinder;
     LoginWindow *m_login;
     ProfileEditWindow *m_profileEdit;
     MainWindow *m_mainWindow;
@@ -106,14 +109,7 @@ private:
     ReservationConfirmationViewState m_reservationState;
     ScanViewState m_scanState;
     StationDetailViewState m_reservedDetailState;
-    int m_reservationResponseDelayMs = 450;
     int m_reservationCancellationCooldownSeconds = 3;
-    int m_cancellationResponseDelayMs = 450;
-    QString m_cancellationOutcome;
-    QString m_cancellationRetryOutcome;
-    QString m_cancellationFailureMessage;
-    QString m_cancellationUnknownMessage;
-    QString m_reservationOutcome;
     bool m_walletOpenedFromConfirmation = false;
     bool m_profileEditOpenedFromMain = false;
     bool m_usernameFirstSetup = false;

@@ -11,11 +11,13 @@
 
 #include "app/application.h"
 #include "app/mapuibinder.h"
+#include "app/reservationuibinder.h"
 #include "demo/mapdemofixtureloader.h"
 #include "demo/userdemocontroller.h"
 #include "modules/charger/mockchargerservice.h"
 #include "modules/map/mockmapservice.h"
 #include "modules/map/tencentmapservice.h"
+#include "modules/reservation/mockreservationservice.h"
 #include "modules/user/mockusernetworkapi.h"
 #include "presentation/pages/auth/loginwindow.h"
 #include "presentation/pages/shell/mainwindow.h"
@@ -218,6 +220,33 @@ int main(int argc, char *argv[])
         mapService = &tencentMapService;
     }
     MapUiBinder mapBinder(&chargerService, mapService);
+    MockReservationService reservationService;
+    ReservationDemoFixture reservationFixture;
+    QString reservationFixtureError;
+    if (loadReservationDemoFixture(QStringLiteral(":/demo/reservation-demo-data.tmp"),
+                                   &reservationFixture, &reservationFixtureError)) {
+        MockReservationService::Behavior reserveBehavior;
+        reserveBehavior.delayMs = reservationFixture.responseDelayMs;
+        if (reservationFixture.outcome == QStringLiteral("failure"))
+            reserveBehavior.outcome = MockReservationService::Outcome::Failure;
+        else if (reservationFixture.outcome == QStringLiteral("result_unknown"))
+            reserveBehavior.outcome = MockReservationService::Outcome::ResultUnknown;
+        reserveBehavior.error.displayMessage = QStringLiteral("预约创建失败。");
+        reservationService.setReserveBehavior(reserveBehavior);
+
+        MockReservationService::Behavior cancellationBehavior;
+        cancellationBehavior.delayMs = reservationFixture.cancellationResponseDelayMs;
+        if (reservationFixture.cancellationOutcome == QStringLiteral("failure"))
+            cancellationBehavior.outcome = MockReservationService::Outcome::Failure;
+        else if (reservationFixture.cancellationOutcome == QStringLiteral("result_unknown"))
+            cancellationBehavior.outcome = MockReservationService::Outcome::ResultUnknown;
+        cancellationBehavior.error.displayMessage =
+            reservationFixture.cancellationFailureMessage;
+        reservationService.setCancellationBehavior(cancellationBehavior);
+    } else {
+        qWarning().noquote() << reservationFixtureError;
+    }
+    ReservationUiBinder reservationBinder(&reservationService);
 
     LoginWindow login;
     ProfileEditWindow profileEdit;
@@ -225,6 +254,7 @@ int main(int argc, char *argv[])
         qputenv("TENCENT_MAP_KEY", mapApiKey.toUtf8());
     MainWindow mainWindow;
     UserDemoController controller(&network, assembly.userUiBinder(), &mapBinder,
+                                  &reservationBinder,
                                   &login, &profileEdit, &mainWindow);
     const bool useTencentMap = provider.compare(
         QStringLiteral("tencent"), Qt::CaseInsensitive) == 0;
