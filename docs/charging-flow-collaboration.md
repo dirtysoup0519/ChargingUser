@@ -827,3 +827,19 @@ operationId、重复提交保护及 ResultUnknown 恢复。服务端必须校验
 信号、ViewState、stationId/chargerId/orderId/operationId 关联和既有跳转语义，逐项替换
 tmp 加载、内存余额扣减、内存设备占用、Demo 密码校验与计时模板。UI 不应直接访问数据库、
 拼接网络报文或根据按钮点击自行宣告预约、充电、退款及支付成功。
+
+## 22. qmake 工程清单归属（2026-09-09）
+
+`IChargerService`、`IChargingNetworkApi`、`IOrderService`、`IReservationService`、
+`IUserNetworkApi` 和 `IWalletNetworkApi` 均带 Qt 元对象声明，但每个头文件只能由所属业务
+模块的 `.pri` 登记一次。归属分别为 `charger.pri`、`charging.pri`、`order.pri`、
+`reservation.pri`、`user.pri` 和 `wallet.pri`。
+
+`src/network/network.pri` 只登记传输层、BackendClient 和 Real* 网络适配器，不得再次把
+上述业务接口加入 `HEADERS`。重复登记会让 qmake 为同一个 `moc_*.cpp` 生成两套 recipe，
+出现 `overriding recipe` / `ignoring old recipe`，并导致无效的重复构建。此次已从
+`network.pri` 删除六项重复声明；接口源码、MOC 生成和网络依赖均仍由所属模块保留。
+
+伙伴拉取该调整后需清理旧构建目录或至少删除旧 Makefile，再重新运行 qmake；仅增量 make
+会继续沿用旧的重复规则。腾讯地图的 WebEngine/WebChannel 探测位于根 `ChargingUser.pro`，
+与本次去重无关。
