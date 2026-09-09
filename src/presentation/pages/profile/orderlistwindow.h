@@ -29,5 +29,6 @@ private:
     QPushButton *m_allButton = nullptr;
     QPushButton *m_chargingButton = nullptr;
     QPushButton *m_reservationButton = nullptr;
+    QLabel *m_messageLabel = nullptr;
     QLabel *m_emptyLabel = nullptr;
 };

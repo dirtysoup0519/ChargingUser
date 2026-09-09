@@ -30,6 +30,7 @@ struct OrderListViewState
 {
     QList<OrderListItemView> orders;
     QString message;
+    bool messageIsError = false;
 };
 
 Q_DECLARE_METATYPE(OrderBusinessType)

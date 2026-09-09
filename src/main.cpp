@@ -775,6 +775,9 @@ int main(int argc, char *argv[])
     WalletEntryPoint walletEntryPoint = WalletEntryPoint::Profile;
     bool orderListOpen = false;
     QString orderListRequestId;
+    QString orderListReservationRequestId;
+    QString orderListErrorText;
+    bool orderListLoadingHint = false;
     bool frequentStationsOpen = false;
     QString frequentStationsRequestId;
     bool settlementOpenedFromOrderList = false;
