@@ -98,6 +98,8 @@
 namespace
 {
 
+constexpr qint64 kReserveDepositCents = 2000;
+
 QString decodeQrImage(const QString &path, QString *error)
 {
 #ifdef CHARGINGUSER_ENABLE_ZXING
@@ -1330,7 +1332,7 @@ int main(int argc, char *argv[])
                     ? activeReservation->expiresAtUtc.toLocalTime().toString(Qt::ISODate)
                     : QStringLiteral("时间未知");
                 item.amountText = QStringLiteral("¥%1").arg(
-                    RESERVE_DEPOSIT_CENTS / 100.0, 0, 'f', 2);
+                    kReserveDepositCents / 100.0, 0, 'f', 2);
                 item.statusText = QStringLiteral("预约中");
                 item.statusTone = QStringLiteral("warning");
                 item.summaryText = QStringLiteral("预约充电桩 %1").arg(item.chargerCode);
