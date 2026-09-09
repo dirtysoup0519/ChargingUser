@@ -37,11 +37,26 @@ void ChargingUiBinder::setReservationActive(bool active)
     m_reservationActive = active;
     if (!active)
         m_reservationChargerCode.clear();
+    if (active && m_state.status == ChargeConfirmationStatus::Error
+        && m_state.message == QStringLiteral("未找到正在充电的订单，请刷新订单列表确认。")) {
+        m_state.message = QStringLiteral("您有进行中的预约，请前往预约桩充电或取消预约（109）");
+        m_state.disabledReason = m_state.message;
+        m_state.canRetry = false;
+        m_state.canStart = false;
+        publish();
+    }
 }
 
 void ChargingUiBinder::setReservationChargerCode(const QString &chargerCode)
 {
     m_reservationChargerCode = chargerCode.trimmed();
+    if (m_reservationActive && !m_reservationChargerCode.isEmpty()
+        && m_state.message == QStringLiteral("您有进行中的预约，请前往预约桩充电或取消预约（109）")) {
+        m_state.message = QStringLiteral("您有进行中的预约（电桩 %1），请前往预约桩充电或取消预约（109）")
+                              .arg(m_reservationChargerCode);
+        m_state.disabledReason = m_state.message;
+        publish();
+    }
 }
 
 void ChargingUiBinder::chargeConfirmationRequested(const QString &stationId,

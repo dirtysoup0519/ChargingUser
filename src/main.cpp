@@ -1236,6 +1236,24 @@ int main(int argc, char *argv[])
     QObject::connect(&reservationService, &IReservationService::reservationHistoryReady,
                      &app, [&](const RequestContext &, const QVector<ReservationHistoryItem> &items) {
         reservationHistory = items;
+        // 本地缓存可能因换机器/清理配置而缺失；登录后以服务端 reservation
+        // 表中的 Active 记录校准预约状态，确保扫码/启动错误提示使用真实预约。
+        if (!activeReservation) {
+            for (const ReservationHistoryItem &item : items) {
+                if (item.status.compare(QStringLiteral("Active"), Qt::CaseInsensitive) != 0
+                    || item.chargerCode.trimmed().isEmpty())
+                    continue;
+                ActiveReservationView restored;
+                restored.reservationId = item.reservationId;
+                restored.stationId = item.stationName;
+                restored.chargerId = item.chargerCode;
+                restored.canCancel = true;
+                restored.remainingText = QStringLiteral("预约已恢复");
+                activeReservation = restored;
+                reservationBinder.restoreActiveReservation(activeReservation);
+                break;
+            }
+        }
         if (orderListOpen) orderList.render(appendRechargeOrders(orderListBaseState));
     });
     QObject::connect(&orderService, &IOrderService::activeOrdersReady,
@@ -1625,6 +1643,8 @@ int main(int argc, char *argv[])
         chargingNetwork.setIdentity(result.session.profile.userId);
         reservationService.setIdentity(result.session.profile.userId);
         restoreReservation(result.session.profile.userId);
+        reservationService.queryHistory(
+            {QUuid::createUuid().toString(QUuid::WithoutBraces), {}});
         pushDispatcher.setIdentity(result.session.profile.userId);
         walletBinder.setAccountId(result.session.profile.userId);
         walletBinder.activate();
