@@ -1,0 +1,50 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>LoginWindow</class>
+ <widget class="QWidget" name="LoginWindow">
+  <property name="minimumSize"><size><width>390</width><height>760</height></size></property>
+  <property name="maximumSize"><size><width>390</width><height>760</height></size></property>
+  <property name="windowTitle"><string>智充登录</string></property>
+  <layout class="QVBoxLayout" name="rootLayout">
+   <property name="leftMargin"><number>26</number></property><property name="topMargin"><number>24</number></property>
+   <property name="rightMargin"><number>26</number></property><property name="bottomMargin"><number>24</number></property>
+   <property name="spacing"><number>0</number></property>
+   <item><widget class="QLabel" name="brandLabel"><property name="text"><string>智充</string></property></widget></item>
+   <item><widget class="QLabel" name="sloganLabel"><property name="text"><string>让每一次出发，都充满能量</string></property></widget></item>
+   <item>
+    <widget class="QLabel" name="heroImage">
+     <property name="minimumSize"><size><width>338</width><height>245</height></size></property>
+     <property name="pixmap"><pixmap resource="../../resources/resources.qrc">:/images/login_hero.png</pixmap></property>
+     <property name="scaledContents"><bool>false</bool></property>
+     <property name="alignment"><set>Qt::AlignCenter</set></property>
+    </widget>
+   </item>
+   <item><widget class="QLabel" name="pageTitle"><property name="text"><string>欢迎使用</string></property></widget></item>
+   <item><spacer name="gap1"><property name="orientation"><enum>Qt::Vertical</enum></property><property name="sizeHint"><size><width>1</width><height>6</height></size></property></spacer></item>
+   <item><widget class="QLabel" name="hintLabel"><property name="text"><string>输入手机号，开始寻找附近充电站</string></property></widget></item>
+   <item><spacer name="gap2"><property name="orientation"><enum>Qt::Vertical</enum></property><property name="sizeHint"><size><width>1</width><height>22</height></size></property></spacer></item>
+   <item>
+    <widget class="QLineEdit" name="editPhoneNumber">
+     <property name="minimumSize"><size><width>0</width><height>48</height></size></property>
+     <property name="placeholderText"><string>请输入手机号码</string></property><property name="maxLength"><number>11</number></property>
+    </widget>
+   </item>
+   <item><spacer name="gap3"><property name="orientation"><enum>Qt::Vertical</enum></property><property name="sizeHint"><size><width>1</width><height>14</height></size></property></spacer></item>
+   <item><widget class="QPushButton" name="btnLogin"><property name="minimumSize"><size><width>0</width><height>48</height></size></property><property name="text"><string>登录</string></property></widget></item>
+   <item><widget class="QLabel" name="loadingIndicator"><property name="text"><string>正在登录，请稍候…</string></property><property name="alignment"><set>Qt::AlignCenter</set></property><property name="visible"><bool>false</bool></property></widget></item>
+   <item><widget class="QLabel" name="errorLabel"><property name="text"><string/></property><property name="wordWrap"><bool>true</bool></property><property name="alignment"><set>Qt::AlignCenter</set></property><property name="visible"><bool>false</bool></property></widget></item>
+   <item><spacer name="gap4"><property name="orientation"><enum>Qt::Vertical</enum></property><property name="sizeHint"><size><width>1</width><height>13</height></size></property></spacer></item>
+   <item>
+    <layout class="QHBoxLayout" name="agreementLayout">
+     <item><spacer name="leftAgreement"><property name="orientation"><enum>Qt::Horizontal</enum></property><property name="sizeHint"><size><width>10</width><height>1</height></size></property></spacer></item>
+     <item><widget class="QCheckBox" name="agreementCheck"><property name="text"><string>我已阅读并同意</string></property></widget></item>
+     <item><widget class="QLabel" name="agreementLabel"><property name="text"><string>《用户协议》和《隐私政策》</string></property><property name="styleSheet"><string notr="true">color:#1677FF;font-size:10px;</string></property><property name="textInteractionFlags"><set>Qt::LinksAccessibleByMouse</set></property></widget></item>
+     <item><spacer name="rightAgreement"><property name="orientation"><enum>Qt::Horizontal</enum></property><property name="sizeHint"><size><width>10</width><height>1</height></size></property></spacer></item>
+    </layout>
+   </item>
+   <item><spacer name="bottomSpace"><property name="orientation"><enum>Qt::Vertical</enum></property><property name="sizeHint"><size><width>1</width><height>40</height></size></property></spacer></item>
+  </layout>
+ </widget>
+ <resources><include location="../../resources/resources.qrc"/></resources>
+ <connections/>
+</ui>

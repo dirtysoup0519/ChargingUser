@@ -1,0 +1,11 @@
+{
+  "paymentDemo": {
+    "walletBalanceText": "¥128.00",
+    "paymentDelayMs": 450,
+    "outcome": "success",
+    "outcomeOptions": ["success", "failure", "processing", "result_unknown"],
+    "settlement": {
+      "payableText": "¥22.08"
+    }
+  }
+}

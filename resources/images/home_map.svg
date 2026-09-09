@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="390" height="354" viewBox="0 0 390 354">
+ <rect width="390" height="354" fill="#f2f5f3"/>
+ <g fill="#e9eceb" stroke="#e3e8e5"><rect x="12" y="12" width="58" height="36" rx="3"/><rect x="92" y="11" width="42" height="52" rx="3"/><rect x="150" y="20" width="50" height="35" rx="3"/><rect x="302" y="14" width="48" height="44" rx="3"/><rect x="18" y="102" width="56" height="48" rx="3"/><rect x="282" y="94" width="67" height="45" rx="3"/></g>
+ <path d="M-10 314c90-44 156 28 247-4 67-24 122-16 193-43v87H-10z" fill="#bde5f6"/>
+ <g fill="#ddefd7"><rect x="169" y="4" width="128" height="64" rx="22"/><rect x="305" y="147" width="51" height="44"/><rect x="12" y="241" width="80" height="45"/></g>
+ <g stroke="#fff" stroke-linecap="round" fill="none"><path d="M-15 102L410 71M-10 214L410 177M48-10L89 330M159-10L146 330M285-10L258 330M373-10L335 330" stroke-width="7"/><path d="M-10 44L430 112M-10 222L430 190" stroke-width="12"/></g>
+ <g font-family="sans-serif" font-size="8" fill="#8c9694"><text x="40" y="46">北环大道</text><text x="218" y="36">莲花山公园</text><text x="326" y="145">彩田路</text><text x="108" y="279">滨河大道</text><text x="205" y="157">深南大道</text><text x="186" y="236">深圳市民中心</text></g>
+ <g fill="#10b7a4" stroke="#fff" stroke-width="2"><circle cx="51" cy="74" r="12"/><circle cx="330" cy="70" r="12"/><circle cx="20" cy="258" r="12"/><circle cx="266" cy="256" r="12"/></g>
+ <g fill="#ff8a00" stroke="#fff" stroke-width="2"><circle cx="53" cy="205" r="12"/><circle cx="310" cy="204" r="12"/></g>
+ <circle cx="184" cy="143" r="34" fill="#1677ff" opacity=".12"/><circle cx="184" cy="143" r="22" fill="#1677ff" opacity=".18"/><circle cx="184" cy="143" r="13" fill="#1677ff" stroke="#fff" stroke-width="2"/>
+ <g fill="#fff"><path d="m53 66-6 10h5l-3 7 9-11h-5z"/><path d="m332 62-6 10h5l-3 7 9-11h-5z"/><path d="m186 135-6 10h5l-3 7 9-11h-5z"/></g>
+ <rect x="107" y="62" width="151" height="60" rx="8" fill="#fff" stroke="#e0e6ec"/><text x="119" y="85" font-family="sans-serif" font-size="11" font-weight="700" fill="#273244">深圳市民中心充电站</text><text x="119" y="106" font-family="sans-serif" font-size="9" fill="#687386">空闲  <tspan fill="#10a777">5/6</tspan>　¥1.20/度</text>
+ <rect x="137" y="307" width="116" height="34" rx="17" fill="#fff" stroke="#d9e5f6"/><text x="163" y="329" font-family="sans-serif" font-size="11" fill="#1677ff">⌕ 搜索此区域</text>
+</svg>

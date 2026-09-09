@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>ProfileEditWindow</class>
+ <widget class="QWidget" name="ProfileEditWindow">
+  <property name="minimumSize"><size><width>390</width><height>760</height></size></property>
+  <property name="maximumSize"><size><width>390</width><height>760</height></size></property>
+  <property name="windowTitle"><string>个人资料编辑</string></property>
+  <layout class="QVBoxLayout" name="rootLayout">
+   <property name="spacing"><number>0</number></property><property name="leftMargin"><number>0</number></property><property name="topMargin"><number>0</number></property><property name="rightMargin"><number>0</number></property><property name="bottomMargin"><number>0</number></property>
+   <item><widget class="QWidget" name="headerBar"><property name="minimumSize"><size><width>0</width><height>58</height></size></property><property name="maximumSize"><size><width>16777215</width><height>58</height></size></property>
+    <layout class="QHBoxLayout" name="headerLayout"><property name="leftMargin"><number>14</number></property><property name="rightMargin"><number>14</number></property><property name="spacing"><number>0</number></property>
+     <item><widget class="QPushButton" name="backButton"><property name="minimumSize"><size><width>44</width><height>44</height></size></property><property name="maximumSize"><size><width>44</width><height>44</height></size></property><property name="text"><string/></property><property name="icon"><iconset resource="../../resources/resources.qrc"><normaloff>:/icons/back.png</normaloff>:/icons/back.png</iconset></property><property name="iconSize"><size><width>24</width><height>24</height></size></property><property name="toolTip"><string>返回</string></property></widget></item>
+     <item><spacer name="headerLeftSpace"><property name="orientation"><enum>Qt::Horizontal</enum></property><property name="sizeHint"><size><width>20</width><height>1</height></size></property></spacer></item>
+     <item><widget class="QLabel" name="pageTitle"><property name="text"><string>个人资料编辑</string></property><property name="alignment"><set>Qt::AlignCenter</set></property></widget></item>
+     <item><spacer name="headerRightSpace"><property name="orientation"><enum>Qt::Horizontal</enum></property><property name="sizeHint"><size><width>20</width><height>1</height></size></property></spacer></item>
+     <item><widget class="QWidget" name="headerBalance"><property name="minimumSize"><size><width>44</width><height>44</height></size></property><property name="maximumSize"><size><width>44</width><height>44</height></size></property></widget></item>
+    </layout>
+   </widget></item>
+   <item><widget class="QWidget" name="pageBackground">
+    <layout class="QVBoxLayout" name="bodyLayout"><property name="leftMargin"><number>18</number></property><property name="topMargin"><number>24</number></property><property name="rightMargin"><number>18</number></property><property name="bottomMargin"><number>20</number></property><property name="spacing"><number>14</number></property>
+     <item alignment="Qt::AlignHCenter"><widget class="QLabel" name="avatarLabel"><property name="minimumSize"><size><width>112</width><height>112</height></size></property><property name="maximumSize"><size><width>112</width><height>112</height></size></property><property name="text"><string/></property><property name="pixmap"><pixmap resource="../../resources/resources.qrc">:/icons/default_avatar.png</pixmap></property><property name="scaledContents"><bool>true</bool></property><property name="alignment"><set>Qt::AlignCenter</set></property></widget></item>
+     <item alignment="Qt::AlignHCenter"><widget class="QPushButton" name="avatarButton"><property name="text"><string>更换头像</string></property><property name="icon"><iconset resource="../../resources/resources.qrc"><normaloff>:/icons/camera.png</normaloff>:/icons/camera.png</iconset></property><property name="iconSize"><size><width>20</width><height>20</height></size></property><property name="toolTip"><string>从相册选择头像</string></property></widget></item>
+     <item><widget class="QFrame" name="profileCard"><layout class="QVBoxLayout" name="formLayout"><property name="leftMargin"><number>16</number></property><property name="topMargin"><number>17</number></property><property name="rightMargin"><number>16</number></property><property name="bottomMargin"><number>20</number></property><property name="spacing"><number>9</number></property>
+      <item><widget class="QLabel" name="nicknameLabel"><property name="text"><string>昵称</string></property></widget></item>
+      <item><widget class="QLineEdit" name="nicknameEdit"><property name="minimumSize"><size><width>0</width><height>46</height></size></property><property name="placeholderText"><string>请输入昵称</string></property></widget></item>
+      <item><widget class="QLabel" name="phoneLabel"><property name="text"><string>手机号码</string></property></widget></item>
+      <item><widget class="QLineEdit" name="phoneEdit"><property name="minimumSize"><size><width>0</width><height>46</height></size></property><property name="readOnly"><bool>true</bool></property></widget></item>
+      <item><widget class="QLabel" name="hintLabel2"><property name="text"><string>手机号码来自登录账号，暂不支持在此修改</string></property></widget></item>
+      <item><widget class="QLabel" name="usernameLabel"><property name="text"><string>用户名</string></property></widget></item>
+      <item><widget class="QLineEdit" name="usernameEdit"><property name="minimumSize"><size><width>0</width><height>46</height></size></property><property name="readOnly"><bool>true</bool></property><property name="placeholderText"><string>用户名待加载</string></property></widget></item>
+      <item><widget class="QLabel" name="usernameHintLabel"><property name="text"><string>用户名用于密码登录，暂不支持修改</string></property></widget></item>
+     </layout></widget></item>
+     <item><spacer name="bodySpace"><property name="orientation"><enum>Qt::Vertical</enum></property><property name="sizeHint"><size><width>1</width><height>40</height></size></property></spacer></item>
+     <item><widget class="QLabel" name="loadingIndicator"><property name="text"><string>正在保存，请稍候…</string></property><property name="alignment"><set>Qt::AlignCenter</set></property><property name="visible"><bool>false</bool></property></widget></item>
+     <item><widget class="QLabel" name="errorLabel"><property name="text"><string/></property><property name="wordWrap"><bool>true</bool></property><property name="alignment"><set>Qt::AlignCenter</set></property><property name="visible"><bool>false</bool></property></widget></item>
+     <item><widget class="QPushButton" name="saveButton"><property name="minimumSize"><size><width>0</width><height>48</height></size></property><property name="text"><string>保存</string></property></widget></item>
+     <item><widget class="QLabel" name="defaultPasswordHintLabel"><property name="text"><string>新用户默认密码为用户手机号</string></property><property name="alignment"><set>Qt::AlignCenter</set></property><property name="wordWrap"><bool>true</bool></property></widget></item>
+    </layout>
+   </widget></item>
+  </layout>
+ </widget>
+ <resources><include location="../../resources/resources.qrc"/></resources>
+ <connections/>
+</ui>

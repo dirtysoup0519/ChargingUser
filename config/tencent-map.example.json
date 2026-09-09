@@ -1,0 +1,11 @@
+{
+  "_comment": "Copy to tencent-map.local.json for local learning/debug use. Never commit the local file.",
+  "provider": "mock",
+  "key": "",
+  "region": "北京市",
+  "defaultAddress": "北京理工大学良乡校区",
+  "defaultLocation": {
+    "latitude": 39.731782,
+    "longitude": 116.172130
+  }
+}

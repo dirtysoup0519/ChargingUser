@@ -1,0 +1,34 @@
+# Qt Creator local settings
+*.pro.user
+*.pro.user.*
+*.ui.autosave
+
+# Build outputs
+/build/
+/bin/
+Makefile
+Makefile.*
+.qmake.stash
+*.o
+*.obj
+moc_*.cpp
+moc_predefs.h
+qrc_*.cpp
+ui_*.h
+
+# Test/build helpers generated in the project root by qmake verification runs
+target_wrapper.sh
+tm.mk
+tencent-map-service-tests*
+*.moc
+
+# Runtime files
+*.log
+*.tmp
+!src/demo/user-demo-data.tmp
+
+# Local VMware credentials; never commit
+.vm-credentials
+
+# Local Tencent Map credentials; keep the example file tracked.
+/config/tencent-map.local.json

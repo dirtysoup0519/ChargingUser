@@ -1,0 +1,25 @@
+{
+  "chargingSessions": [
+    {
+      "currentPowerText": "42.6 kW",
+      "energyText": "18.4 kWh",
+      "durationText": "32 分钟",
+      "amountText": "¥22.08",
+      "progressPercent": 68
+    },
+    {
+      "currentPowerText": "76.2 kW",
+      "energyText": "9.7 kWh",
+      "durationText": "18 分钟",
+      "amountText": "¥13.56",
+      "progressPercent": 41
+    },
+    {
+      "currentPowerText": "6.3 kW",
+      "energyText": "3.1 kWh",
+      "durationText": "28 分钟",
+      "amountText": "¥4.34",
+      "progressPercent": 22
+    }
+  ]
+}

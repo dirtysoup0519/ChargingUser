@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="390" height="530" viewBox="0 0 390 530">
+ <rect width="390" height="530" fill="#f1f5f3"/><g fill="#e8ecea"><rect x="12" y="20" width="65" height="49" rx="3"/><rect x="93" y="17" width="72" height="58" rx="3"/><rect x="185" y="117" width="58" height="42" rx="3"/><rect x="270" y="130" width="78" height="54" rx="3"/></g>
+ <g fill="#ddefd8"><rect x="225" y="20" width="130" height="80" rx="28"/><rect x="20" y="245" width="88" height="62"/><rect x="286" y="280" width="71" height="48"/></g>
+ <g stroke="#fff" stroke-linecap="round" fill="none"><path d="M-15 102L410 71M-10 214L410 177M48-10L89 540M159-10L146 540M285-10L258 540M373-10L335 540" stroke-width="12"/></g>
+ <path d="M68 445c28-65 74-105 88-167 14-63 73-68 96-129 16-40 47-45 69-76" fill="none" stroke="#fff" stroke-width="10" stroke-linecap="round"/>
+ <path d="M68 445c28-65 74-105 88-167 14-63 73-68 96-129 16-40 47-45 69-76" fill="none" stroke="#1677ff" stroke-width="5" stroke-linecap="round"/>
+ <circle cx="68" cy="445" r="10" fill="#1677ff" stroke="#fff" stroke-width="3"/><circle cx="321" cy="73" r="13" fill="#10b7a4" stroke="#fff" stroke-width="3"/>
+ <rect x="17" y="17" width="178" height="47" rx="10" fill="#fff"/><text x="30" y="38" font-family="sans-serif" font-size="10" font-weight="700" fill="#263244">前往深圳市民中心充电站</text><text x="30" y="54" font-family="sans-serif" font-size="8" fill="#85909f">已选择推荐路线</text>
+</svg>
