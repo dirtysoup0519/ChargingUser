@@ -40,6 +40,7 @@ private slots:
     void handleLoginSucceeded(const LoginResult &result);
     void handleCurrentUserRefreshed(const UserProfileResult &result);
     void handleNicknameUpdated(const UserProfileResult &result);
+    void handleAvatarUpdated(const UserProfileResult &result);
     void handleLogoutSucceeded(const OperationResult &result);
     void handleOperationFailed(const ClientError &error);
     void handleSessionChanged(const UserSession &session);

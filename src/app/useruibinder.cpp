@@ -33,6 +33,7 @@ bool profileStatesEqual(const ProfileEditViewState &left,
     return left.submitState == right.submitState
            && left.phone == right.phone
            && left.nicknameInput == right.nicknameInput
+           && left.avatarDataUri == right.avatarDataUri
            && left.message == right.message
            && left.canSubmit == right.canSubmit
            && left.canRetry == right.canRetry;
@@ -44,6 +45,7 @@ bool profileSummaryStatesEqual(const ProfileViewState &left,
     return left.nickname == right.nickname
            && left.maskedPhone == right.maskedPhone
            && left.balanceText == right.balanceText
+           && left.avatarDataUri == right.avatarDataUri
            && left.accountState == right.accountState
            && left.accountMessage == right.accountMessage;
 }
@@ -117,6 +119,14 @@ void UserUiBinder::profileSaveRequested(const QString &nickname)
 {
     m_profileState.nicknameInput = nickname;
     m_flowCoordinator->saveNickname(nickname);
+}
+
+void UserUiBinder::avatarUpdateRequested(const QString &avatarDataUri)
+{
+    ProfileEditViewState previewState = m_profileState;
+    previewState.avatarDataUri = avatarDataUri;
+    publishProfileState(previewState);
+    m_userService->updateAvatar(avatarDataUri);
 }
 
 void UserUiBinder::retryRequested()
@@ -194,7 +204,12 @@ void UserUiBinder::rebuildViewStates(const UserFlowSnapshot &snapshot)
     if (snapshot.state == UserFlowState::SignedOut) {
         profile.phone.clear();
         profile.nicknameInput.clear();
+        profile.avatarDataUri.clear();
     } else {
+        if (m_userService->operationStatus(UserOperation::UpdateAvatar).state
+            != UserOperationState::Running) {
+            profile.avatarDataUri = snapshot.session.profile.avatarKey;
+        }
         if (!snapshot.session.profile.phone.isEmpty()) {
             profile.phone = snapshot.session.profile.phone;
         }
@@ -207,13 +222,17 @@ void UserUiBinder::rebuildViewStates(const UserFlowSnapshot &snapshot)
 
     const UserOperationStatus nicknameOperation =
         m_userService->operationStatus(UserOperation::UpdateNickname);
+    const UserOperationStatus avatarOperation =
+        m_userService->operationStatus(UserOperation::UpdateAvatar);
     if (snapshot.state == UserFlowState::RecoveringProfileUpdate
-        || nicknameOperation.state == UserOperationState::ResultUnknown) {
+        || nicknameOperation.state == UserOperationState::ResultUnknown
+        || avatarOperation.state == UserOperationState::ResultUnknown) {
         profile.submitState = SubmitState::ResultUnknown;
         profile.message = snapshot.error.displayMessage;
         profile.canSubmit = false;
         profile.canRetry = snapshot.error.retryable;
     } else if (nicknameOperation.state == UserOperationState::Running
+               || avatarOperation.state == UserOperationState::Running
                || snapshot.state == UserFlowState::InitializingNewUser) {
         profile.submitState = SubmitState::Loading;
         profile.canSubmit = false;
@@ -235,6 +254,7 @@ void UserUiBinder::rebuildViewStates(const UserFlowSnapshot &snapshot)
     ProfileViewState profileSummary;
     if (snapshot.session.authenticated) {
         profileSummary.nickname = snapshot.session.profile.nickname;
+        profileSummary.avatarDataUri = snapshot.session.profile.avatarKey;
         profileSummary.maskedPhone = maskedPhone(snapshot.session.profile.phone);
         if (snapshot.session.profile.balanceCents) {
             profileSummary.balanceText = QStringLiteral("¥%1")

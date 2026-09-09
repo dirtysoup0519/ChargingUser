@@ -30,6 +30,7 @@ public slots:
     virtual void loginRequested(const QString &phone) = 0;
     virtual void usernamePasswordLoginRequested(const QString &, const QString &) {}
     virtual void profileSaveRequested(const QString &nickname) = 0;
+    virtual void avatarUpdateRequested(const QString &avatarDataUri) = 0;
     virtual void retryRequested() = 0;
     virtual void logoutRequested() = 0;
 

@@ -50,6 +50,11 @@ void MockUserNetworkApi::setNicknameBehavior(const Behavior &behavior)
     m_nicknameBehavior = behavior;
 }
 
+void MockUserNetworkApi::setAvatarBehavior(const Behavior &behavior)
+{
+    m_avatarBehavior = behavior;
+}
+
 void MockUserNetworkApi::setPasswordBehavior(const Behavior &behavior)
 {
     m_passwordBehavior = behavior;
@@ -174,6 +179,24 @@ void MockUserNetworkApi::updateNickname(const QString &userId,
     result.profile.nickname = nickname;
     QTimer::singleShot(m_nicknameBehavior.delayMs, this, [this, result] {
         emit nicknameUpdateSucceeded(result);
+    });
+}
+
+void MockUserNetworkApi::updateAvatar(const QString &userId,
+                                      const QString &avatarDataUri,
+                                      const RequestContext &context)
+{
+    Q_UNUSED(userId)
+    if (m_avatarBehavior.outcome != Outcome::Success) {
+        scheduleFailure(m_avatarBehavior, context);
+        return;
+    }
+    UserProfileResult result = m_userProfileResult;
+    result.requestId = context.requestId;
+    result.operationId = context.operationId;
+    result.profile.avatarKey = avatarDataUri;
+    QTimer::singleShot(m_avatarBehavior.delayMs, this, [this, result] {
+        emit avatarUpdateSucceeded(result);
     });
 }
 

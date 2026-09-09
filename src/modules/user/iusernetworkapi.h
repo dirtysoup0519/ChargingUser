@@ -31,6 +31,9 @@ public:
     virtual void updateNickname(const QString &userId,
                                 const QString &nickname,
                                 const RequestContext &context) = 0;
+    virtual void updateAvatar(const QString &userId,
+                              const QString &avatarDataUri,
+                              const RequestContext &context) = 0;
     virtual void changePassword(const QString &userId,
                                 const QString &oldPassword,
                                 const QString &newPassword,
@@ -41,6 +44,7 @@ signals:
     void loginSucceeded(const LoginResult &result);
     void currentUserQuerySucceeded(const UserProfileResult &result);
     void nicknameUpdateSucceeded(const UserProfileResult &result);
+    void avatarUpdateSucceeded(const UserProfileResult &result);
     void passwordChangeSucceeded(const OperationResult &result);
     void logoutSucceeded(const OperationResult &result);
     void requestFailed(const ClientError &error);

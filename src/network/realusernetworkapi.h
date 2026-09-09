@@ -34,6 +34,9 @@ public:
     void updateNickname(const QString &userId,
                         const QString &nickname,
                         const RequestContext &context) override;
+    void updateAvatar(const QString &userId,
+                      const QString &avatarDataUri,
+                      const RequestContext &context) override;
     void changePassword(const QString &userId,
                         const QString &oldPassword,
                         const QString &newPassword,
@@ -49,6 +52,7 @@ public:
         CredentialLogin,
         QueryProfile,
         UpdateNickname,
+        UpdateAvatar,
         UpdatePassword,
         Logout
     };
@@ -61,12 +65,14 @@ private:
         QString operationId;
         QString userId;
         QString requestedNickname;
+        QString requestedAvatar;
         QTimer *timer = nullptr;
     };
 
     bool startRequest(PendingKind kind, const QJsonObject &payload,
                       const RequestContext &context, const QString &userId,
-                      const QString &requestedNickname = QString());
+                      const QString &requestedNickname = QString(),
+                      const QString &requestedAvatar = QString());
     void handleFrame(int msgType, const QJsonObject &payload);
     void handleServerError(int errType, const QJsonObject &payload);
     void handleTimeout(const QString &requestId);

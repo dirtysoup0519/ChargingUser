@@ -16,6 +16,8 @@ UserService::UserService(IUserNetworkApi *networkApi, QObject *parent)
             this, &UserService::handleCurrentUserQuerySucceeded);
     connect(m_networkApi, &IUserNetworkApi::nicknameUpdateSucceeded,
             this, &UserService::handleNicknameUpdateSucceeded);
+    connect(m_networkApi, &IUserNetworkApi::avatarUpdateSucceeded,
+            this, &UserService::handleAvatarUpdateSucceeded);
     connect(m_networkApi, &IUserNetworkApi::passwordChangeSucceeded,
             this, &UserService::handlePasswordChangeSucceeded);
     connect(m_networkApi, &IUserNetworkApi::logoutSucceeded,
@@ -118,6 +120,7 @@ void UserService::updateNickname(const QString &nickname)
         return;
     }
     if (hasPendingRequest(RequestKind::UpdateNickname)
+        || hasPendingRequest(RequestKind::UpdateAvatar)
         || hasPendingRequest(RequestKind::ChangePassword)) {
         failLocal(QStringLiteral("request-in-progress"),
                   QStringLiteral("Profile update is already in progress."));
@@ -137,6 +140,39 @@ void UserService::updateNickname(const QString &nickname)
     m_networkApi->updateNickname(m_session.profile.userId, trimmed, context);
 }
 
+void UserService::updateAvatar(const QString &avatarDataUri)
+{
+    if (!m_session.authenticated || m_session.profile.userId.isEmpty()) {
+        failLocal(QStringLiteral("not-authenticated"),
+                  QStringLiteral("No active user session."));
+        return;
+    }
+    if (!avatarDataUri.startsWith(QStringLiteral("data:image/"))
+        || avatarDataUri.toUtf8().size() > 96 * 1024) {
+        failLocal(QStringLiteral("invalid-avatar"),
+                  QStringLiteral("Avatar must be an image data URI no larger than 96 KB."));
+        return;
+    }
+    if (hasPendingRequest(RequestKind::UpdateNickname)
+        || hasPendingRequest(RequestKind::UpdateAvatar)
+        || hasPendingRequest(RequestKind::ChangePassword)) {
+        failLocal(QStringLiteral("request-in-progress"),
+                  QStringLiteral("Profile update is already in progress."));
+        return;
+    }
+    if (m_profileUpdateResultUnknown) {
+        failLocal(QStringLiteral("result-unknown-pending"),
+                  QStringLiteral("Previous profile update requires result recovery."));
+        return;
+    }
+    const RequestContext context = createContext(true);
+    m_pendingRequests.insert(context.requestId,
+                             {RequestKind::UpdateAvatar, m_sessionGeneration, context});
+    publishOperationState(RequestKind::UpdateAvatar,
+                          UserOperationState::Running, context);
+    m_networkApi->updateAvatar(m_session.profile.userId, avatarDataUri, context);
+}
+
 void UserService::changePassword(const QString &oldPassword,
                                  const QString &newPassword)
 {
@@ -151,6 +187,7 @@ void UserService::changePassword(const QString &oldPassword,
         return;
     }
     if (hasPendingRequest(RequestKind::ChangePassword)
+        || hasPendingRequest(RequestKind::UpdateAvatar)
         || hasPendingRequest(RequestKind::UpdateNickname)) {
         failLocal(QStringLiteral("request-in-progress"),
                   QStringLiteral("A profile change is already in progress."));
@@ -219,6 +256,7 @@ void UserService::handleLoginSucceeded(const LoginResult &result)
     // 会抑制默认 Idle 的无效广播，因此首次普通登录仍只有 Login 两次迁移。
     publishOperationState(RequestKind::QueryCurrentUser, UserOperationState::Idle);
     publishOperationState(RequestKind::UpdateNickname, UserOperationState::Idle);
+    publishOperationState(RequestKind::UpdateAvatar, UserOperationState::Idle);
     publishOperationState(RequestKind::ChangePassword, UserOperationState::Idle);
     publishOperationState(RequestKind::Logout, UserOperationState::Idle);
 
@@ -272,6 +310,8 @@ void UserService::handleCurrentUserQuerySucceeded(const UserProfileResult &resul
     if (recoveringUnknownUpdate) {
         publishOperationState(RequestKind::UpdateNickname,
                               UserOperationState::Idle);
+        publishOperationState(RequestKind::UpdateAvatar,
+                              UserOperationState::Idle);
     }
     emit sessionChanged(m_session);
     emit currentUserRefreshed(result);
@@ -292,6 +332,19 @@ void UserService::handleNicknameUpdateSucceeded(const UserProfileResult &result)
                           pending.context);
     emit sessionChanged(m_session);
     emit nicknameUpdated(result);
+}
+
+void UserService::handleAvatarUpdateSucceeded(const UserProfileResult &result)
+{
+    PendingRequest pending;
+    if (!takePendingRequest(result.requestId, RequestKind::UpdateAvatar, &pending)
+        || pending.sessionGeneration != m_sessionGeneration)
+        return;
+    m_session.profile.avatarKey = result.profile.avatarKey;
+    publishOperationState(RequestKind::UpdateAvatar, UserOperationState::Idle,
+                          pending.context);
+    emit sessionChanged(m_session);
+    emit avatarUpdated(result);
 }
 
 void UserService::handlePasswordChangeSucceeded(const OperationResult &result)
@@ -333,9 +386,11 @@ void UserService::handleRequestFailed(const ClientError &error)
         return;
     }
     if ((pending.kind == RequestKind::UpdateNickname
+         || pending.kind == RequestKind::UpdateAvatar
          || pending.kind == RequestKind::ChangePassword)
         && error.resultUnknown) {
-        if (pending.kind == RequestKind::UpdateNickname)
+        if (pending.kind == RequestKind::UpdateNickname
+            || pending.kind == RequestKind::UpdateAvatar)
             m_profileUpdateResultUnknown = true;
         else
             m_passwordChangeResultUnknown = true;
@@ -398,6 +453,8 @@ UserOperation UserService::toUserOperation(RequestKind kind) const
         return UserOperation::RefreshProfile;
     case RequestKind::UpdateNickname:
         return UserOperation::UpdateNickname;
+    case RequestKind::UpdateAvatar:
+        return UserOperation::UpdateAvatar;
     case RequestKind::ChangePassword:
         return UserOperation::ChangePassword;
     case RequestKind::Logout:
@@ -474,6 +531,7 @@ void UserService::clearSession()
     publishOperationState(RequestKind::Login, UserOperationState::Idle);
     publishOperationState(RequestKind::QueryCurrentUser, UserOperationState::Idle);
     publishOperationState(RequestKind::UpdateNickname, UserOperationState::Idle);
+    publishOperationState(RequestKind::UpdateAvatar, UserOperationState::Idle);
     publishOperationState(RequestKind::ChangePassword, UserOperationState::Idle);
     publishOperationState(RequestKind::Logout, UserOperationState::Idle);
     emit sessionChanged(m_session);

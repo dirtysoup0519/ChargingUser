@@ -874,3 +874,21 @@ UI 的“原密码”步骤仅临时收集输入；v2.6 没有独立的只验证
 进入新密码页面前声称服务端已验证成功。最终提交新密码时一次性发送 118，由服务端原子
 校验旧密码并修改。手机号首次资料完善则先设置初始密码，228 成功后再走原昵称保存，避免
 两个 118 请求并发。任何密码字符串都不得保存在 PendingRequest、订单数据或 tmp 文件中。
+# 头像选择、上传与页面同步
+
+新用户资料完善页和“我的 → 编辑资料”共用 `ProfileEditWindow` 的“更换头像”入口。入口沿用扫码页已经验证的 `QFileDialog::getOpenFileName` 相册读取方式，支持 PNG、JPEG、BMP 和 WebP；客户端先居中裁成正方形，再缩放并转成 JPEG data URI。`AvatarImageHelper` 会逐级降低尺寸和质量，保证传给服务端的整个 `data:image/jpeg;base64,...` 字符串不超过协议规定的 96 KB。取消选图不会发请求，读取失败或无法压缩到限制内会在当前资料页提示。
+
+页面只把最终 data URI 交给 `IUserUiBinder::avatarUpdateRequested`。调用链为 `UserUiBinder → IUserService::updateAvatar → IUserNetworkApi::updateAvatar → RealUserNetworkApi`，正式网络发送 `PROFILE_UPD_REQ(118)`：
+
+```json
+{
+  "username": "当前登录用户名",
+  "avatar": "data:image/jpeg;base64,...",
+  "requestId": "客户端请求标识",
+  "operationId": "客户端幂等操作标识"
+}
+```
+
+服务端以 `PROFILE_UPD_ACK(228)` 返回 `ok=true`、同一 `username` 和 `changed:["avatar"]`。成功后 `UserService` 只更新当前会话的 `profile.avatarKey`，不会覆盖手机号、昵称、余额或账号状态；会话变化会同时刷新资料编辑页和“我的”页头像。登录 `101/201`、手机号登录 `116/217` 以及用户查询 `100/200` 返回的 `avatar` 字段也会写入同一属性，因此重新登录和服务端资料刷新后仍以服务端头像为准。
+
+模拟网络实现走相同的 service/binder 接口并回显本次 data URI，便于 `CONFIG+=user_demo` 在不改页面代码的情况下测试。服务端接入时保留 `IUserService` 和 `IUserNetworkApi` 的语义接口，只替换网络适配器即可。

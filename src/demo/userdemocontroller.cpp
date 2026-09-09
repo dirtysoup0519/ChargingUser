@@ -9,6 +9,7 @@
 #include "presentation/pages/auth/loginwindow.h"
 #include "presentation/pages/shell/mainwindow.h"
 #include "presentation/pages/profile/profileeditwindow.h"
+#include "presentation/widgets/common/avatarimagehelper.h"
 #include "presentation/pages/home/navigationwindow.h"
 #include "presentation/pages/home/stationdetailwindow.h"
 #include "presentation/pages/profile/walletrechargewindow.h"
@@ -124,6 +125,7 @@ QHash<QString, DemoUserData> loadDemoUsers(QString *newUserNicknamePattern)
         user.nickname = object.value(QStringLiteral("nickname")).toString();
         user.password = object.value(QStringLiteral("password"))
                             .toString(QStringLiteral("123456"));
+        user.avatarDataUri = object.value(QStringLiteral("avatar")).toString();
         const QJsonObject firstFailure =
             object.value(QStringLiteral("firstLoginFailure")).toObject();
         user.failFirstLogin = !firstFailure.isEmpty();
@@ -155,6 +157,7 @@ LoginResult makeLoginResult(const QString &phone, const DemoUserData *user,
     result.session.profile.nickname = user
         ? user->nickname
         : generatedNickname;
+    result.session.profile.avatarKey = user ? user->avatarDataUri : QString();
     return result;
 }
 
@@ -438,6 +441,24 @@ UserDemoController::UserDemoController(MockUserNetworkApi *network,
             this, &UserDemoController::configureNicknameSave);
     connect(m_profileEdit, &ProfileEditWindow::profileSaveRequested,
             m_binder, &IUserUiBinder::profileSaveRequested);
+    connect(m_profileEdit, &ProfileEditWindow::avatarChangeRequested,
+            this, [this] {
+        QString dataUri;
+        QString error;
+        QPixmap preview;
+        if (!AvatarImageHelper::selectFromAlbum(m_profileEdit, &dataUri,
+                                                 &preview, &error)) {
+            if (!error.isEmpty())
+                QMessageBox::warning(m_profileEdit, tr("更换头像"), error);
+            return;
+        }
+        m_profileEdit->setAvatarPreview(dataUri);
+        if (m_usernameFirstSetup) {
+            m_pendingAvatarDataUri = dataUri;
+            return;
+        }
+        m_binder->avatarUpdateRequested(dataUri);
+    });
     connect(m_profileEdit, &ProfileEditWindow::profileCompletionRequested,
             this, [this](const QString &nickname, const QString &phone,
                          const QString &newPassword) {
@@ -445,6 +466,7 @@ UserDemoController::UserDemoController(MockUserNetworkApi *network,
             DemoUserData user;
             user.nickname = nickname;
             user.password = m_pendingUsernamePassword;
+            user.avatarDataUri = m_pendingAvatarDataUri;
             user.status = AccountStatus::Normal;
             m_demoUsers.insert(phone, user);
             m_currentAccountKey = phone;
@@ -455,8 +477,10 @@ UserDemoController::UserDemoController(MockUserNetworkApi *network,
             profile.nickname = nickname;
             profile.maskedPhone = phone.left(3) + QStringLiteral("****") + phone.right(4);
             profile.balanceText = m_paymentBalanceText;
+            profile.avatarDataUri = m_pendingAvatarDataUri;
             profile.accountState = AccountDisplayState::Normal;
             m_mainWindow->renderProfile(profile);
+            m_pendingAvatarDataUri.clear();
             m_mainWindow->renderPrimaryPage(MainWindow::PrimaryPage::Home);
             showOnly(m_mainWindow);
             m_mapBinder->activateHome();
@@ -477,6 +501,8 @@ UserDemoController::UserDemoController(MockUserNetworkApi *network,
             this, &UserDemoController::rememberConfirmedLogin);
     connect(m_network, &IUserNetworkApi::nicknameUpdateSucceeded,
             this, &UserDemoController::rememberConfirmedNickname);
+    connect(m_network, &IUserNetworkApi::avatarUpdateSucceeded,
+            this, &UserDemoController::rememberConfirmedAvatar);
 
     connect(m_binder, &IUserUiBinder::loginViewStateChanged,
             m_login, &LoginWindow::render);
@@ -1510,6 +1536,13 @@ void UserDemoController::rememberConfirmedNickname(const UserProfileResult &resu
     // Subsequent profile refreshes must return the same confirmed nickname.
     // Failed/result-unknown callbacks never reach this slot and are not saved.
     m_network->setUserProfileResult(result);
+}
+
+void UserDemoController::rememberConfirmedAvatar(const UserProfileResult &result)
+{
+    if (m_currentAccountKey.isEmpty())
+        return;
+    m_demoUsers[m_currentAccountKey].avatarDataUri = result.profile.avatarKey;
 }
 
 void UserDemoController::handleNavigation(NavigationTarget target)

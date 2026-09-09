@@ -41,6 +41,7 @@
 #include "presentation/pages/profile/passwordchangewindow.h"
 #include "presentation/pages/profile/profiletextwindow.h"
 #include "presentation/pages/profile/walletrechargewindow.h"
+#include "presentation/widgets/common/avatarimagehelper.h"
 #include "presentation/pages/shell/mainwindow.h"
 
 #include <QApplication>
@@ -648,6 +649,20 @@ int main(int argc, char *argv[])
                      binder, &IUserUiBinder::usernamePasswordLoginRequested);
     QObject::connect(&profileEdit, &ProfileEditWindow::profileSaveRequested,
                      binder, &IUserUiBinder::profileSaveRequested);
+    QObject::connect(&profileEdit, &ProfileEditWindow::avatarChangeRequested,
+                     &app, [&] {
+        QString dataUri;
+        QString error;
+        QPixmap preview;
+        if (!AvatarImageHelper::selectFromAlbum(&profileEdit, &dataUri,
+                                                 &preview, &error)) {
+            if (!error.isEmpty())
+                QMessageBox::warning(&profileEdit, QStringLiteral("更换头像"), error);
+            return;
+        }
+        profileEdit.setAvatarPreview(dataUri);
+        binder->avatarUpdateRequested(dataUri);
+    });
     QObject::connect(&profileEdit, &ProfileEditWindow::profileCompletionRequested,
                      &app, [&](const QString &nickname, const QString &,
                                const QString &newPassword) {

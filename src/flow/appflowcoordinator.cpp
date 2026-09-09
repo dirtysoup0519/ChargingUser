@@ -16,6 +16,8 @@ AppFlowCoordinator::AppFlowCoordinator(IUserService *userService, QObject *paren
             this, &AppFlowCoordinator::handleCurrentUserRefreshed);
     connect(m_userService, &IUserService::nicknameUpdated,
             this, &AppFlowCoordinator::handleNicknameUpdated);
+    connect(m_userService, &IUserService::avatarUpdated,
+            this, &AppFlowCoordinator::handleAvatarUpdated);
     connect(m_userService, &IUserService::logoutSucceeded,
             this, &AppFlowCoordinator::handleLogoutSucceeded);
     connect(m_userService, &IUserService::operationFailed,
@@ -319,6 +321,16 @@ void AppFlowCoordinator::handleNicknameUpdated(const UserProfileResult &result)
 
     // 非资料完善场景（如 Ready 用户改名）：只更新快照，不强制导航
     settleReadyWithoutNavigation();
+}
+
+void AppFlowCoordinator::handleAvatarUpdated(const UserProfileResult &result)
+{
+    Q_UNUSED(result)
+    if (m_terminated)
+        return;
+    m_snapshot.session = m_userService->currentSession();
+    m_snapshot.error = ClientError{};
+    publishFlow();
 }
 
 void AppFlowCoordinator::handleLogoutSucceeded(const OperationResult &result)
