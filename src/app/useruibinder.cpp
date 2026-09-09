@@ -106,6 +106,13 @@ void UserUiBinder::loginRequested(const QString &phone)
     m_flowCoordinator->login(phone);
 }
 
+void UserUiBinder::usernamePasswordLoginRequested(const QString &username,
+                                                  const QString &password)
+{
+    m_loginState.phoneInput = username;
+    m_userService->loginByCredentials(username, password);
+}
+
 void UserUiBinder::profileSaveRequested(const QString &nickname)
 {
     m_profileState.nicknameInput = nickname;

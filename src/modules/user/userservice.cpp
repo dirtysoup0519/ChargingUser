@@ -47,6 +47,26 @@ void UserService::loginByPhone(const QString &phone)
     m_networkApi->loginByPhone(phone, context);
 }
 
+void UserService::loginByCredentials(const QString &username,
+                                     const QString &password)
+{
+    if (username.trimmed().isEmpty() || password.isEmpty()) {
+        failLocal(QStringLiteral("invalid-credentials"),
+                  QStringLiteral("Username and password are required."));
+        return;
+    }
+    if (hasPendingRequest(RequestKind::Login)) {
+        failLocal(QStringLiteral("request-in-progress"),
+                  QStringLiteral("Login is already in progress."));
+        return;
+    }
+    const RequestContext context = createContext(true);
+    m_pendingRequests.insert(context.requestId,
+                             {RequestKind::Login, m_sessionGeneration, context});
+    publishOperationState(RequestKind::Login, UserOperationState::Running, context);
+    m_networkApi->loginByCredentials(username.trimmed(), password, context);
+}
+
 void UserService::refreshCurrentUser()
 {
     if (!m_session.authenticated || m_session.profile.userId.isEmpty()) {

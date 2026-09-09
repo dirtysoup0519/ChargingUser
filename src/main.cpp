@@ -575,15 +575,7 @@ int main(int argc, char *argv[])
     QObject::connect(&login, &LoginWindow::loginRequested,
                      binder, &IUserUiBinder::loginRequested);
     QObject::connect(&login, &LoginWindow::usernamePasswordLoginRequested,
-                     &app, [&](const QString &username, const QString &) {
-        LoginViewState state = binder->currentLoginViewState();
-        state.phoneInput = username;
-        state.submitState = SubmitState::ServerError;
-        state.message = QStringLiteral(
-            "当前服务端协议尚未提供用户名密码登录，请切换为手机号登录。");
-        state.canSubmit = true;
-        login.render(state);
-    });
+                     binder, &IUserUiBinder::usernamePasswordLoginRequested);
     QObject::connect(&profileEdit, &ProfileEditWindow::profileSaveRequested,
                      binder, &IUserUiBinder::profileSaveRequested);
     QObject::connect(&profileEdit, &ProfileEditWindow::profileCompletionRequested,

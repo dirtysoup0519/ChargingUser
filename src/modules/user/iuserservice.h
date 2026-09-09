@@ -20,6 +20,7 @@ public:
     ~IUserService() override = default;
 
     virtual void loginByPhone(const QString &phone) = 0;
+    virtual void loginByCredentials(const QString &, const QString &) {}
     virtual void refreshCurrentUser() = 0;
     virtual void updateNickname(const QString &nickname) = 0;
     virtual void logout() = 0;

@@ -22,6 +22,10 @@ public:
 
     virtual void loginByPhone(const QString &phone,
                               const RequestContext &context) = 0;
+    // Optional credential login; legacy/mock adapters may keep the default
+    // unsupported implementation until their fixture contract is extended.
+    virtual void loginByCredentials(const QString &, const QString &,
+                                    const RequestContext &) {}
     virtual void queryCurrentUser(const QString &userId,
                                   const RequestContext &context) = 0;
     virtual void updateNickname(const QString &userId,

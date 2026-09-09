@@ -15,6 +15,7 @@ public:
     explicit UserService(IUserNetworkApi *networkApi, QObject *parent = nullptr);
 
     void loginByPhone(const QString &phone) override;
+    void loginByCredentials(const QString &username, const QString &password) override;
     void refreshCurrentUser() override;
     void updateNickname(const QString &nickname) override;
     void logout() override;

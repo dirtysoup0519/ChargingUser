@@ -28,6 +28,8 @@ public:
     explicit RealUserNetworkApi(BackendClient *backend, QObject *parent = nullptr);
 
     void loginByPhone(const QString &phone, const RequestContext &context) override;
+    void loginByCredentials(const QString &username, const QString &password,
+                            const RequestContext &context) override;
     void queryCurrentUser(const QString &userId, const RequestContext &context) override;
     void updateNickname(const QString &userId,
                         const QString &nickname,
@@ -40,6 +42,7 @@ public:
     enum class PendingKind
     {
         Login,
+        CredentialLogin,
         QueryProfile,
         UpdateNickname,
         Logout

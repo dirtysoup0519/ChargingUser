@@ -53,6 +53,8 @@ int reqTypeForKind(RealUserNetworkApi::PendingKind kind)
     switch (kind) {
     case RealUserNetworkApi::PendingKind::Login:
         return PHONE_LOGIN_REQ;
+    case RealUserNetworkApi::PendingKind::CredentialLogin:
+        return LOGIN_REQ;
     case RealUserNetworkApi::PendingKind::QueryProfile:
         return GETDATA;
     case RealUserNetworkApi::PendingKind::UpdateNickname:
@@ -111,6 +113,17 @@ void RealUserNetworkApi::loginByPhone(const QString &phone,
     QJsonObject payload;
     payload.insert(QStringLiteral("phone"), phone);
     payload.insert(QStringLiteral("requestId"), context.requestId);
+    startRequest(PendingKind::CredentialLogin, payload, context, QString());
+}
+
+void RealUserNetworkApi::loginByCredentials(const QString &username,
+                                            const QString &password,
+                                            const RequestContext &context)
+{
+    QJsonObject payload{{QStringLiteral("username"), username.trimmed()},
+                        {QStringLiteral("password"), password},
+                        {QStringLiteral("role"), QStringLiteral("user")},
+                        {QStringLiteral("requestId"), context.requestId}};
     startRequest(PendingKind::Login, payload, context, QString());
 }
 
@@ -208,8 +221,10 @@ void RealUserNetworkApi::handleFrame(int msgType, const QJsonObject &payload)
     }
 
     PendingKind kind;
-    if (msgType == PHONE_LOGIN_ACK) {
+    if (msgType == PHONE_LOGIN_ACK || msgType == LOGIN_ACK) {
         kind = PendingKind::Login;
+    } else if (msgType == LOGIN_ACK) {
+        kind = PendingKind::CredentialLogin;
     } else if (msgType == DATA) {
         kind = PendingKind::QueryProfile;
     } else if (msgType == PROFILE_UPD_ACK) {
@@ -262,10 +277,12 @@ void RealUserNetworkApi::handleFrame(int msgType, const QJsonObject &payload)
     takePending(request.requestId, kind, nullptr);
 
     switch (request.kind) {
-    case PendingKind::Login: {
+    case PendingKind::Login:
+    case PendingKind::CredentialLogin: {
         LoginResult result;
         result.requestId = request.requestId;
-        result.isNewUser = payload.value(QStringLiteral("autoRegistered")).toBool(false);
+        result.isNewUser = msgType == PHONE_LOGIN_ACK
+                               && payload.value(QStringLiteral("autoRegistered")).toBool(false);
         // v1.1：profileCompleted 由客户端推导，217 不携带该字段
         result.profileCompleted = !result.isNewUser;
         result.session.profile.userId = response.value(QStringLiteral("username")).toString();
@@ -507,6 +524,7 @@ bool RealUserNetworkApi::successPayloadValid(PendingKind kind,
     const QString username = payload.value(QStringLiteral("username")).toString();
     switch (kind) {
     case PendingKind::Login:
+    case PendingKind::CredentialLogin:
         return !username.isEmpty();
     case PendingKind::QueryProfile:
         return !username.isEmpty()
