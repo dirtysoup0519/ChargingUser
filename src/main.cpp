@@ -1162,7 +1162,8 @@ int main(int argc, char *argv[])
                      &app, [&] {
         if (confirmationOpenedFromScanner) {
             confirmationOpenedFromScanner = false;
-            mainWindow.renderPrimaryPage(MainWindow::PrimaryPage::Charging);
+            mainWindow.renderPrimaryPage(MainWindow::PrimaryPage::Home);
+            mapBinder.activateHome();
         } else {
             stationDetail.render(mapBinder.currentStationDetailState());
             mainWindow.renderSecondaryPage(&stationDetail);
@@ -2164,7 +2165,7 @@ int main(int argc, char *argv[])
         if (scanEntryPoint == ScanEntryPoint::Session)
             mainWindow.renderPrimaryPage(MainWindow::PrimaryPage::Charging);
         else
-            mainWindow.renderPrimaryPage(MainWindow::PrimaryPage::Charging);
+            mainWindow.renderPrimaryPage(MainWindow::PrimaryPage::Home);
     });
 
     QObject::connect(&mapBinder, &IMapUiBinder::homeStateChanged,

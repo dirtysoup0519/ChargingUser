@@ -123,7 +123,9 @@ MainWindow::MainWindow(QWidget *parent) : QWidget(parent), ui(new Ui::MainWindow
         emit primaryPageRequested(PrimaryPage::Home);
     });
     connect(ui->chargeNav, &QToolButton::clicked, this, [this] {
-        emit primaryPageRequested(PrimaryPage::Charging);
+        // “充电”标签是扫码入口；活动充电会话只由启动成功、订单恢复或
+        // 订单列表查看进入，避免用户从主页误打开旧会话页面。
+        emit scanChargingRequested();
     });
     connect(ui->profileNav, &QToolButton::clicked, this, [this] {
         emit primaryPageRequested(PrimaryPage::Profile);
