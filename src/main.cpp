@@ -1125,6 +1125,9 @@ int main(int argc, char *argv[])
     });
     QObject::connect(&mainWindow, &MainWindow::logoutRequested,
                      binder, &IUserUiBinder::logoutRequested);
+    // 退出登录时同步清空充电会话页状态，避免切换账号后残留上一账号的订单。
+    QObject::connect(&mainWindow, &MainWindow::logoutRequested,
+                     &sessionBinder, &IChargingSessionUiBinder::clearSession);
     QObject::connect(binder, &IUserUiBinder::loginViewStateChanged,
                      &login, &LoginWindow::render);
     QObject::connect(binder, &IUserUiBinder::profileEditViewStateChanged,

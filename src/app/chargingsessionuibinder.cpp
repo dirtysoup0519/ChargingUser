@@ -365,9 +365,11 @@ void ChargingSessionUiBinder::applyOrder(const ChargingOrder &order)
     } else if (order.status == OrderStatus::PendingSettlement
                || order.status == OrderStatus::Settled
                || order.status == OrderStatus::Cancelled) {
-        m_state.status = ChargingSessionStatus::Ended;
-        m_state.canStop = false;
+        // 订单已终结：清空会话状态，充电页自动回到无订单的空状态，
+        // 避免停留在"充电已结束"页面无法离开（结算详情在订单列表查看）。
         m_refreshTimer->stop();
+        clearSession();
+        return;
     } else {
         m_state.status = ChargingSessionStatus::Error;
         m_state.message = QStringLiteral("订单状态未知，请刷新后重试。");
