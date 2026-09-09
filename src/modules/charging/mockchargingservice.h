@@ -12,6 +12,8 @@ class MockChargingService final : public IChargingService
 public:
     explicit MockChargingService(QObject *parent = nullptr);
     void setSnapshots(const QVector<ChargeConfirmationSnapshot> &snapshots);
+    void setChargerAvailable(const QString &stationId, const QString &chargerId,
+                             bool available);
 
 public slots:
     void loadConfirmation(const RequestContext &context,

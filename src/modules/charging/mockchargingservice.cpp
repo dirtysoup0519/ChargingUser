@@ -17,6 +17,17 @@ void MockChargingService::setSnapshots(
     }
 }
 
+void MockChargingService::setChargerAvailable(const QString &stationId,
+                                              const QString &chargerId,
+                                              bool available)
+{
+    const QString snapshotKey = key(stationId, chargerId);
+    if (!m_snapshots.contains(snapshotKey)) return;
+    ChargeConfirmationSnapshot snapshot = m_snapshots.value(snapshotKey);
+    snapshot.canStart = available;
+    m_snapshots.insert(snapshotKey, snapshot);
+}
+
 void MockChargingService::loadConfirmation(const RequestContext &context,
                                            const QString &stationId,
                                            const QString &chargerId)
@@ -58,25 +69,43 @@ void MockChargingService::startCharging(const RequestContext &context,
                                         const QString &stationId,
                                         const QString &chargerId)
 {
-    Q_UNUSED(stationId)
-    Q_UNUSED(chargerId)
-    ClientError error;
-    error.requestId = context.requestId;
-    error.operationId = context.operationId;
-    error.code = QStringLiteral("charging-start-not-configured");
-    error.displayMessage = QStringLiteral("订单启动接口尚未接入。");
-    emit requestFailed(error);
+    const QString snapshotKey = key(stationId, chargerId);
+    QTimer::singleShot(0, this, [this, context, stationId, chargerId, snapshotKey] {
+        if (m_cancelled.remove(context.requestId)) return;
+        if (!context.isValid() || !context.isMutation()
+            || !m_snapshots.contains(snapshotKey) || !m_snapshots.value(snapshotKey).canStart) {
+            ClientError error;
+            error.requestId = context.requestId;
+            error.operationId = context.operationId;
+            error.code = QStringLiteral("charging-start-rejected");
+            error.displayMessage = QStringLiteral("当前充电桩不可启动。");
+            emit requestFailed(error);
+            return;
+        }
+        const ChargeConfirmationSnapshot snapshot = m_snapshots.value(snapshotKey);
+        setChargerAvailable(stationId, chargerId, false);
+        StartChargingResult result;
+        result.requestId = context.requestId;
+        result.operationId = context.operationId;
+        result.orderId = QStringLiteral("demo-charge-%1").arg(context.operationId);
+        result.stationId = stationId;
+        result.chargerId = chargerId;
+        result.priceCentsPerKwhSnapshot = snapshot.priceCentsPerKwh.value_or(0);
+        result.startedAtUtc = QDateTime::currentDateTimeUtc();
+        emit chargingStarted(context, result);
+    });
 }
 
 void MockChargingService::queryStartResult(const RequestContext &context,
                                            const QString &operationId)
 {
-    ClientError error;
-    error.requestId = context.requestId;
-    error.operationId = operationId;
-    error.code = QStringLiteral("charging-operation-query-not-configured");
-    error.displayMessage = QStringLiteral("启动结果查询接口尚未接入。");
-    emit requestFailed(error);
+    ChargingOperationStatus status;
+    status.requestId = context.requestId;
+    status.operationId = operationId;
+    status.state = ChargingOperationState::Pending;
+    QTimer::singleShot(0, this, [this, context, status] {
+        emit startOperationStatusReady(context, status);
+    });
 }
 
 QString MockChargingService::key(const QString &stationId,

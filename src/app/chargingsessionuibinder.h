@@ -16,6 +16,7 @@ public:
     explicit ChargingSessionUiBinder(IOrderService *service,
                                      QObject *parent = nullptr);
     ChargingSessionViewState currentState() const override;
+    ChargingSessionCollectionViewState currentSessionsState() const override;
     void showOrder(const ChargingOrder &order);
     void applyProgress(const ChargingProgressNotice &notice);
 
@@ -24,6 +25,8 @@ public slots:
     void refreshRequested() override;
     void stopChargingRequested() override;
     void recoverStopResultRequested() override;
+    void activeSessionsRequested() override;
+    void activeSessionSelected(const QString &orderId) override;
 
 private slots:
     void handleOrderDetailReady(const RequestContext &context,
@@ -33,6 +36,8 @@ private slots:
     void handleStopOperationStatusReady(const RequestContext &context,
                                         const StopOperationStatus &status);
     void handleRequestFailed(const ClientError &error);
+    void handleActiveOrdersReady(const RequestContext &context,
+                                 const QVector<ChargingOrder> &orders);
 
 private:
     void load();
@@ -44,5 +49,7 @@ private:
     ChargingSessionViewState m_state;
     QString m_requestId;
     QString m_operationId;
+    QString m_activeRequestId;
+    ChargingSessionCollectionViewState m_sessionsState;
     QTimer *m_refreshTimer = nullptr;
 };

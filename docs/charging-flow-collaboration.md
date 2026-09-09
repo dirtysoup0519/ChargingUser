@@ -917,3 +917,16 @@ UI 的“原密码”步骤仅临时收集输入；v2.6 没有独立的只验证
 是否允许提交；用户点击支付后才向 `ReservationUiBinder` 提交预约。提交中、失败和结果未知
 均由预约 ViewState 驱动支付页并锁定重复点击，服务确认预约成功后再回到首页。活动预约的
 持久化、首页/详情状态与电桩占用统一监听 `activeReservationChanged`，不再重复解析服务信号。
+
+# 双模式统一装配
+
+`CONFIG+=user_demo` 与默认正式构建现在共同编译 `src/main.cpp`，因此登录后的页面创建、信号
+连接、页面跳转、充电确认、活动充电订单切换、停止充电、结算、钱包充值、订单支付、预约
+支付和状态同步全部走相同代码。旧 `UserDemoController` 仅保留给历史 UI 测试工程，不再进入
+Demo 应用目标，也不得继续承载产品交互逻辑。
+
+公共调用链固定为：页面 → Binder → Service 接口。Demo 装配注入 `MockUserNetworkApi`、
+`MockChargerService`、`MockMapService`、`MockChargingService`、`MockOrderService`、
+`MockWalletService` 和 `MockReservationService`，数据由 `*.tmp` Fixture 初始化；默认构建注入
+对应 Real 实现并连接正式服务端。Mock 的启动充电、活动订单、停止、结算金额、支付、充值和
+预约变更均在 Mock Service 内更新，页面与 Binder 不判断当前数据源。

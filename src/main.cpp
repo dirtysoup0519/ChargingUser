@@ -20,6 +20,17 @@
 #include "modules/wallet/walletservice.h"
 #include "modules/user/iuserservice.h"
 #include "modules/map/tencentmapservice.h"
+#ifdef CHARGINGUSER_USER_DEMO
+#include "demo/mapdemofixtureloader.h"
+#include "demo/reservationdemofixtureloader.h"
+#include "modules/charger/mockchargerservice.h"
+#include "modules/charging/mockchargingservice.h"
+#include "modules/map/mockmapservice.h"
+#include "modules/order/mockorderservice.h"
+#include "modules/reservation/mockreservationservice.h"
+#include "modules/user/mockusernetworkapi.h"
+#include "modules/wallet/mockwalletservice.h"
+#endif
 #include "presentation/contracts/reservationviewstates.h"
 #include "presentation/contracts/frequentstationviewstate.h"
 #include "presentation/contracts/orderdetailviewstate.h"
@@ -387,6 +398,58 @@ int main(int argc, char *argv[])
         app.setStyleSheet(QString::fromUtf8(theme.readAll()));
     }
 
+#ifdef CHARGINGUSER_USER_DEMO
+    MockUserNetworkApi network;
+    LoginResult demoLogin;
+    demoLogin.session.authenticated = true;
+    demoLogin.session.accountStatus = AccountStatus::Normal;
+    demoLogin.session.profile.userId = QStringLiteral("demo-user");
+    demoLogin.session.profile.phone = QStringLiteral("13800138000");
+    demoLogin.session.profile.nickname = QStringLiteral("演示用户");
+    QFile demoUserFile(QStringLiteral(":/demo/user-demo-data.tmp"));
+    if (demoUserFile.open(QIODevice::ReadOnly)) {
+        const QJsonArray users = QJsonDocument::fromJson(
+            demoUserFile.readAll()).object().value(QStringLiteral("users")).toArray();
+        if (!users.isEmpty()) {
+            const QJsonObject user = users.first().toObject();
+            demoLogin.session.profile.phone = user.value(
+                QStringLiteral("phone")).toString(demoLogin.session.profile.phone);
+            demoLogin.session.profile.nickname = user.value(
+                QStringLiteral("nickname")).toString(demoLogin.session.profile.nickname);
+        }
+    }
+    demoLogin.profileCompleted = true;
+    network.setLoginResult(demoLogin);
+    UserProfileResult demoProfile;
+    demoProfile.profile = demoLogin.session.profile;
+    demoProfile.accountStatus = demoLogin.session.accountStatus;
+    network.setUserProfileResult(demoProfile);
+    UserApplicationAssembly assembly(&network);
+    MockChargerService chargerService;
+    MockMapService mapService;
+    MockChargingService chargingService;
+    MockOrderService orderService;
+    ChargingSessionUiBinder sessionBinder(&orderService);
+    MockWalletService walletService;
+    WalletSnapshot demoWallet;
+    demoWallet.accountId = demoLogin.session.profile.userId;
+    QFile demoPaymentFile(QStringLiteral(":/demo/payment-demo-data.tmp"));
+    if (demoPaymentFile.open(QIODevice::ReadOnly)) {
+        const QJsonObject payment = QJsonDocument::fromJson(
+            demoPaymentFile.readAll()).object().value(
+                QStringLiteral("paymentDemo")).toObject();
+        qint64 fixtureBalance = 0;
+        if (parseMoneyText(payment.value(
+                QStringLiteral("walletBalanceText")).toString(), &fixtureBalance))
+            demoWallet.balanceCents = fixtureBalance;
+    }
+    demoWallet.fetchedAtUtc = QDateTime::currentDateTimeUtc();
+    walletService.setSnapshot(demoWallet);
+    WalletUiBinder walletBinder(&walletService);
+    SettlementUiBinder settlementBinder(&walletService);
+    MockReservationService reservationService;
+    ReservationUiBinder reservationBinder(&reservationService);
+#else
     // 生命周期顺序必须保持 transport > backend > network API > application assembly。
     // 以下对象按栈逆序析构，确保所有非拥有指针在使用期间有效。
     QtNetworkTransport transport(host, static_cast<quint16>(portValue));
@@ -416,9 +479,73 @@ int main(int argc, char *argv[])
     RealReservationService reservationService(&backend);
     ReservationUiBinder reservationBinder(&reservationService);
     ServerPushDispatcher pushDispatcher(&backend);
+#endif
 
+    QString mapKey;
+#ifdef CHARGINGUSER_USER_DEMO
+    MapDemoFixture demoMap;
+    QString demoMapError;
+    if (loadMapDemoFixture(QStringLiteral(":/demo/map-demo-data.tmp"),
+                           &demoMap, &demoMapError)) {
+        chargerService.setStationCatalog(demoMap.stations);
+        mapService.setLocationResult(demoMap.location);
+        QVector<ChargeConfirmationSnapshot> snapshots;
+        for (const StationDetail &station : demoMap.stations) {
+            for (const ChargerSummary &charger : station.chargers) {
+                ChargeConfirmationSnapshot snapshot;
+                snapshot.stationId = station.stationId;
+                snapshot.chargerId = charger.chargerId;
+                snapshot.stationName = station.summary.name;
+                snapshot.stationAddress = station.summary.address;
+                snapshot.chargerCode = charger.chargerId.section(QLatin1Char('-'), -1);
+                snapshot.chargerType = charger.type;
+                snapshot.powerKw = charger.powerKw;
+                snapshot.priceCentsPerKwh = station.summary.priceCentsPerKwh;
+                snapshot.walletBalanceCents = demoWallet.balanceCents;
+                snapshot.canStart = charger.online
+                                    && charger.businessStatus == ChargerBusinessStatus::Idle;
+                snapshot.startOperationSupported = true;
+                snapshot.canRecharge = true;
+                snapshots.append(snapshot);
+            }
+            if (station.summary.point) {
+                for (TravelMode mode : {TravelMode::Driving, TravelMode::Walking}) {
+                    RouteResult route;
+                    route.routeId = station.stationId
+                                    + (mode == TravelMode::Driving
+                                           ? QStringLiteral("-driving")
+                                           : QStringLiteral("-walking"));
+                    route.stationId = station.stationId;
+                    route.mode = mode;
+                    route.origin = demoMap.location.point;
+                    route.destination = *station.summary.point;
+                    route.polyline = {route.origin, route.destination};
+                    route.distanceMeters = station.summary.distanceMeters.value_or(800);
+                    route.durationSeconds = mode == TravelMode::Driving
+                        ? qMax(180, route.distanceMeters / 7)
+                        : qMax(240, route.distanceMeters * 4 / 5);
+                    mapService.setRouteResult(station.stationId, mode, route);
+                }
+            }
+        }
+        chargingService.setSnapshots(snapshots);
+    } else {
+        qWarning().noquote() << demoMapError;
+    }
+    ReservationDemoFixture demoReservation;
+    QString demoReservationError;
+    if (loadReservationDemoFixture(QStringLiteral(":/demo/reservation-demo-data.tmp"),
+                                   &demoReservation, &demoReservationError)) {
+        MockReservationService::Behavior reserveBehavior;
+        reserveBehavior.delayMs = demoReservation.responseDelayMs;
+        reservationService.setReserveBehavior(reserveBehavior);
+        MockReservationService::Behavior cancelBehavior;
+        cancelBehavior.delayMs = demoReservation.cancellationResponseDelayMs;
+        reservationService.setCancellationBehavior(cancelBehavior);
+    }
+#else
     const QJsonObject mapConfig = loadTencentMapConfig();
-    QString mapKey = qEnvironmentVariable("TENCENT_MAP_KEY").trimmed();
+    mapKey = qEnvironmentVariable("TENCENT_MAP_KEY").trimmed();
     if (mapKey.isEmpty()) {
         mapKey = mapConfig.value(QStringLiteral("key")).toString().trimmed();
     }
@@ -452,7 +579,26 @@ int main(int argc, char *argv[])
     if (fallback.point.isValid()) {
         mapService.setFallbackLocation(fallback);
     }
+#endif
     MapUiBinder mapBinder(&chargerService, &mapService);
+#ifdef CHARGINGUSER_USER_DEMO
+    QObject::connect(&walletService, &IWalletService::moneyOperationSucceeded,
+                     &app, [&](const RequestContext &, const MoneyOperationResult &result) {
+        if (result.type == MoneyOperationType::PayOrder)
+            orderService.markSettled(result.orderId);
+    });
+    QObject::connect(&reservationService, &IReservationService::reservationCreated,
+                     &app, [&](const RequestContext &, const ReservationResult &) {
+        walletService.debit(2000);
+        walletBinder.activate();
+    });
+    QObject::connect(&reservationService, &IReservationService::reservationCancelled,
+                     &app, [&](const RequestContext &,
+                               const ReservationCancellationResult &) {
+        walletService.credit(2000);
+        walletBinder.activate();
+    });
+#endif
 
     LoginWindow login;
     ProfileEditWindow profileEdit;
@@ -462,6 +608,33 @@ int main(int argc, char *argv[])
     mainWindow.registerSecondaryPage(&stationDetail);
     mainWindow.registerSecondaryPage(&navigation);
 
+#ifdef CHARGINGUSER_USER_DEMO
+    QObject::connect(&chargingService, &IChargingService::chargingStarted,
+                     &app, [&](const RequestContext &, const StartChargingResult &result) {
+        ChargingOrder order;
+        order.orderId = result.orderId;
+        order.stationId = result.stationId;
+        order.chargerId = result.chargerId;
+        order.status = OrderStatus::Charging;
+        order.startedAtUtc = result.startedAtUtc;
+        order.priceCentsPerKwhSnapshot = result.priceCentsPerKwhSnapshot;
+        order.progressPercent = 1;
+        for (const StationDetail &station : demoMap.stations) {
+            if (station.stationId != result.stationId) continue;
+            order.stationName = station.summary.name;
+            for (const ChargerSummary &charger : station.chargers) {
+                if (charger.chargerId != result.chargerId) continue;
+                order.chargerCode = charger.chargerId.section(QLatin1Char('-'), -1);
+                order.chargerType = charger.type;
+                order.ratedPowerKw = charger.powerKw;
+                order.currentPowerKw = charger.powerKw.value_or(0.0) * 0.7;
+                break;
+            }
+            break;
+        }
+        orderService.upsertOrder(order);
+    });
+#endif
     // 阶段 B：充电确认/钱包/预约/扫码页面接入真实对象图。
     // 预约与扫码的业务 Binder 属于阶段 J，当前页面可达并渲染诚实的失败态。
     ChargingUiBinder chargeBinder(&chargingService);
@@ -761,6 +934,7 @@ int main(int argc, char *argv[])
                      binder, &IUserUiBinder::loginRequested);
     QObject::connect(&login, &LoginWindow::usernamePasswordLoginRequested,
                      binder, &IUserUiBinder::usernamePasswordLoginRequested);
+#ifndef CHARGINGUSER_USER_DEMO
     QObject::connect(&login, &LoginWindow::serverSettingsRequested,
                      &app, [&] {
         QDialog dialog(&login);
@@ -798,6 +972,7 @@ int main(int argc, char *argv[])
         qInfo().noquote() << QStringLiteral("Server endpoint switched to %1:%2.")
                                  .arg(activeHost).arg(activePort);
     });
+#endif
     QObject::connect(&profileEdit, &ProfileEditWindow::profileSaveRequested,
                      binder, &IUserUiBinder::profileSaveRequested);
     QObject::connect(&profileEdit, &ProfileEditWindow::avatarChangeRequested,
@@ -1618,14 +1793,16 @@ int main(int argc, char *argv[])
                      &walletBinder, &WalletUiBinder::activate);
 
     // 阶段 D：登录成功 → 注入身份并自动恢复活动订单（充电中/待结算）。
-    QObject::connect(&network, &RealUserNetworkApi::loginSucceeded,
+    QObject::connect(userService, &IUserService::loginSucceeded,
                      &app, [&](const LoginResult &result) {
+#ifndef CHARGINGUSER_USER_DEMO
         orderService.setIdentity(result.session.profile.userId);
         walletNetwork.setIdentity(result.session.profile.userId);
         chargingNetwork.setIdentity(result.session.profile.userId);
         reservationService.setIdentity(result.session.profile.userId);
         restoreReservation(result.session.profile.userId);
         pushDispatcher.setIdentity(result.session.profile.userId);
+#endif
         walletBinder.setAccountId(result.session.profile.userId);
         walletBinder.activate();
         RequestContext recoveryContext{
@@ -1636,11 +1813,13 @@ int main(int argc, char *argv[])
                      &app, [&](const OperationResult &) {
         clearReservation();
         activeUserId.clear();
+#ifndef CHARGINGUSER_USER_DEMO
         orderService.setIdentity(QString());
         walletNetwork.setIdentity(QString());
         chargingNetwork.setIdentity(QString());
         reservationService.setIdentity(QString());
         pushDispatcher.setIdentity(QString());
+#endif
     });
     // 活动订单存在时交由会话 Binder 拉取详情；待支付订单直达结算页（合同 §3.4）。
     QObject::connect(&orderService, &IOrderService::activeOrderReady,
@@ -1666,6 +1845,11 @@ int main(int argc, char *argv[])
         mapBinder.chargerStatusConfirmed(result.order.stationId,
                                          result.order.chargerId,
                                          ChargerBusinessStatus::Idle);
+#ifdef CHARGINGUSER_USER_DEMO
+        walletService.setOrderAmount(result.order.orderId, result.order.amountCents);
+        chargingService.setChargerAvailable(result.order.stationId,
+                                            result.order.chargerId, true);
+#endif
         settlementBinder.showOrder(result.order);
         mainWindow.renderSecondaryPage(&settlementWindow);
     });
@@ -1746,6 +1930,7 @@ int main(int argc, char *argv[])
             mainWindow.renderSecondaryPage(&orderList);
         }
     });
+#ifndef CHARGINGUSER_USER_DEMO
     QObject::connect(&pushDispatcher, &ServerPushDispatcher::balanceChanged,
                      &walletBinder, &WalletUiBinder::activate);
     QObject::connect(&pushDispatcher, &ServerPushDispatcher::balanceChanged,
@@ -1823,6 +2008,7 @@ int main(int argc, char *argv[])
         walletBinder.activate();
         mainWindow.renderPrimaryPage(MainWindow::PrimaryPage::Home);
     });
+#ifndef CHARGINGUSER_USER_DEMO
     QObject::connect(&pushDispatcher, &ServerPushDispatcher::reservationExpired,
                      &app, [&](const QString &reservationId, const QString &) {
         if (activeReservation && (reservationId.isEmpty()
@@ -1836,10 +2022,29 @@ int main(int argc, char *argv[])
                                      QStringLiteral("您的预约已失效，可以重新选择充电桩。"));
         }
     });
+#endif
+#endif
     QObject::connect(&chargingService, &IChargingService::chargingStarted,
                      &app, [&](const RequestContext &, const StartChargingResult &result) {
         mapBinder.chargerStatusConfirmed(result.stationId, result.chargerId,
                                          ChargerBusinessStatus::Charging);
+#ifdef CHARGINGUSER_USER_DEMO
+        ChargingOrder order;
+        order.orderId = result.orderId;
+        order.stationId = result.stationId;
+        order.chargerId = result.chargerId;
+        const ChargeConfirmationViewState confirmation = chargeBinder.currentState();
+        order.stationName = confirmation.stationName;
+        order.chargerCode = confirmation.chargerCode;
+        order.chargerType = confirmation.chargerTypeText;
+        order.currentPowerKw = 42.6;
+        order.ratedPowerKw = 120.0;
+        order.progressPercent = 1;
+        order.priceCentsPerKwhSnapshot = result.priceCentsPerKwhSnapshot;
+        order.startedAtUtc = result.startedAtUtc;
+        order.status = OrderStatus::Charging;
+        orderService.upsertOrder(order);
+#endif
     });
     QObject::connect(&reservationBinder, &ReservationUiBinder::stateChanged,
                      &reservationConfirmation, &ReservationConfirmationWindow::render);
@@ -1918,6 +2123,7 @@ int main(int argc, char *argv[])
             break;
         }
     });
+#ifndef CHARGINGUSER_USER_DEMO
     QObject::connect(&backend, &BackendClient::connectionStateChanged,
                      &login, [](ConnectionState state) {
         qInfo().noquote()
@@ -1999,17 +2205,25 @@ int main(int argc, char *argv[])
     });
     QObject::connect(&app, &QCoreApplication::aboutToQuit,
                      &backend, &BackendClient::shutdown);
+#endif
 
     login.render(binder->currentLoginViewState());
     profileEdit.render(binder->currentProfileEditViewState());
     mainWindow.renderProfile(binder->currentProfileViewState());
     mainWindow.renderHome(mapBinder.currentHomeState());
     walletRecharge.render(walletBinder.currentState());
+#ifdef CHARGINGUSER_USER_DEMO
+    mapBinder.mapReady();
+#else
     if (mapKey.isEmpty()) {
         mapBinder.mapLoadFailed();
     }
+#endif
     showOnly(&login);
 
+#ifdef CHARGINGUSER_USER_DEMO
+    qInfo().noquote() << QStringLiteral("Starting shared UI flow with mock data adapters.");
+#else
     qInfo().noquote()
         << QStringLiteral("Starting real-network entry for %1:%2.")
                .arg(host)
@@ -2019,5 +2233,6 @@ int main(int argc, char *argv[])
             << QStringLiteral("TEST_ONLY: training environment enabled by default; money/charging operations are allowed.");
     }
     backend.start();
+#endif
     return app.exec();
 }

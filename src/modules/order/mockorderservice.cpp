@@ -1,6 +1,7 @@
 #include "modules/order/mockorderservice.h"
 
 #include <QTimer>
+#include <QtMath>
 
 MockOrderService::MockOrderService(QObject *parent) : IOrderService(parent) {}
 
@@ -9,6 +10,19 @@ void MockOrderService::setOrders(const QVector<ChargingOrder> &orders)
     m_orders.clear();
     for (const ChargingOrder &order : orders)
         if (!order.orderId.isEmpty()) m_orders.insert(order.orderId, order);
+}
+
+void MockOrderService::upsertOrder(const ChargingOrder &order)
+{
+    if (!order.orderId.isEmpty()) m_orders.insert(order.orderId, order);
+}
+
+void MockOrderService::markSettled(const QString &orderId)
+{
+    if (!m_orders.contains(orderId)) return;
+    ChargingOrder order = m_orders.value(orderId);
+    order.status = OrderStatus::Settled;
+    m_orders.insert(orderId, order);
 }
 
 void MockOrderService::queryActiveOrder(const RequestContext &context)
@@ -86,14 +100,31 @@ void MockOrderService::queryOrderDetail(const RequestContext &context,
 void MockOrderService::stopCharging(const RequestContext &context,
                                     const QString &orderId)
 {
-    Q_UNUSED(orderId)
     if (!context.isValid() || !context.isMutation()) {
         fail(context, QStringLiteral("order-invalid-stop-request"),
              QStringLiteral("停止充电请求缺少 operationId。"));
         return;
     }
-    fail(context, QStringLiteral("order-stop-not-configured"),
-         QStringLiteral("停止充电接口尚未接入。"));
+    if (!m_orders.contains(orderId) || m_orders.value(orderId).status != OrderStatus::Charging) {
+        fail(context, QStringLiteral("order-not-charging"),
+             QStringLiteral("订单当前不在充电中。"));
+        return;
+    }
+    ChargingOrder order = m_orders.value(orderId);
+    order.status = OrderStatus::PendingSettlement;
+    order.endedAtUtc = QDateTime::currentDateTimeUtc();
+    if (order.energyKwh <= 0.0) order.energyKwh = 9.7;
+    if (order.amountCents <= 0)
+        order.amountCents = qRound64(order.energyKwh * order.priceCentsPerKwhSnapshot);
+    m_orders.insert(orderId, order);
+    StopChargingResult result;
+    result.requestId = context.requestId;
+    result.operationId = context.operationId;
+    result.order = order;
+    m_stopResults.insert(context.operationId, result);
+    QTimer::singleShot(0, this, [this, context, result] {
+        emit chargingStopped(context, result);
+    });
 }
 
 void MockOrderService::queryStopResult(const RequestContext &context,
@@ -104,8 +135,18 @@ void MockOrderService::queryStopResult(const RequestContext &context,
              QStringLiteral("停止结果查询参数无效。"));
         return;
     }
-    fail(context, QStringLiteral("order-stop-result-not-configured"),
-         QStringLiteral("停止结果查询接口尚未接入。"));
+    StopOperationStatus status;
+    status.requestId = context.requestId;
+    status.operationId = operationId;
+    if (m_stopResults.contains(operationId)) {
+        status.state = StopOperationState::Succeeded;
+        status.result = m_stopResults.value(operationId);
+    } else {
+        status.state = StopOperationState::Pending;
+    }
+    QTimer::singleShot(0, this, [this, context, status] {
+        emit stopOperationStatusReady(context, status);
+    });
 }
 
 void MockOrderService::cancel(const QString &requestId)

@@ -25,6 +25,64 @@ ChargingSessionUiBinder::ChargingSessionUiBinder(IOrderService *service,
             this, &ChargingSessionUiBinder::handleStopOperationStatusReady);
     connect(m_service, &IOrderService::requestFailed,
             this, &ChargingSessionUiBinder::handleRequestFailed);
+    connect(m_service, &IOrderService::activeOrdersReady,
+            this, &ChargingSessionUiBinder::handleActiveOrdersReady);
+}
+
+ChargingSessionCollectionViewState ChargingSessionUiBinder::currentSessionsState() const
+{
+    return m_sessionsState;
+}
+
+void ChargingSessionUiBinder::activeSessionsRequested()
+{
+    if (!m_activeRequestId.isEmpty()) return;
+    RequestContext context;
+    context.requestId = QStringLiteral("active-orders-")
+                        + QUuid::createUuid().toString(QUuid::WithoutBraces);
+    m_activeRequestId = context.requestId;
+    m_sessionsState.loading = true;
+    m_sessionsState.message = QStringLiteral("正在加载充电中的订单…");
+    emit activeSessionsStateChanged(m_sessionsState);
+    m_service->queryActiveOrders(context);
+}
+
+void ChargingSessionUiBinder::activeSessionSelected(const QString &orderId)
+{
+    sessionRequested(orderId);
+}
+
+void ChargingSessionUiBinder::handleActiveOrdersReady(
+    const RequestContext &context, const QVector<ChargingOrder> &orders)
+{
+    if (context.requestId != m_activeRequestId) return;
+    m_activeRequestId.clear();
+    m_sessionsState = ChargingSessionCollectionViewState{};
+    for (const ChargingOrder &order : orders) {
+        ChargingSessionSummaryView option;
+        option.orderId = order.orderId;
+        option.stationName = order.stationName;
+        option.chargerCode = order.chargerCode;
+        option.chargerTypeText = order.chargerType;
+        option.ratedPowerText = order.ratedPowerKw
+            ? QStringLiteral("%1 kW").arg(*order.ratedPowerKw, 0, 'f', 0)
+            : QStringLiteral("-- kW");
+        option.currentPowerText = order.currentPowerKw
+            ? QStringLiteral("%1 kW").arg(*order.currentPowerKw, 0, 'f', 1)
+            : QStringLiteral("-- kW");
+        option.status = ChargingSessionStatus::Charging;
+        option.statusText = QStringLiteral("充电中");
+        if (order.startedAtUtc.isValid())
+            option.durationText = QStringLiteral("%1 分钟")
+                .arg(qMax<qint64>(0, order.startedAtUtc.secsTo(
+                    QDateTime::currentDateTimeUtc()) / 60));
+        m_sessionsState.sessions.append(option);
+    }
+    m_sessionsState.selectedOrderId = m_state.orderId;
+    m_sessionsState.message = orders.isEmpty()
+        ? QStringLiteral("当前没有进行中的充电订单。") : QString();
+    m_sessionsState.canRefresh = true;
+    emit activeSessionsStateChanged(m_sessionsState);
 }
 
 ChargingSessionViewState ChargingSessionUiBinder::currentState() const
@@ -180,6 +238,13 @@ void ChargingSessionUiBinder::handleStopOperationStatusReady(
 
 void ChargingSessionUiBinder::handleRequestFailed(const ClientError &error)
 {
+    if (error.requestId == m_activeRequestId) {
+        m_activeRequestId.clear();
+        m_sessionsState.loading = false;
+        m_sessionsState.message = error.displayMessage;
+        emit activeSessionsStateChanged(m_sessionsState);
+        return;
+    }
     if (error.requestId != m_requestId) return;
     m_requestId.clear();
     if (!m_operationId.isEmpty() && error.operationId == m_operationId

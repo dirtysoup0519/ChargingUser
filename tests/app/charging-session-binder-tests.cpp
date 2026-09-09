@@ -142,6 +142,22 @@ private slots:
         QVERIFY(!binder.currentState().canStop);
         QVERIFY(binder.currentState().canRefresh);
     }
+
+    void loadsAndSwitchesMultipleActiveOrders()
+    {
+        ControlledOrderService service;
+        ChargingSessionUiBinder binder(&service);
+        binder.activeSessionsRequested();
+        QCOMPARE(service.activeOrdersQueries.size(), 1);
+        ChargingOrder first = chargingOrder();
+        ChargingOrder second = first;
+        second.orderId = QStringLiteral("order-2");
+        second.chargerCode = QStringLiteral("P-02");
+        emit service.activeOrdersReady(service.activeOrdersQueries.first(), {first, second});
+        QCOMPARE(binder.currentSessionsState().sessions.size(), 2);
+        binder.activeSessionSelected(second.orderId);
+        QCOMPARE(service.orderIds.last(), second.orderId);
+    }
 };
 
 QTEST_GUILESS_MAIN(ChargingSessionBinderTests)

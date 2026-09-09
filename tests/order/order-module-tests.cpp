@@ -20,7 +20,7 @@ private slots:
                      ->orderId, QStringLiteral("OD-1"));
     }
 
-    void stopRequiresOperationIdAndNeverFakesSuccess()
+    void stopRequiresOperationIdAndUpdatesMockOrder()
     {
         MockOrderService service;
         QSignalSpy failed(&service, &IOrderService::requestFailed);
@@ -30,10 +30,14 @@ private slots:
         QCOMPARE(failed.count(), 1);
         QCOMPARE(failed.last().at(0).value<ClientError>().code,
                  QStringLiteral("order-invalid-stop-request"));
+        ChargingOrder order;
+        order.orderId = QStringLiteral("OD-1");
+        order.status = OrderStatus::Charging;
+        order.priceCentsPerKwhSnapshot = 150;
+        service.setOrders({order});
         service.stopCharging({QStringLiteral("stop-2"), QStringLiteral("op-2")},
                              QStringLiteral("OD-1"));
-        QCOMPARE(failed.count(), 2);
-        QCOMPARE(stopped.count(), 0);
+        QTRY_COMPARE(stopped.count(), 1);
     }
 
     void stopResultQueryIsReadOnlyAndRequiresOriginalOperationId()
@@ -46,9 +50,7 @@ private slots:
                  QStringLiteral("order-invalid-stop-result-query"));
         service.queryStopResult({QStringLiteral("query-2"), {}},
                                 QStringLiteral("stop-op-1"));
-        QCOMPARE(failed.count(), 2);
-        QCOMPARE(failed.last().at(0).value<ClientError>().code,
-                 QStringLiteral("order-stop-result-not-configured"));
+        QCOMPARE(failed.count(), 1);
     }
 };
 QTEST_GUILESS_MAIN(OrderModuleTests)

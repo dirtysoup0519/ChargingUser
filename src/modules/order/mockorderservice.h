@@ -11,6 +11,8 @@ class MockOrderService final : public IOrderService
 public:
     explicit MockOrderService(QObject *parent = nullptr);
     void setOrders(const QVector<ChargingOrder> &orders);
+    void upsertOrder(const ChargingOrder &order);
+    void markSettled(const QString &orderId);
 public slots:
     void queryActiveOrder(const RequestContext &context) override;
     void queryActiveOrders(const RequestContext &context) override;
@@ -27,4 +29,5 @@ private:
               const QString &message, bool retryable = false);
     QHash<QString, ChargingOrder> m_orders;
     QSet<QString> m_cancelled;
+    QHash<QString, StopChargingResult> m_stopResults;
 };
