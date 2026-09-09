@@ -62,7 +62,9 @@ void ChargingUiBinder::setReservationChargerCode(const QString &chargerCode)
 void ChargingUiBinder::chargeConfirmationRequested(const QString &stationId,
                                                     const QString &chargerId)
 {
-    if (m_reservationActive) {
+    if (m_reservationActive
+        && (m_reservationChargerCode.isEmpty()
+            || m_reservationChargerCode.compare(chargerId, Qt::CaseInsensitive) != 0)) {
         m_state.status = ChargeConfirmationStatus::Error;
         m_state.canStart = false;
         m_state.message = QStringLiteral("当前账号已有预约，请前往预约充电桩。");
@@ -86,7 +88,9 @@ void ChargingUiBinder::chargeConfirmationRequested(const QString &stationId,
 void ChargingUiBinder::chargeConfirmationByChargerCodeRequested(
     const QString &chargerCode)
 {
-    if (m_reservationActive) {
+    if (m_reservationActive
+        && (m_reservationChargerCode.isEmpty()
+            || m_reservationChargerCode.compare(chargerCode, Qt::CaseInsensitive) != 0)) {
         m_state.status = ChargeConfirmationStatus::Error;
         m_state.canStart = false;
         m_state.message = QStringLiteral("当前账号已有预约，请前往预约充电桩。");

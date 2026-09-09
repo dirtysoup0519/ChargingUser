@@ -78,6 +78,21 @@ void ChargingSessionUiBinder::handleActiveOrdersReady(
                     QDateTime::currentDateTimeUtc()) / 60));
         m_sessionsState.sessions.append(option);
     }
+    bool currentSessionStillActive = false;
+    for (const ChargingOrder &order : orders) {
+        if (order.orderId == m_state.orderId) {
+            currentSessionStillActive = true;
+            break;
+        }
+    }
+    if (!currentSessionStillActive) {
+        m_state = ChargingSessionViewState{};
+        if (!orders.isEmpty()) {
+            m_state.orderId = orders.first().orderId;
+            applyOrder(orders.first());
+        }
+        publish();
+    }
     m_sessionsState.selectedOrderId = m_state.orderId;
     m_sessionsState.message = orders.isEmpty()
         ? QStringLiteral("当前没有进行中的充电订单。") : QString();

@@ -147,6 +147,10 @@ void MapUiBinder::setActiveReservation(const std::optional<ActiveReservationView
 {
     m_home.activeReservation = reservation;
     m_detail.activeReservation = reservation;
+    if (reservation && reservation->stationId == m_detail.stationId) {
+        m_detail.selectedChargerId = reservation->chargerId;
+        m_detail.canContinueToConfirmation = true;
+    }
     publishHome();
     publishDetail();
 }
@@ -198,13 +202,18 @@ void MapUiBinder::chargerStatusConfirmed(const QString &stationId,
                            ? QStringLiteral("该充电桩正在充电。")
                            : QStringLiteral("该充电桩当前不可用。"));
         }
-        if (!nowAvailable && m_detail.selectedChargerId == chargerId)
+        const bool isOwnReservation = m_detail.activeReservation
+                                      && m_detail.activeReservation->stationId == stationId
+                                      && m_detail.activeReservation->chargerId == chargerId;
+        if (!nowAvailable && !isOwnReservation
+            && m_detail.selectedChargerId == chargerId)
             m_detail.selectedChargerId.clear();
         m_detail.canCharge = std::any_of(
             m_detail.chargers.cbegin(), m_detail.chargers.cend(),
             [](const ChargerListItemView &charger) { return charger.canCharge; });
         m_detail.canContinueToConfirmation = !m_detail.selectedChargerId.isEmpty()
-                                             && !m_detail.activeReservation.has_value();
+                                             && (!m_detail.activeReservation.has_value()
+                                                 || isOwnReservation);
         publishDetail();
     }
     publishHome();
@@ -600,9 +609,15 @@ void MapUiBinder::handleStationDetailReady(const RequestContext &context,
     }
     const auto preserved = std::find_if(
         m_detail.chargers.cbegin(), m_detail.chargers.cend(),
-        [&previousSelection](const ChargerListItemView &item) {
+        [this, &previousSelection](const ChargerListItemView &item) {
+            const bool isOwnReservation = m_detail.activeReservation
+                                           && m_detail.activeReservation->stationId
+                                                  == m_detail.stationId
+                                           && m_detail.activeReservation->chargerId
+                                                  == item.chargerId;
             return !previousSelection.isEmpty()
-                   && item.chargerId == previousSelection && item.canCharge;
+                   && item.chargerId == previousSelection
+                   && (item.canCharge || isOwnReservation);
         });
     m_detail.selectedChargerId = preserved == m_detail.chargers.cend()
                                      ? QString()
@@ -616,8 +631,14 @@ void MapUiBinder::handleStationDetailReady(const RequestContext &context,
     m_detail.isRefreshing = false;
     m_detail.canNavigate = summary.point && summary.point->isValid();
     m_detail.canCharge = canCharge;
+    const bool ownReservationSelected = m_detail.activeReservation
+                                        && m_detail.activeReservation->stationId
+                                               == m_detail.stationId
+                                        && m_detail.activeReservation->chargerId
+                                               == m_detail.selectedChargerId;
     m_detail.canContinueToConfirmation = !m_detail.selectedChargerId.isEmpty()
-                                         && !m_detail.activeReservation.has_value();
+                                         && (!m_detail.activeReservation.has_value()
+                                             || ownReservationSelected);
     m_detail.lastUpdatedText = detail.updatedAtUtc.isValid()
                                    ? detail.updatedAtUtc.toLocalTime().toString(
                                          QStringLiteral("yyyy-MM-dd HH:mm:ss"))
@@ -866,8 +887,13 @@ void MapUiBinder::startDetailQuery(const QString &stationId, bool preserveConten
 {
     cancelRequest(&m_detailRequestId, m_chargerService);
     if (!preserveContent || m_detail.stationId != stationId) {
+        const std::optional<ActiveReservationView> activeReservation =
+            m_home.activeReservation;
         m_detail = StationDetailViewState{};
         m_detail.stationId = stationId;
+        m_detail.activeReservation = activeReservation;
+        if (activeReservation && activeReservation->stationId == stationId)
+            m_detail.selectedChargerId = activeReservation->chargerId;
     }
     const RequestContext context = createContext(QStringLiteral("station-detail"));
     m_detailRequestId = context.requestId;

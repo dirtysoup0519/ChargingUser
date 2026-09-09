@@ -28,13 +28,13 @@ ChargingSessionWindow::ChargingSessionWindow(QWidget *parent)
     : QWidget(parent), ui(new Ui::ChargingSessionWindow)
 {
     ui->setupUi(this);
-    auto *backButton = new QPushButton(QStringLiteral("‹"), this);
-    backButton->setObjectName(QStringLiteral("sessionBackButton"));
-    backButton->setFixedSize(42, 34);
-    backButton->setStyleSheet(QStringLiteral(
+    m_backButton = new QPushButton(QStringLiteral("‹"), this);
+    m_backButton->setObjectName(QStringLiteral("sessionBackButton"));
+    m_backButton->setFixedSize(42, 34);
+    m_backButton->setStyleSheet(QStringLiteral(
         "#sessionBackButton{border:none;background:transparent;color:#13223F;font-size:28px;}"));
-    ui->rootLayout->insertWidget(0, backButton, 0, Qt::AlignLeft);
-    connect(backButton, &QPushButton::clicked, this,
+    ui->rootLayout->insertWidget(0, m_backButton, 0, Qt::AlignLeft);
+    connect(m_backButton, &QPushButton::clicked, this,
             &ChargingSessionWindow::backRequested);
     m_emptyState = new QFrame(this);
     m_emptyState->setObjectName(QStringLiteral("chargingEmptyState"));
@@ -80,7 +80,7 @@ ChargingSessionWindow::ChargingSessionWindow(QWidget *parent)
     tip->setAlignment(Qt::AlignCenter);
     tip->setWordWrap(true);
     emptyLayout->addWidget(tip);
-    ui->rootLayout->insertWidget(1, m_emptyState);
+    ui->rootLayout->insertWidget(2, m_emptyState);
     ui->selectedStationLabel->setAttribute(Qt::WA_TransparentForMouseEvents);
     ui->selectedChargerLabel->setAttribute(Qt::WA_TransparentForMouseEvents);
     // The collapsed combo text stays transparent because the two labels render
@@ -167,6 +167,11 @@ ChargingSessionWindow::ChargingSessionWindow(QWidget *parent)
 }
 
 ChargingSessionWindow::~ChargingSessionWindow() { delete ui; }
+
+void ChargingSessionWindow::setEmbeddedMode(bool embedded)
+{
+    m_backButton->setVisible(!embedded);
+}
 
 void ChargingSessionWindow::resizeEvent(QResizeEvent *event)
 {
