@@ -42,7 +42,6 @@
 #include "presentation/pages/profile/profiletextwindow.h"
 #include "presentation/pages/profile/walletrechargewindow.h"
 #include "presentation/pages/shell/mainwindow.h"
-#include "protocol.h"
 
 #include <QApplication>
 #include <optional>
@@ -61,6 +60,7 @@
 #include <QJsonParseError>
 #include <QMessageBox>
 #include <QSettings>
+#include <QTimer>
 #include <QImage>
 #include <QUrlQuery>
 #include <QRegularExpression>
@@ -312,15 +312,15 @@ int main(int argc, char *argv[])
         QStringLiteral("ChargingUser client (real-network entry, default build)."));
     parser.addHelpOption();
     parser.addVersionOption();
-    // 目标地址优先级：命令行参数 > 环境变量（CHARGER_SERVER_HOST/PORT）> 协议内置默认。
+    // 目标地址优先级：命令行参数 > 环境变量（CHARGER_SERVER_HOST/PORT）> 本地安全默认。
     // 环境变量面向"远程服务端"联调场景：不把 IP 写进仓库，同一构建可切换本地/远程。
     const QString envHost = qEnvironmentVariable("CHARGER_SERVER_HOST").trimmed();
     const QString envPort = qEnvironmentVariable("CHARGER_SERVER_PORT").trimmed();
     const QString defaultHost = envHost.isEmpty()
-                                    ? QString::fromLatin1(SERVER_IP)
+                                    ? QStringLiteral("127.0.0.1")
                                     : envHost;
     const QString defaultPort = envPort.isEmpty()
-                                    ? QString::fromLatin1(SERVER_PORT)
+                                    ? QStringLiteral("12345")
                                     : envPort;
     const QCommandLineOption hostOption(
         QStringLiteral("server-host"), QStringLiteral("Backend host or IP address."),
@@ -512,6 +512,10 @@ int main(int argc, char *argv[])
             mapBinder.setActiveReservation(std::nullopt);
         }
     };
+    QTimer reservationExpiryTimer;
+    QObject::connect(&reservationExpiryTimer, &QTimer::timeout,
+                     &app, clearExpiredReservation);
+    reservationExpiryTimer.start(30000);
     const auto openStationDetails = [&](const QString &requestedStation) {
         clearExpiredReservation();
         mapBinder.stationDetailsRequested(activeReservation
