@@ -197,17 +197,18 @@ void configureWebEngineProcess(const char *executablePath)
 
 void configureWebEngineDiagnostics()
 {
-    if (qEnvironmentVariableIsEmpty("CHARGING_TENCENT_DISABLE_GPU")) {
+    const QByteArray current = qgetenv("QTWEBENGINE_CHROMIUM_FLAGS");
+    if (qEnvironmentVariableIsEmpty("CHARGING_TENCENT_DISABLE_GPU")
+        && !current.contains("--disable-gpu")) {
         return;
     }
-    const QByteArray current = qgetenv("QTWEBENGINE_CHROMIUM_FLAGS");
-    if (!current.contains("--disable-gpu")) {
-        const QByteArray flags = current.isEmpty()
-                                     ? QByteArrayLiteral("--disable-gpu")
-                                     : current + " --disable-gpu";
-        qputenv("QTWEBENGINE_CHROMIUM_FLAGS", flags);
-    }
-    qInfo() << "Tencent map diagnostics: software WebEngine rendering enabled.";
+    QByteArray flags = current;
+    if (!flags.contains("--disable-gpu")) flags += " --disable-gpu";
+    // Tencent GL 地图仍需要 WebGL；SwiftShader 提供虚拟机/无显卡环境下的软件 WebGL。
+    if (!flags.contains("--use-gl=swiftshader")) flags += " --use-gl=swiftshader";
+    if (!flags.contains("--enable-unsafe-swiftshader")) flags += " --enable-unsafe-swiftshader";
+    qputenv("QTWEBENGINE_CHROMIUM_FLAGS", flags.trimmed());
+    qInfo() << "Tencent map diagnostics: SwiftShader WebGL rendering enabled.";
 }
 
 QString orderStatusText(OrderStatus status)
@@ -372,8 +373,8 @@ int main(int argc, char *argv[])
     TencentMapService mapService;
 
     // 阶段 F：真实站点/电桩确认已接入；启动变更仍受幂等与结果查询能力闸门保护。
-    // TEST_ONLY: this is a training client. Keep mutations usable by default;
-    // production-like verification can explicitly restore the strict gate.
+    // TEST_ONLY: the training environment is enabled by default for local integration.
+    // Pass --safe-operations-only only when deliberately checking read-only behavior.
     const bool trainingOperationsEnabled = !parser.isSet(safeOperationsOption);
     RealChargingNetworkApi chargingNetwork(&backend);
     chargingNetwork.setUnsafeTestOperationsEnabled(trainingOperationsEnabled);
@@ -1355,7 +1356,9 @@ int main(int argc, char *argv[])
                      &app, [&](const RequestContext &,
                                const std::optional<ChargingOrder> &active) {
         if (active.has_value()) {
-            sessionBinder.sessionRequested(active->orderId);
+            // 214 已携带完整订单，直接渲染，避免旧服务端上重复详情查询
+            // 因不回显 requestId 而长期停留在 Loading。
+            sessionBinder.showOrder(*active);
             if (active->status == OrderStatus::PendingSettlement) {
                 settlementBinder.showOrder(*active);
                 mainWindow.renderSecondaryPage(&settlementWindow);
@@ -1387,7 +1390,7 @@ int main(int argc, char *argv[])
             return;
         }
         if (order.status == OrderStatus::Charging) {
-            sessionBinder.sessionRequested(order.orderId);
+            sessionBinder.showOrder(order);
             mainWindow.renderSecondaryPage(&sessionWindow);
         } else {
             settlementBinder.showOrder(order);
@@ -1630,7 +1633,7 @@ int main(int argc, char *argv[])
                .arg(portValue);
     if (trainingOperationsEnabled) {
         qWarning().noquote()
-            << QStringLiteral("TEST_ONLY: unsafe money/charging operations enabled; never use in production.");
+            << QStringLiteral("TEST_ONLY: training environment enabled by default; money/charging operations are allowed.");
     }
     backend.start();
     return app.exec();

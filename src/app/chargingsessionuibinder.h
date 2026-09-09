@@ -14,6 +14,7 @@ public:
     explicit ChargingSessionUiBinder(IOrderService *service,
                                      QObject *parent = nullptr);
     ChargingSessionViewState currentState() const override;
+    void showOrder(const ChargingOrder &order);
 
 public slots:
     void sessionRequested(const QString &orderId) override;

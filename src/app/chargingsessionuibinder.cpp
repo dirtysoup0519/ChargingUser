@@ -25,6 +25,18 @@ ChargingSessionViewState ChargingSessionUiBinder::currentState() const
     return m_state;
 }
 
+void ChargingSessionUiBinder::showOrder(const ChargingOrder &order)
+{
+    if (order.orderId.trimmed().isEmpty()) return;
+    if (!m_requestId.isEmpty()) m_service->cancel(m_requestId);
+    m_requestId.clear();
+    m_operationId.clear();
+    m_state = ChargingSessionViewState{};
+    m_state.orderId = order.orderId;
+    applyOrder(order);
+    publish();
+}
+
 void ChargingSessionUiBinder::sessionRequested(const QString &orderId)
 {
     const QString normalized = orderId.trimmed();
