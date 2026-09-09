@@ -912,3 +912,8 @@ UI 的“原密码”步骤仅临时收集输入；v2.6 没有独立的只验证
 `activeReservationChanged`，流程层据此同步站点详情、首页可用数量和预约订单；取消、到期
 或转入充电后由同一信号清除活动预约。正式与 Demo 的差异因此仅位于
 `IReservationService` 实现和数据来源。
+
+正式入口的预约按钮也先进入统一 `PaymentWindow`，使用 `WalletUiBinder` 返回的余额决定
+是否允许提交；用户点击支付后才向 `ReservationUiBinder` 提交预约。提交中、失败和结果未知
+均由预约 ViewState 驱动支付页并锁定重复点击，服务确认预约成功后再回到首页。活动预约的
+持久化、首页/详情状态与电桩占用统一监听 `activeReservationChanged`，不再重复解析服务信号。

@@ -500,8 +500,8 @@ int main(int argc, char *argv[])
     const auto clearReservation = [&] {
         if (!activeUserId.isEmpty())
             reservationStore.remove(QStringLiteral("reservation/%1").arg(activeUserId));
-        activeReservation.reset();
         reservationBinder.consumeActiveReservation();
+        activeReservation.reset();
         chargeBinder.setReservationActive(false);
         mapBinder.setActiveReservation(std::nullopt);
     };
@@ -548,11 +548,20 @@ int main(int argc, char *argv[])
     reservationExpiryTimer.start(30000);
     QObject::connect(&reservationBinder, &ReservationUiBinder::activeReservationChanged,
                      &app, [&](const std::optional<ActiveReservationView> &reservation) {
+        const std::optional<ActiveReservationView> previous = activeReservation;
         activeReservation = reservation;
         mapBinder.setActiveReservation(reservation);
         chargeBinder.setReservationActive(reservation.has_value());
-        if (reservation)
+        if (reservation) {
             chargeBinder.setReservationChargerCode(reservation->chargerId);
+            mapBinder.chargerStatusConfirmed(reservation->stationId,
+                                             reservation->chargerId,
+                                             ChargerBusinessStatus::Reserved);
+        } else if (previous) {
+            mapBinder.chargerStatusConfirmed(previous->stationId,
+                                             previous->chargerId,
+                                             ChargerBusinessStatus::Idle);
+        }
         if (activeUserId.isEmpty())
             return;
         const QString key = QStringLiteral("reservation/%1").arg(activeUserId);
@@ -581,6 +590,8 @@ int main(int argc, char *argv[])
     QString frequentStationsRequestId;
     bool settlementOpenedFromOrderList = false;
     bool paymentOpen = false;
+    bool reservationPaymentOpen = false;
+    ReservationConfirmationViewState pendingReservationPayment;
     QString pendingOrderDetailRequestId;
     QString pendingOrderDetailOrderId;
     OrderDetailDestination pendingOrderDetailDestination = OrderDetailDestination::None;
@@ -593,9 +604,53 @@ int main(int argc, char *argv[])
         mainWindow.renderSecondaryPage(&walletRecharge);
     };
     const auto renderPayment = [&] {
-        const SettlementViewState settlement = settlementBinder.currentState();
         const WalletViewState wallet = walletBinder.currentState();
         PaymentViewState state;
+        if (reservationPaymentOpen) {
+            state.businessId = QStringLiteral("reservation:%1:%2")
+                                   .arg(pendingReservationPayment.stationId,
+                                        pendingReservationPayment.chargerId);
+            state.purpose = PaymentPurpose::Reservation;
+            state.titleText = QStringLiteral("预约支付");
+            state.descriptionText = QStringLiteral("%1 · %2号桩预约押金")
+                                        .arg(pendingReservationPayment.stationName,
+                                             pendingReservationPayment.chargerCode);
+            state.amountText = pendingReservationPayment.depositText;
+            state.balanceText = wallet.balanceText;
+            qint64 balanceCents = 0;
+            qint64 amountCents = 0;
+            const bool balanceKnown = parseMoneyText(wallet.balanceText, &balanceCents);
+            const bool amountKnown = parseMoneyText(state.amountText, &amountCents);
+            state.canRecharge = wallet.status == WalletPageStatus::Ready;
+            state.canPay = state.canRecharge && balanceKnown && amountKnown
+                           && balanceCents >= amountCents;
+            if (balanceKnown && amountKnown && balanceCents >= amountCents)
+                state.balanceAfterPaymentText = moneyText(balanceCents - amountCents);
+            if (!state.canPay)
+                state.message = wallet.status == WalletPageStatus::Ready
+                    ? QStringLiteral("钱包余额不足，请先充值后再支付。")
+                    : QStringLiteral("正在同步钱包余额…");
+            const ReservationConfirmationViewState reservationState =
+                reservationBinder.currentState();
+            if (reservationState.status == ReservationConfirmationStatus::Submitting) {
+                state.status = PaymentViewStatus::Submitting;
+                state.canPay = false;
+                state.canRecharge = false;
+                state.message = QStringLiteral("正在确认预约支付结果，请勿重复提交…");
+            } else if (reservationState.status == ReservationConfirmationStatus::ResultUnknown) {
+                state.status = PaymentViewStatus::ResultUnknown;
+                state.canPay = false;
+                state.canRecharge = false;
+                state.message = reservationState.message;
+            } else if (reservationState.status == ReservationConfirmationStatus::Error) {
+                state.status = PaymentViewStatus::Error;
+                state.canPay = reservationState.canRetry && state.canPay;
+                state.message = reservationState.message;
+            }
+            paymentWindow.render(state);
+            return;
+        }
+        const SettlementViewState settlement = settlementBinder.currentState();
         state.businessId = settlement.orderId;
         state.purpose = PaymentPurpose::ChargingSettlement;
         state.titleText = QStringLiteral("订单支付");
@@ -1487,6 +1542,13 @@ int main(int argc, char *argv[])
     });
     QObject::connect(&paymentWindow, &PaymentWindow::backRequested,
                      &app, [&] {
+        if (reservationPaymentOpen) {
+            reservationPaymentOpen = false;
+            paymentOpen = false;
+            reservationConfirmation.render(reservationBinder.currentState());
+            mainWindow.renderSecondaryPage(&reservationConfirmation);
+            return;
+        }
         paymentOpen = false;
         settlementWindow.render(settlementBinder.currentState());
         mainWindow.renderSecondaryPage(&settlementWindow);
@@ -1495,6 +1557,15 @@ int main(int argc, char *argv[])
                      &app, [&] { openWallet(WalletEntryPoint::Payment); });
     QObject::connect(&paymentWindow, &PaymentWindow::payRequested,
                      &app, [&](const QString &orderId, PaymentPurpose purpose) {
+        if (purpose == PaymentPurpose::Reservation && reservationPaymentOpen) {
+            Q_UNUSED(orderId);
+            reservationBinder.setConfirmationState(pendingReservationPayment);
+            reservationBinder.reserveRequested(
+                pendingReservationPayment.stationId,
+                pendingReservationPayment.chargerId,
+                pendingReservationPayment.durationSeconds);
+            return;
+        }
         if (purpose != PaymentPurpose::ChargingSettlement
             || orderId != settlementBinder.currentState().orderId) {
             return;
@@ -1503,6 +1574,10 @@ int main(int argc, char *argv[])
     });
     QObject::connect(&paymentWindow, &PaymentWindow::paymentResultRefreshRequested,
                      &app, [&](const QString &) {
+        if (reservationPaymentOpen) {
+            renderPayment();
+            return;
+        }
         settlementBinder.refreshRequested();
         renderPayment();
     });
@@ -1705,49 +1780,29 @@ int main(int argc, char *argv[])
     });
     QObject::connect(&reservationConfirmation,
                      &ReservationConfirmationWindow::reserveRequested,
-                     &reservationBinder, &ReservationUiBinder::reserveRequested);
+                     &app, [&](const QString &stationId, const QString &chargerId,
+                               int durationSeconds) {
+        pendingReservationPayment = reservationBinder.currentState();
+        pendingReservationPayment.stationId = stationId;
+        pendingReservationPayment.chargerId = chargerId;
+        pendingReservationPayment.durationSeconds = durationSeconds;
+        reservationPaymentOpen = true;
+        paymentOpen = true;
+        walletBinder.activate();
+        renderPayment();
+        mainWindow.renderSecondaryPage(&paymentWindow);
+    });
     QObject::connect(&reservationConfirmation,
                      &ReservationConfirmationWindow::reservationRefreshRequested,
                      &reservationBinder, &ReservationUiBinder::refreshRequested);
     QObject::connect(&reservationService, &IReservationService::reservationCreated,
-                     &app, [&](const RequestContext &, const ReservationResult &result) {
-        ActiveReservationView view;
-        view.reservationId = result.reservationId;
-        view.stationId = result.stationId;
-        view.chargerId = result.chargerId.isEmpty() ? result.chargerCode : result.chargerId;
-        view.expiresAtUtc = result.expiresAtUtc;
-        view.canCancel = true;
-        view.remainingText = result.expiresAtUtc.isValid()
-            ? QStringLiteral("预约已生效，截止 %1").arg(result.expiresAtUtc.toLocalTime().toString(QStringLiteral("MM-dd HH:mm")))
-            : QStringLiteral("预约已生效");
-        if (view.stationId.isEmpty() || view.chargerId.isEmpty()) {
-            qWarning().noquote() << QStringLiteral(
-                "Reservation created without station/charger identity; routing guard not enabled.");
-            clearReservation();
-            return;
-        }
-        activeReservation = view;
-        chargeBinder.setReservationActive(true);
-        if (!activeUserId.isEmpty()) {
-            reservationStore.beginGroup(QStringLiteral("reservation/%1").arg(activeUserId));
-            reservationStore.setValue(QStringLiteral("id"), view.reservationId);
-            reservationStore.setValue(QStringLiteral("station"), view.stationId);
-            reservationStore.setValue(QStringLiteral("charger"), view.chargerId);
-            reservationStore.setValue(QStringLiteral("expires"), view.expiresAtUtc.toMSecsSinceEpoch());
-            reservationStore.endGroup();
-        }
-        mapBinder.setActiveReservation(activeReservation);
-        mapBinder.chargerStatusConfirmed(view.stationId, view.chargerId,
-                                         ChargerBusinessStatus::Reserved);
+                     &app, [&](const RequestContext &, const ReservationResult &) {
+        reservationPaymentOpen = false;
+        paymentOpen = false;
+        mainWindow.renderPrimaryPage(MainWindow::PrimaryPage::Home);
     });
     QObject::connect(&reservationService, &IReservationService::reservationCancelled,
                      &app, [&](const RequestContext &, const ReservationCancellationResult &) {
-        const auto cancelledReservation = activeReservation;
-        clearReservation();
-        if (cancelledReservation)
-            mapBinder.chargerStatusConfirmed(cancelledReservation->stationId,
-                                             cancelledReservation->chargerId,
-                                             ChargerBusinessStatus::Idle);
         mapBinder.stationRefreshRequested();
         walletBinder.activate();
         mainWindow.renderPrimaryPage(MainWindow::PrimaryPage::Home);
@@ -1772,6 +1827,10 @@ int main(int argc, char *argv[])
     });
     QObject::connect(&reservationBinder, &ReservationUiBinder::stateChanged,
                      &reservationConfirmation, &ReservationConfirmationWindow::render);
+    QObject::connect(&reservationBinder, &ReservationUiBinder::stateChanged,
+                     &app, [&](const ReservationConfirmationViewState &) {
+        if (reservationPaymentOpen) renderPayment();
+    });
     QObject::connect(&reservationConfirmation,
                      &ReservationConfirmationWindow::backRequested,
                      &app, [&] {
