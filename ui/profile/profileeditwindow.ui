@@ -26,6 +26,9 @@
       <item><widget class="QLabel" name="phoneLabel"><property name="text"><string>手机号码</string></property></widget></item>
       <item><widget class="QLineEdit" name="phoneEdit"><property name="minimumSize"><size><width>0</width><height>46</height></size></property><property name="readOnly"><bool>true</bool></property></widget></item>
       <item><widget class="QLabel" name="hintLabel2"><property name="text"><string>手机号码来自登录账号，暂不支持在此修改</string></property></widget></item>
+      <item><widget class="QLabel" name="usernameLabel"><property name="text"><string>用户名</string></property></widget></item>
+      <item><widget class="QLineEdit" name="usernameEdit"><property name="minimumSize"><size><width>0</width><height>46</height></size></property><property name="readOnly"><bool>true</bool></property><property name="placeholderText"><string>用户名待加载</string></property></widget></item>
+      <item><widget class="QLabel" name="usernameHintLabel"><property name="text"><string>用户名用于密码登录，暂不支持修改</string></property></widget></item>
      </layout></widget></item>
      <item><spacer name="bodySpace"><property name="orientation"><enum>Qt::Vertical</enum></property><property name="sizeHint"><size><width>1</width><height>40</height></size></property></spacer></item>
      <item><widget class="QLabel" name="loadingIndicator"><property name="text"><string>正在保存，请稍候…</string></property><property name="alignment"><set>Qt::AlignCenter</set></property><property name="visible"><bool>false</bool></property></widget></item>

@@ -32,6 +32,7 @@ bool profileStatesEqual(const ProfileEditViewState &left,
 {
     return left.submitState == right.submitState
            && left.phone == right.phone
+           && left.username == right.username
            && left.nicknameInput == right.nicknameInput
            && left.avatarDataUri == right.avatarDataUri
            && left.message == right.message
@@ -213,6 +214,7 @@ void UserUiBinder::rebuildViewStates(const UserFlowSnapshot &snapshot)
         if (!snapshot.session.profile.phone.isEmpty()) {
             profile.phone = snapshot.session.profile.phone;
         }
+        profile.username = snapshot.session.profile.userId;
         if (!snapshot.draftNickname.isEmpty()) {
             profile.nicknameInput = snapshot.draftNickname;
         } else if (!snapshot.session.profile.nickname.isEmpty()) {

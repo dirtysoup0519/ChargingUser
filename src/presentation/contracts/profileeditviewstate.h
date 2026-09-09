@@ -7,6 +7,7 @@
 struct ProfileEditViewState {
     SubmitState submitState = SubmitState::Idle;
     QString phone;
+    QString username;
     QString nicknameInput;
     QString avatarDataUri;
     QString message;

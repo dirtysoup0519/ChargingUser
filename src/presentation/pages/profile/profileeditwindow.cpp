@@ -118,6 +118,10 @@ void ProfileEditWindow::render(const ProfileEditViewState &state)
         const QSignalBlocker blocker(ui->phoneEdit);
         ui->phoneEdit->setText(state.phone);
     }
+    if (ui->usernameEdit->text() != state.username) {
+        const QSignalBlocker blocker(ui->usernameEdit);
+        ui->usernameEdit->setText(state.username);
+    }
     if (!state.nicknameInput.isNull() && !ui->nicknameEdit->hasFocus()
         && ui->nicknameEdit->text() != state.nicknameInput) {
         const QSignalBlocker blocker(ui->nicknameEdit);
