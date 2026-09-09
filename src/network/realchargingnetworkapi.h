@@ -44,7 +44,8 @@ private:
         ConfirmationStation,
         ConfirmationUser,
         ConfirmationOrders,
-        Start
+        Start,
+        StartRecovery
     };
     struct PendingRequest
     {

@@ -542,6 +542,7 @@ int main(int argc, char *argv[])
     QString pendingOrderDetailOrderId;
     OrderDetailDestination pendingOrderDetailDestination = OrderDetailDestination::None;
     OrderListViewState orderListBaseState;
+    QVector<ReservationHistoryItem> reservationHistory;
     const auto openWallet = [&](WalletEntryPoint entryPoint) {
         walletEntryPoint = entryPoint;
         if (entryPoint == WalletEntryPoint::Payment) paymentOpen = false;
@@ -850,6 +851,8 @@ int main(int argc, char *argv[])
         walletBinder.activate();
         orderListRequestId = QUuid::createUuid().toString(QUuid::WithoutBraces);
         orderService.queryOrderHistory({orderListRequestId, {}});
+        reservationHistory.clear();
+        reservationService.queryHistory({QUuid::createUuid().toString(QUuid::WithoutBraces), {}});
     });
     const auto showProfileNotice = [&](const QString &title, const QString &text) {
         QMessageBox::information(&mainWindow, title, text);
@@ -927,6 +930,22 @@ int main(int argc, char *argv[])
                 ? kind
                 : QStringLiteral("%1 · 订单 %2").arg(kind, transaction.orderId);
             item.action = OrderListAction::None;
+            state.orders.append(item);
+        }
+        for (const ReservationHistoryItem &reservation : reservationHistory) {
+            OrderListItemView item;
+            item.businessId = reservation.reservationId;
+            item.type = OrderBusinessType::Reservation;
+            item.stationName = reservation.stationName;
+            item.chargerCode = reservation.chargerCode;
+            const QDateTime time = reservation.reserveAtUtc.isValid() ? reservation.reserveAtUtc : reservation.createdAtUtc;
+            item.createdAtText = time.isValid() ? time.toLocalTime().toString(Qt::ISODate) : QStringLiteral("时间未知");
+            item.amountText = QStringLiteral("¥20.00");
+            item.statusText = reservation.status.isEmpty() ? QStringLiteral("预约记录") : reservation.status;
+            item.statusTone = QStringLiteral("neutral");
+            item.summaryText = QStringLiteral("预约充电桩 %1").arg(item.chargerCode);
+            item.action = OrderListAction::ViewDetails;
+            item.actionText = QStringLiteral("查看详情");
             state.orders.append(item);
         }
         std::sort(state.orders.begin(), state.orders.end(),
@@ -1035,6 +1054,11 @@ int main(int argc, char *argv[])
         if (orderListOpen) orderList.render(state);
         if (frequentStationsOpen) renderFrequentStations();
     };
+    QObject::connect(&reservationService, &IReservationService::reservationHistoryReady,
+                     &app, [&](const RequestContext &, const QVector<ReservationHistoryItem> &items) {
+        reservationHistory = items;
+        if (orderListOpen) orderList.render(appendRechargeOrders(orderListBaseState));
+    });
     QObject::connect(&orderService, &IOrderService::activeOrdersReady,
                      &app, [&](const RequestContext &, const QVector<ChargingOrder> &orders) {
         renderChargingOrders(orders);
@@ -1538,8 +1562,18 @@ int main(int argc, char *argv[])
                      &StationDetailWindow::reservationConfirmationRequested,
                      &app, [&](const QString &stationId, const QString &chargerId) {
         ReservationConfirmationViewState state = reservationBinder.currentState();
+        const StationDetailViewState detail = mapBinder.currentStationDetailState();
         state.stationId = stationId;
         state.chargerId = chargerId;
+        state.stationName = detail.name;
+        state.stationAddress = detail.address;
+        for (const ChargerListItemView &charger : detail.chargers) {
+            if (charger.chargerId != chargerId) continue;
+            state.chargerCode = charger.chargerId;
+            state.chargerTypeText = charger.title;
+            state.powerText = charger.powerText;
+            break;
+        }
         state.status = ReservationConfirmationStatus::Ready;
         state.canReserve = true;
         state.durationSeconds = 7200;

@@ -4,6 +4,7 @@
 #include "protocol.h"
 
 #include <QDateTime>
+#include <QJsonArray>
 #include <QTimer>
 
 RealReservationService::RealReservationService(BackendClient *backend,
@@ -32,6 +33,7 @@ void RealReservationService::reserve(const RequestContext &context,
                                       const QString &chargerId,
                                       int durationSeconds)
 {
+    Q_UNUSED(durationSeconds); // 服务端按协议固定预约时长为 2 小时。
     if (!context.isValid() || !context.isMutation() || stationId.trimmed().isEmpty()
         || chargerId.trimmed().isEmpty() || durationSeconds <= 0) {
         emitFailure(context, QStringLiteral("reservation-invalid-request"),
@@ -62,11 +64,9 @@ void RealReservationService::reserve(const RequestContext &context,
     connect(pending.timer, &QTimer::timeout,
             this, &RealReservationService::handleTimeout);
     m_pending = pending;
+    // v2.6: 服务端按会话身份识别用户，125 业务载荷只要求 chargerCode。
     QJsonObject payload{{QStringLiteral("chargerCode"), pending.chargerId},
-                        {QStringLiteral("username"), m_username},
-                        {QStringLiteral("durationSeconds"), durationSeconds},
-                        {QStringLiteral("requestId"), context.requestId},
-                        {QStringLiteral("operationId"), context.operationId}};
+                        {QStringLiteral("requestId"), context.requestId}};
     if (!m_backend->sendFrame(RESERVE_REQ, payload)) {
         failPending(QStringLiteral("send-failed"),
                     QStringLiteral("预约请求发送失败。"), false, true);
@@ -106,10 +106,36 @@ void RealReservationService::cancelReservation(const RequestContext &context)
     pending.timer->setSingleShot(true);
     connect(pending.timer, &QTimer::timeout, this, &RealReservationService::handleTimeout);
     m_pending = pending;
-    QJsonObject payload{{QStringLiteral("requestId"), context.requestId},
-                        {QStringLiteral("operationId"), context.operationId}};
+    // v2.6.5: 126 载荷可为空；用户身份和 Active 预约由服务端会话确定。
+    QJsonObject payload;
     if (!m_backend->sendFrame(CANCEL_RESERVE_REQ, payload)) {
         failPending(QStringLiteral("send-failed"), QStringLiteral("取消预约请求发送失败。"), false, true);
+        return;
+    }
+    m_pending->timer->start(m_requestTimeoutMs);
+}
+
+void RealReservationService::queryHistory(const RequestContext &context)
+{
+    if (!context.isValid() || context.isMutation() || m_username.isEmpty()
+        || m_pending || m_backend->connectionState() != ConnectionState::Connected) {
+        emitFailure(context, QStringLiteral("reservation-query-unavailable"),
+                    QStringLiteral("预约记录暂时无法查询。"), true);
+        return;
+    }
+    PendingRequest pending;
+    pending.context = context;
+    pending.historyQuery = true;
+    pending.timer = new QTimer(this);
+    pending.timer->setSingleShot(true);
+    connect(pending.timer, &QTimer::timeout, this, &RealReservationService::handleTimeout);
+    m_pending = pending;
+    QJsonObject cond{{QStringLiteral("username"), m_username}};
+    QJsonObject payload{{QStringLiteral("table"), QStringLiteral("reservation")},
+                        {QStringLiteral("cond"), cond},
+                        {QStringLiteral("requestId"), context.requestId}};
+    if (!m_backend->sendFrame(GETDATA, payload)) {
+        failPending(QStringLiteral("send-failed"), QStringLiteral("预约记录查询发送失败。"), true);
         return;
     }
     m_pending->timer->start(m_requestTimeoutMs);
@@ -120,6 +146,26 @@ void RealReservationService::handleFrame(int msgType, const QJsonObject &payload
     if (!m_pending) return;
     const QString echoed = payload.value(QStringLiteral("requestId")).toString();
     if (!echoed.isEmpty() && echoed != m_pending->context.requestId) return;
+    if (msgType == DATA && m_pending->historyQuery) {
+        const QJsonArray rows = payload.value(QStringLiteral("data")).toArray();
+        const PendingRequest pending = *m_pending;
+        QVector<ReservationHistoryItem> items;
+        for (const QJsonValue &value : rows) {
+            if (!value.isObject()) continue;
+            const QJsonObject row = value.toObject();
+            ReservationHistoryItem item;
+            item.reservationId = row.value(QStringLiteral("id")).toVariant().toString();
+            item.stationName = row.value(QStringLiteral("stationName")).toString();
+            item.chargerCode = row.value(QStringLiteral("chargerCode")).toString();
+            item.status = row.value(QStringLiteral("status")).toString();
+            item.createdAtUtc = QDateTime::fromString(row.value(QStringLiteral("createdAt")).toString(), Qt::ISODate);
+            item.reserveAtUtc = QDateTime::fromString(row.value(QStringLiteral("reserveAt")).toString(), Qt::ISODate);
+            if (!item.reservationId.isEmpty()) items.append(item);
+        }
+        finishPending();
+        emit reservationHistoryReady(pending.context, items);
+        return;
+    }
     if (msgType == RESERVE_ACK) {
         const PendingRequest pending = *m_pending;
         ReservationResult result;

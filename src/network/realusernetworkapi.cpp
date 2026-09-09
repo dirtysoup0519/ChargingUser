@@ -121,9 +121,14 @@ void RealUserNetworkApi::loginByCredentials(const QString &username,
                                             const QString &password,
                                             const RequestContext &context)
 {
-    QJsonObject payload{{QStringLiteral("username"), username.trimmed()},
+    // v2.6: role 由服务端会话/数据库决定；手机号自动注册用户的初始密码为手机号。
+    QString account = username.trimmed();
+    // 手机号免密登录自动创建的数据库用户名为 U+手机号；密码登录页允许用户
+    // 直接输入手机号，因此这里转换为协议 101 所需的 username。
+    if (account.size() == 11 && account.startsWith(QLatin1Char('1')))
+        account.prepend(QStringLiteral("U"));
+    QJsonObject payload{{QStringLiteral("username"), account},
                         {QStringLiteral("password"), password},
-                        {QStringLiteral("role"), QStringLiteral("user")},
                         {QStringLiteral("requestId"), context.requestId}};
     startRequest(PendingKind::CredentialLogin, payload, context, QString());
 }

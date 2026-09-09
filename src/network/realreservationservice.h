@@ -25,6 +25,7 @@ public slots:
                  int durationSeconds) override;
     void cancel(const QString &requestId) override;
     void cancelReservation(const RequestContext &context) override;
+    void queryHistory(const RequestContext &context) override;
 
 private slots:
     void handleFrame(int msgType, const QJsonObject &payload);
@@ -38,6 +39,7 @@ private:
         QString stationId;
         QString chargerId;
         bool cancellation = false;
+        bool historyQuery = false;
         QTimer *timer = nullptr;
     };
 

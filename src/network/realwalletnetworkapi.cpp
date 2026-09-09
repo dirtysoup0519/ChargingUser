@@ -202,7 +202,9 @@ void RealWalletNetworkApi::handleFrame(int msgType, const QJsonObject &payload)
     if (msgType == DATA
         && (m_pending->kind == PendingKind::WalletUser
             || m_pending->kind == PendingKind::WalletTransactions)) {
-        const QJsonValue data = payload.value(QStringLiteral("data"));
+        QJsonValue data = payload.value(QStringLiteral("data"));
+        if (!data.isArray()) data = payload.value(QStringLiteral("rows"));
+        if (!data.isArray()) data = payload.value(QStringLiteral("records"));
         if (!data.isArray()) {
             failPending(QStringLiteral("bad-response"),
                         QStringLiteral("钱包响应格式错误。"), true);

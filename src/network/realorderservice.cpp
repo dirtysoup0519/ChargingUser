@@ -284,6 +284,7 @@ bool RealOrderService::startQuery(QueryKind kind, const RequestContext &context,
     QJsonObject condition;
     if (kind == QueryKind::OrderDetail) {
         condition.insert(QStringLiteral("orderNo"), pending.orderId);
+        condition.insert(QStringLiteral("username"), m_username);
     } else {
         condition.insert(QStringLiteral("username"), m_username);
     }
@@ -321,7 +322,9 @@ void RealOrderService::handleFrame(int msgType, const QJsonObject &payload)
     }
 
     if (msgType == ORDERQRY_ACK) {
-        const QJsonValue data = payload.value(QStringLiteral("orders"));
+        QJsonValue data = payload.value(QStringLiteral("orders"));
+        if (!data.isArray()) data = payload.value(QStringLiteral("data"));
+        if (!data.isArray()) data = payload.value(QStringLiteral("rows"));
         if (!data.isArray()) {
             // 兼容部分实现返回 data 包装的 JSON 数组。
             const QJsonValue wrapped = payload.value(QStringLiteral("data"));
@@ -549,7 +552,10 @@ ChargingOrder RealOrderService::parseOrderRecord(const QJsonObject &record)
         }
     }
 
-    const double kwh = numberValue(record.value(QStringLiteral("kwh")), &ok);
+    const QJsonValue kwhValue = record.contains(QStringLiteral("kwh"))
+                                    ? record.value(QStringLiteral("kwh"))
+                                    : record.value(QStringLiteral("energyKwh"));
+    const double kwh = numberValue(kwhValue, &ok);
     if (ok && kwh >= 0.0) {
         order.energyKwh = kwh;
     }
@@ -564,11 +570,7 @@ ChargingOrder RealOrderService::parseOrderRecord(const QJsonObject &record)
             order.amountCents = static_cast<qint64>(qRound64(amount * 100.0));
         }
     }
-    if (order.amountCents == 0 && order.energyKwh > 0.0
-        && order.priceCentsPerKwhSnapshot > 0) {
-        order.amountCents = qRound64(
-            order.energyKwh * order.priceCentsPerKwhSnapshot);
-    }
+    // 金额和电量均以服务端持久化值为准，客户端禁止自行计费。
 
     order.startedAtUtc = parseTimestamp(recordString(record, {"startedAt", "startTime"}));
     const QDateTime ended = parseTimestamp(recordString(record, {"endedAt", "endTime"}));

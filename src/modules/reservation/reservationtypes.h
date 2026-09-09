@@ -23,5 +23,16 @@ struct ReservationCancellationResult
     qint64 balanceCents = 0;
 };
 
+struct ReservationHistoryItem
+{
+    QString reservationId;
+    QString stationName;
+    QString chargerCode;
+    QString status;
+    QDateTime createdAtUtc;
+    QDateTime reserveAtUtc;
+};
+
 Q_DECLARE_METATYPE(ReservationResult)
 Q_DECLARE_METATYPE(ReservationCancellationResult)
+Q_DECLARE_METATYPE(ReservationHistoryItem)

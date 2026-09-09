@@ -99,11 +99,11 @@ void RealChargingNetworkApi::startCharging(const RequestContext &context,
     if (!begin(PendingKind::Start, context)) return;
     m_pending->stationId = stationId;
     m_pending->chargerId = chargerId;
+    // v2.6: 服务端依据会话身份和 chargerCode 创建订单并驱动虚拟电桩；
+    // stationName、requestId、operationId 不是 108 业务字段。
+    Q_UNUSED(stationId);
     QJsonObject payload{{QStringLiteral("username"), m_username},
-                        {QStringLiteral("chargerCode"), chargerId},
-                        {QStringLiteral("stationName"), stationId},
-                        {QStringLiteral("requestId"), context.requestId},
-                        {QStringLiteral("operationId"), context.operationId}};
+                        {QStringLiteral("chargerCode"), chargerId}};
     if (!m_backend->sendFrame(START_CHARGING_REQ, payload)) {
         failPending(QStringLiteral("send-failed"),
                     QStringLiteral("启动充电请求发送失败。"), false, true);
@@ -113,8 +113,10 @@ void RealChargingNetworkApi::startCharging(const RequestContext &context,
 void RealChargingNetworkApi::queryStartResult(const RequestContext &context,
                                               const QString &)
 {
-    emitFailure(context, QStringLiteral("charging-operation-query-unsupported"),
-                QStringLiteral("服务端尚未提供启动结果查询能力。"));
+    if (!begin(PendingKind::StartRecovery, context)) return;
+    QJsonObject condition{{QStringLiteral("username"), m_username}};
+    if (!m_backend->sendFrame(ORDERQRY_REQ, condition))
+        failPending(QStringLiteral("send-failed"), QStringLiteral("订单恢复查询发送失败。"), true);
 }
 
 void RealChargingNetworkApi::cancel(const QString &requestId)
@@ -254,6 +256,30 @@ void RealChargingNetworkApi::handleFrame(int msgType, const QJsonObject &payload
         const PendingRequest pending = *m_pending;
         finishPending();
         publishConfirmation(pending);
+        return;
+    }
+
+    if (m_pending->kind == PendingKind::StartRecovery && msgType == ORDERQRY_ACK) {
+        const QJsonArray rows = payload.value(QStringLiteral("orders")).toArray();
+        const PendingRequest pending = *m_pending;
+        for (const QJsonValue &value : rows) {
+            if (!value.isObject()) continue;
+            const QJsonObject row = value.toObject();
+            if (stringField(row, {"username"}) != m_username
+                || stringField(row, {"status"}) != QLatin1String(ORDER_CHARGING)) continue;
+            StartChargingResult result;
+            result.requestId = pending.context.requestId;
+            result.operationId = pending.context.operationId;
+            result.orderId = stringField(row, {"orderNo", "orderId"});
+            result.stationId = stringField(row, {"stationName", "stationId"});
+            result.chargerId = stringField(row, {"chargerCode", "chargerId"});
+            result.priceCentsPerKwhSnapshot = centsField(row, "priceCentsSnapshot", "price").value_or(0);
+            result.startedAtUtc = QDateTime::fromString(stringField(row, {"startedAt", "startTime"}), Qt::ISODate).toUTC();
+            finishPending();
+            emit chargingStarted(pending.context, result);
+            return;
+        }
+        failPending(QStringLiteral("order-not-found"), QStringLiteral("未找到正在充电的订单，请刷新订单列表确认。"), true);
         return;
     }
 

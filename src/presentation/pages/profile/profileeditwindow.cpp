@@ -142,7 +142,7 @@ void ProfileEditWindow::submitCurrentInput()
         return;
     }
     const QString password = m_newPasswordEdit->text();
-    if (m_mode == ProfileEditMode::PhoneFirstSetup
+    if (m_mode == ProfileEditMode::PhoneFirstSetup && !password.isEmpty()
         && (password.size() < 6 || password != m_confirmPasswordEdit->text())) {
         ui->errorLabel->setText(password.size() < 6
                                     ? tr("新密码至少需要 6 位")
@@ -150,5 +150,6 @@ void ProfileEditWindow::submitCurrentInput()
         ui->errorLabel->show();
         return;
     }
+    // 未修改任何内容时允许继续；服务端自动注册密码仍为手机号。
     emit profileCompletionRequested(nickname, phone, password);
 }
