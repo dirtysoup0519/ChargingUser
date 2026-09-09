@@ -1605,7 +1605,9 @@ int main(int argc, char *argv[])
                      &sessionBinder, &IChargingSessionUiBinder::refreshRequested);
     QObject::connect(&sessionWindow, &ChargingSessionWindow::backRequested,
                      &app, [&] {
+        sessionBinder.clearSession();
         mainWindow.renderPrimaryPage(MainWindow::PrimaryPage::Home);
+        mapBinder.activateHome();
     });
     QObject::connect(&sessionWindow, &ChargingSessionWindow::stopChargingRequested,
                      &sessionBinder, &IChargingSessionUiBinder::stopChargingRequested);
@@ -1732,7 +1734,7 @@ int main(int argc, char *argv[])
     QObject::connect(&chargeBinder, &IChargingUiBinder::chargingSessionRequested,
                      &app, [&](const StartChargingResult &result) {
         sessionBinder.sessionRequested(result.orderId);
-        mainWindow.renderSecondaryPage(&sessionWindow);
+        mainWindow.renderPrimaryPage(MainWindow::PrimaryPage::Charging);
     });
 
     // 合同 §3.5：结算页接线（展示 → 支付意图 → 刷新）。
@@ -2081,7 +2083,7 @@ int main(int argc, char *argv[])
     QObject::connect(&qrScanner, &QrCodeScannerWindow::backRequested,
                      &app, [&] {
         if (scanEntryPoint == ScanEntryPoint::Session)
-            mainWindow.renderSecondaryPage(&sessionWindow);
+            mainWindow.renderPrimaryPage(MainWindow::PrimaryPage::Charging);
         else
             mainWindow.renderPrimaryPage(MainWindow::PrimaryPage::Charging);
     });

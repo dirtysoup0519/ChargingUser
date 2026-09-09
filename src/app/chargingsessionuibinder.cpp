@@ -117,6 +117,22 @@ void ChargingSessionUiBinder::showOrder(const ChargingOrder &order)
     publish();
 }
 
+void ChargingSessionUiBinder::clearSession()
+{
+    if (!m_requestId.isEmpty())
+        m_service->cancel(m_requestId);
+    if (!m_activeRequestId.isEmpty())
+        m_service->cancel(m_activeRequestId);
+    m_requestId.clear();
+    m_activeRequestId.clear();
+    m_operationId.clear();
+    m_refreshTimer->stop();
+    m_state = ChargingSessionViewState{};
+    m_sessionsState = ChargingSessionCollectionViewState{};
+    publish();
+    emit activeSessionsStateChanged(m_sessionsState);
+}
+
 void ChargingSessionUiBinder::sessionRequested(const QString &orderId)
 {
     const QString normalized = orderId.trimmed();

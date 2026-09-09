@@ -19,6 +19,8 @@ public:
     ChargingSessionCollectionViewState currentSessionsState() const override;
     void showOrder(const ChargingOrder &order);
     void applyProgress(const ChargingProgressNotice &notice);
+    // Clears a completed/abandoned session before leaving the charging page.
+    void clearSession();
 
 public slots:
     void sessionRequested(const QString &orderId) override;

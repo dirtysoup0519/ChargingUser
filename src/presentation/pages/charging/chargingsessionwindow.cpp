@@ -193,10 +193,12 @@ void ChargingSessionWindow::render(const ChargingSessionViewState &state)
     const bool loading = state.status == ChargingSessionStatus::Loading;
     const bool stopping = state.status == ChargingSessionStatus::Stopping;
     const bool unknown = state.status == ChargingSessionStatus::ResultUnknown;
+    const bool ended = state.status == ChargingSessionStatus::Ended;
     ui->chargingSessionTitle->setText(!hasSession ? tr("充电")
                                                 : charging ? tr("正在充电")
                                                 : stopping ? tr("正在结束")
                                                 : unknown ? tr("确认充电结果")
+                                                : ended ? tr("充电已结束")
                                                           : tr("充电进行"));
     ui->progressContainer->setVisible(hasSession);
     m_emptyState->setVisible(!hasSession && !loading);
@@ -217,6 +219,7 @@ void ChargingSessionWindow::render(const ChargingSessionViewState &state)
     ui->chargingStateInRingLabel->setText(charging ? tr("正在充电")
                                                     : stopping ? tr("正在结束")
                                                     : unknown ? tr("确认结果")
+                                                    : ended ? tr("已结束")
                                                               : tr("充电中"));
     ui->selectedStationLabel->setText(hasSession
                                           ? textOr(state.stationName, tr("未知站点"))
