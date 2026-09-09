@@ -1501,6 +1501,12 @@ int main(int argc, char *argv[])
         view.remainingText = result.expiresAtUtc.isValid()
             ? QStringLiteral("预约已生效，截止 %1").arg(result.expiresAtUtc.toLocalTime().toString(QStringLiteral("MM-dd HH:mm")))
             : QStringLiteral("预约已生效");
+        if (view.stationId.isEmpty() || view.chargerId.isEmpty()) {
+            qWarning().noquote() << QStringLiteral(
+                "Reservation created without station/charger identity; routing guard not enabled.");
+            clearReservation();
+            return;
+        }
         activeReservation = view;
         chargeBinder.setReservationActive(true);
         if (!activeUserId.isEmpty()) {
