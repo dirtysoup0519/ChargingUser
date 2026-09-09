@@ -12,6 +12,8 @@ struct ChargingProgressNotice
     QString chargerCode;
     double energyKwh = 0.0;
     qint64 amountCents = 0;
+    double amountYuan = 0.0;
+    bool amountPresent = false;
     int percent = 0;
     int remainMinutes = 0;
 };

@@ -28,6 +28,14 @@ ChargingSessionWindow::ChargingSessionWindow(QWidget *parent)
     : QWidget(parent), ui(new Ui::ChargingSessionWindow)
 {
     ui->setupUi(this);
+    auto *backButton = new QPushButton(QStringLiteral("‹"), this);
+    backButton->setObjectName(QStringLiteral("sessionBackButton"));
+    backButton->setFixedSize(42, 34);
+    backButton->setStyleSheet(QStringLiteral(
+        "#sessionBackButton{border:none;background:transparent;color:#13223F;font-size:28px;}"));
+    ui->rootLayout->insertWidget(0, backButton, 0, Qt::AlignLeft);
+    connect(backButton, &QPushButton::clicked, this,
+            &ChargingSessionWindow::backRequested);
     m_emptyState = new QFrame(this);
     m_emptyState->setObjectName(QStringLiteral("chargingEmptyState"));
     m_emptyState->setStyleSheet(QStringLiteral(

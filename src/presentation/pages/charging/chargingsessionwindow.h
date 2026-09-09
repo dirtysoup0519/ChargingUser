@@ -25,6 +25,7 @@ protected:
     void resizeEvent(QResizeEvent *event) override;
 
 signals:
+    void backRequested();
     void scanChargingRequested();
     void activeSessionsRequested();
     void activeSessionSelected(const QString &orderId);

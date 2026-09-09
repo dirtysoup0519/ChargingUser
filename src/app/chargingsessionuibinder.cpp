@@ -1,8 +1,10 @@
 #include "app/chargingsessionuibinder.h"
 
 #include "modules/order/iorderservice.h"
+#include "network/serverpushdispatcher.h"
 
 #include <QUuid>
+#include <QtMath>
 
 ChargingSessionUiBinder::ChargingSessionUiBinder(IOrderService *service,
                                                  QObject *parent)
@@ -23,6 +25,21 @@ ChargingSessionUiBinder::ChargingSessionUiBinder(IOrderService *service,
 ChargingSessionViewState ChargingSessionUiBinder::currentState() const
 {
     return m_state;
+}
+
+void ChargingSessionUiBinder::applyProgress(const ChargingProgressNotice &notice)
+{
+    if (notice.orderId.isEmpty() || notice.orderId != m_state.orderId) return;
+    if (notice.energyKwh >= 0.0)
+        m_state.energyText = QStringLiteral("%1 kWh").arg(notice.energyKwh, 0, 'f', 2);
+    qint64 amountCents = notice.amountCents;
+    if (amountCents <= 0 && notice.amountYuan > 0.0)
+        amountCents = qRound64(notice.amountYuan * 100.0);
+    if (notice.amountPresent || amountCents > 0)
+        m_state.amountText = QStringLiteral("¥%1").arg(amountCents / 100.0, 0, 'f', 2);
+    if (notice.percent >= 0) m_state.progressPercent = notice.percent;
+    m_state.canRefresh = true;
+    publish();
 }
 
 void ChargingSessionUiBinder::showOrder(const ChargingOrder &order)

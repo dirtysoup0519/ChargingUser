@@ -307,6 +307,21 @@ void RealWalletNetworkApi::handleFrame(int msgType, const QJsonObject &payload)
         }
         const QString code = payload.value(QStringLiteral("code")).toString(
             QStringLiteral("server-error"));
+        if (m_pending->kind == PendingKind::WalletTransactions
+            && (msgType == DATA_NOEXIST
+                || message.contains(QStringLiteral("walletTransaction"),
+                                    Qt::CaseInsensitive)
+                || message.contains(QStringLiteral("unknown table"),
+                                    Qt::CaseInsensitive))) {
+            const PendingRequest pending = *m_pending;
+            WalletSnapshot snapshot;
+            snapshot.accountId = m_username;
+            snapshot.balanceCents = pending.balanceCents;
+            snapshot.fetchedAtUtc = QDateTime::currentDateTimeUtc();
+            finishPending();
+            emit walletReady(pending.context, snapshot);
+            return;
+        }
         failPending(code,
                     message.isEmpty() ? QStringLiteral("服务器拒绝了钱包请求。")
                                       : message,

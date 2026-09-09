@@ -517,20 +517,22 @@ ChargingOrder RealOrderService::parseOrderRecord(const QJsonObject &record)
 {
     // 坏行不丢弃整批：orderId 缺失的记录在详情匹配/活动筛选中自然无法命中。
     ChargingOrder order;
-    order.orderId = recordString(record, {"orderNo", "orderId"});
-    order.stationName = recordString(record, {"stationName"});
-    order.chargerCode = recordString(record, {"chargerCode"});
+    order.orderId = recordString(record, {"orderNo", "orderId", "order_id", "id"});
+    order.stationName = recordString(record, {"stationName", "station", "stationId"});
+    order.chargerCode = recordString(record, {"chargerCode", "charger", "chargerId"});
     order.stationId = order.stationName; // 稳定 ID 待 v2.5 冲突解决，暂用名称
     order.chargerId = order.chargerCode;
 
-    const QString status = recordString(record, {"status"});
-    if (status == QLatin1String("Charging")) {
+    const QString status = recordString(record, {"status"}).trimmed().toLower();
+    if (status == QLatin1String("charging") || status == QLatin1String("in_progress")) {
         order.status = OrderStatus::Charging;
-    } else if (status == QLatin1String("PendingSettlement")) {
+    } else if (status == QLatin1String("pendingsettlement")
+               || status == QLatin1String("pending_settlement")
+               || status == QLatin1String("pending_payment")) {
         order.status = OrderStatus::PendingSettlement;
-    } else if (status == QLatin1String("Settled")) {
+    } else if (status == QLatin1String("settled") || status == QLatin1String("completed")) {
         order.status = OrderStatus::Settled;
-    } else if (status == QLatin1String("Cancelled")) {
+    } else if (status == QLatin1String("cancelled") || status == QLatin1String("canceled")) {
         order.status = OrderStatus::Cancelled;
     } else {
         order.status = OrderStatus::Unknown;
@@ -552,14 +554,20 @@ ChargingOrder RealOrderService::parseOrderRecord(const QJsonObject &record)
         order.energyKwh = kwh;
     }
 
-    const QJsonValue cents = record.value(QStringLiteral("amountCents"));
-    if (cents.isDouble()) {
-        order.amountCents = static_cast<qint64>(cents.toDouble());
+    const double amountCents = numberValue(
+        record.value(QStringLiteral("amountCents")), &ok);
+    if (ok && amountCents >= 0.0) {
+        order.amountCents = static_cast<qint64>(qRound64(amountCents));
     } else {
         const double amount = numberValue(record.value(QStringLiteral("amount")), &ok);
         if (ok && amount >= 0.0) {
             order.amountCents = static_cast<qint64>(qRound64(amount * 100.0));
         }
+    }
+    if (order.amountCents == 0 && order.energyKwh > 0.0
+        && order.priceCentsPerKwhSnapshot > 0) {
+        order.amountCents = qRound64(
+            order.energyKwh * order.priceCentsPerKwhSnapshot);
     }
 
     order.startedAtUtc = parseTimestamp(recordString(record, {"startedAt", "startTime"}));

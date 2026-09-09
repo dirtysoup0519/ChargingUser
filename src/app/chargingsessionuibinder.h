@@ -6,6 +6,7 @@
 #include "modules/order/ordertypes.h"
 
 class IOrderService;
+struct ChargingProgressNotice;
 
 class ChargingSessionUiBinder final : public IChargingSessionUiBinder
 {
@@ -15,6 +16,7 @@ public:
                                      QObject *parent = nullptr);
     ChargingSessionViewState currentState() const override;
     void showOrder(const ChargingOrder &order);
+    void applyProgress(const ChargingProgressNotice &notice);
 
 public slots:
     void sessionRequested(const QString &orderId) override;

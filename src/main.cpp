@@ -203,10 +203,15 @@ void configureWebEngineDiagnostics()
         return;
     }
     QByteArray flags = current;
-    if (!flags.contains("--disable-gpu")) flags += " --disable-gpu";
-    // Tencent GL 地图仍需要 WebGL；SwiftShader 提供虚拟机/无显卡环境下的软件 WebGL。
-    if (!flags.contains("--use-gl=swiftshader")) flags += " --use-gl=swiftshader";
-    if (!flags.contains("--enable-unsafe-swiftshader")) flags += " --enable-unsafe-swiftshader";
+    // --disable-gpu 会连 WebGL 一并禁用，不能与腾讯 GL 地图共存。
+    flags.replace("--disable-software-rasterizer", "");
+    flags.replace("--disable-gpu", "");
+    flags.replace("--use-gl=swiftshader", "");
+    flags.replace("--use-gl=angle", "");
+    flags.replace("--use-angle=swiftshader", "");
+    // Qt6 WebEngine/Chromium 在虚拟机中通过 ANGLE 调用 SwiftShader 软件 WebGL。
+    flags += " --use-gl=angle --use-angle=swiftshader"
+             " --enable-unsafe-swiftshader --ignore-gpu-blocklist";
     qputenv("QTWEBENGINE_CHROMIUM_FLAGS", flags.trimmed());
     qInfo() << "Tencent map diagnostics: SwiftShader WebGL rendering enabled.";
 }
@@ -1143,6 +1148,10 @@ int main(int argc, char *argv[])
                      &mainWindow, &MainWindow::renderChargingSessions);
     QObject::connect(&sessionWindow, &ChargingSessionWindow::refreshRequested,
                      &sessionBinder, &IChargingSessionUiBinder::refreshRequested);
+    QObject::connect(&sessionWindow, &ChargingSessionWindow::backRequested,
+                     &app, [&] {
+        mainWindow.renderPrimaryPage(MainWindow::PrimaryPage::Home);
+    });
     QObject::connect(&sessionWindow, &ChargingSessionWindow::stopChargingRequested,
                      &sessionBinder, &IChargingSessionUiBinder::stopChargingRequested);
     QObject::connect(&sessionWindow,
@@ -1462,7 +1471,7 @@ int main(int argc, char *argv[])
     });
     QObject::connect(&pushDispatcher, &ServerPushDispatcher::chargingProgress,
                      &app, [&](const ChargingProgressNotice &notice) {
-        if (!notice.orderId.isEmpty()) sessionBinder.sessionRequested(notice.orderId);
+        sessionBinder.applyProgress(notice);
     });
     QObject::connect(&pushDispatcher, &ServerPushDispatcher::chargingFault,
                      &app, [&](const ChargingFaultNotice &notice) {
