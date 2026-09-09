@@ -183,6 +183,16 @@ QJsonObject loadTencentMapConfig()
     return {};
 }
 
+void enableWidgetInputMethods(QWidget *root)
+{
+    if (!root)
+        return;
+    for (QLineEdit *edit : root->findChildren<QLineEdit *>()) {
+        if (!edit->isReadOnly())
+            edit->setAttribute(Qt::WA_InputMethodEnabled, true);
+    }
+}
+
 void configureWebEngineProcess(const char *executablePath)
 {
     if (!qEnvironmentVariableIsEmpty("QTWEBENGINEPROCESS_PATH")) {
@@ -430,17 +440,17 @@ int main(int argc, char *argv[])
 
     const QJsonObject locationConfig =
         mapConfig.value(QStringLiteral("defaultLocation")).toObject();
-    if (!locationConfig.isEmpty()) {
-        LocationResult fallback;
-        fallback.point.latitude =
-            locationConfig.value(QStringLiteral("latitude")).toDouble();
-        fallback.point.longitude =
-            locationConfig.value(QStringLiteral("longitude")).toDouble();
-        fallback.capturedAtUtc = QDateTime::currentDateTimeUtc();
-        fallback.source = LocationSource::Manual;
-        if (fallback.point.isValid()) {
-            mapService.setFallbackLocation(fallback);
-        }
+    // 配置缺失时仍以北京理工大学为默认定位，避免本地配置只有 key/region
+    // 时回退到地图 SDK 的未知位置。
+    LocationResult fallback;
+    fallback.point.latitude =
+        locationConfig.value(QStringLiteral("latitude")).toDouble(39.731782);
+    fallback.point.longitude =
+        locationConfig.value(QStringLiteral("longitude")).toDouble(116.172130);
+    fallback.capturedAtUtc = QDateTime::currentDateTimeUtc();
+    fallback.source = LocationSource::Manual;
+    if (fallback.point.isValid()) {
+        mapService.setFallbackLocation(fallback);
     }
     MapUiBinder mapBinder(&chargerService, &mapService);
 
@@ -478,6 +488,12 @@ int main(int argc, char *argv[])
     ChargingSessionWindow sessionWindow(&mainWindow);
     SettlementWindow settlementWindow(&mainWindow);
     PasswordChangeWindow passwordChange;
+    enableWidgetInputMethods(&login);
+    enableWidgetInputMethods(&profileEdit);
+    enableWidgetInputMethods(&mainWindow);
+    enableWidgetInputMethods(&navigation);
+    enableWidgetInputMethods(&walletRecharge);
+    enableWidgetInputMethods(&passwordChange);
     mainWindow.registerSecondaryPage(&sessionWindow);
     mainWindow.registerSecondaryPage(&settlementWindow);
     if (!mapKey.isEmpty()) {

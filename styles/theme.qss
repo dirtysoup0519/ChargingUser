@@ -232,6 +232,7 @@ QPushButton#driveButton:checked, QPushButton#walkButton:checked { background: #E
 QFrame#routeCard { background: #FFFFFF; border-top: 1px solid #E6EBF1; }
 QLabel#routeInfo { color: #7E8998; font-size: 11px; }
 QLabel#hintLabel2 { color: #8B96A6; font-size: 10px; }
+QLabel#defaultPasswordHintLabel { color: #8B96A6; font-size: 10px; }
 QFrame.metricCard { background: #F8FAFD; border: none; border-radius: 9px; }
 QLabel.metricValue { font-size: 18px; font-weight: 700; }
 QLabel.metricCaption { color: #8C97A6; font-size: 9px; }

@@ -54,6 +54,9 @@ PasswordChangeWindow::PasswordChangeWindow(QWidget *parent) : QWidget(parent)
     m_confirmEdit = new QLineEdit(card);
     m_confirmEdit->setEchoMode(QLineEdit::Password);
     m_confirmEdit->setPlaceholderText(tr("请再次输入新密码"));
+    m_originalEdit->setAttribute(Qt::WA_InputMethodEnabled, true);
+    m_newEdit->setAttribute(Qt::WA_InputMethodEnabled, true);
+    m_confirmEdit->setAttribute(Qt::WA_InputMethodEnabled, true);
     form->addWidget(m_originalLabel);
     form->addWidget(m_originalEdit);
     form->addWidget(m_newLabel);

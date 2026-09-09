@@ -10,6 +10,7 @@
 #include <QScrollerProperties>
 #include <QVariant>
 #include <QWidget>
+#include <QLineEdit>
 
 namespace {
 class InteractiveScrollGuard final : public QObject
@@ -46,6 +47,13 @@ void DragScrollHelper::enableFor(QWidget *root)
 {
     if (!root)
         return;
+
+    // 显式打开 Qt 输入法支持。部分 Qt6 Linux/虚拟机环境不会为
+    // 动态创建的编辑框自动设置该属性，导致中文预编辑文本无法提交。
+    for (QLineEdit *edit : root->findChildren<QLineEdit *>()) {
+        if (!edit->isReadOnly())
+            edit->setAttribute(Qt::WA_InputMethodEnabled, true);
+    }
 
     if (auto *area = qobject_cast<QAbstractScrollArea *>(root))
         enableFor(area);
