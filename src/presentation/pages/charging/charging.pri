@@ -12,7 +12,6 @@ HEADERS += \
     $$PWD/chargingsessionwindow.h \
     $$PWD/paymentwindow.h \
     $$PWD/settlementwindow.h \
-    $$PWD/sessionselectorcombobox.h \
     $$PWD/qrcodescannerwindow.h \
     $$PWD/reservationconfirmationwindow.h
 SOURCES += \
@@ -21,6 +20,5 @@ SOURCES += \
     $$PWD/chargingsessionwindow.cpp \
     $$PWD/paymentwindow.cpp \
     $$PWD/settlementwindow.cpp \
-    $$PWD/sessionselectorcombobox.cpp \
     $$PWD/qrcodescannerwindow.cpp \
     $$PWD/reservationconfirmationwindow.cpp

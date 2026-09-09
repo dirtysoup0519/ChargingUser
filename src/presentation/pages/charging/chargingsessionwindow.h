@@ -6,13 +6,12 @@
 
 namespace Ui { class ChargingSessionWindow; }
 class QPropertyAnimation;
-class QListWidget;
 class QFrame;
 class QLabel;
 class QPushButton;
 class QResizeEvent;
 
-/** Displays one selected charging order and lets the user switch active orders. */
+/** Displays the selected charging order's live progress. */
 class ChargingSessionWindow final : public QWidget
 {
     Q_OBJECT
@@ -22,9 +21,6 @@ public:
     void setEmbeddedMode(bool embedded);
     void render(const ChargingSessionViewState &state);
     void renderSessions(const ChargingSessionCollectionViewState &state);
-
-protected:
-    void resizeEvent(QResizeEvent *event) override;
 
 signals:
     void backRequested();
@@ -37,16 +33,11 @@ signals:
 
 private:
     void animateProgress(int progress);
-    void applySelectedSession(const QString &orderId);
-    void positionSessionChooser();
 
     Ui::ChargingSessionWindow *ui;
     ChargingSessionViewState m_state;
     ChargingSessionCollectionViewState m_collection;
     QPropertyAnimation *m_progressAnimation = nullptr;
-    QFrame *m_sessionChooserPanel = nullptr;
     QFrame *m_emptyState = nullptr;
-    QListWidget *m_sessionChooser = nullptr;
     QPushButton *m_backButton = nullptr;
-    bool m_updatingSelector = false;
 };
