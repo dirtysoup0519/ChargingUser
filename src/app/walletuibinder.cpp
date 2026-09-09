@@ -142,6 +142,8 @@ QString WalletUiBinder::transactionText(const QVector<WalletTransaction> &transa
             type = QStringLiteral("支付");
         } else if (transaction.type == WalletTransactionType::Refund) {
             type = QStringLiteral("退款");
+        } else if (transaction.type == WalletTransactionType::Deposit) {
+            type = QStringLiteral("预约押金");
         }
         const QString time = transaction.createdAtUtc.isValid()
                                  ? transaction.createdAtUtc.toLocalTime()

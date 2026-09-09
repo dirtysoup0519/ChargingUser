@@ -93,10 +93,14 @@ void WalletRechargeWindow::render(const WalletViewState &state)
                 type = tr("支付");
             else if (transaction.type == WalletTransactionType::Refund)
                 type = tr("退款");
+            else if (transaction.type == WalletTransactionType::Deposit)
+                type = tr("预约押金");
             const QString time = transaction.createdAtUtc.isValid()
                 ? transaction.createdAtUtc.toLocalTime().toString(QStringLiteral("MM-dd hh:mm"))
                 : tr("时间未知");
-            const QString sign = transaction.amountCents >= 0 ? QStringLiteral("+") : QString();
+            const bool outgoing = transaction.type == WalletTransactionType::Payment
+                                  || transaction.type == WalletTransactionType::Deposit;
+            const QString sign = outgoing ? QStringLiteral("-") : QStringLiteral("+");
             lines.append(tr("%1  %2  %3¥%4")
                 .arg(time, type, sign)
                 .arg(qAbs(transaction.amountCents) / 100.0, 0, 'f', 2));

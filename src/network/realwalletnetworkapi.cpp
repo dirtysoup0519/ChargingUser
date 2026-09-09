@@ -6,6 +6,7 @@
 #include <QDateTime>
 #include <QJsonArray>
 #include <QTimer>
+#include <algorithm>
 
 #include <cmath>
 
@@ -250,9 +251,25 @@ void RealWalletNetworkApi::handleFrame(int msgType, const QJsonObject &payload)
                 const QJsonObject row = value.toObject();
                 const QString rowUser = row.value(QStringLiteral("username")).toString().trimmed();
                 if (!rowUser.isEmpty() && rowUser != m_username) continue;
+                // walletTransaction rows have a stable id/type schema.  Reject
+                // a non-empty response that belongs to another GETDATA query;
+                // accepting it would silently overwrite the wallet page with
+                // reservation/profile data when the server omits correlation.
+                if (!row.contains(QStringLiteral("id"))
+                    && !row.contains(QStringLiteral("transactionId"))) {
+                    failPending(QStringLiteral("wrong-response"),
+                                QStringLiteral("钱包流水响应归属不明确，请稍后重试。"), true);
+                    return;
+                }
                 snapshot.recentTransactions.append(parseTransaction(row));
             }
         }
+        std::sort(snapshot.recentTransactions.begin(), snapshot.recentTransactions.end(),
+                  [](const WalletTransaction &left, const WalletTransaction &right) {
+            if (left.createdAtUtc.isValid() != right.createdAtUtc.isValid())
+                return left.createdAtUtc.isValid();
+            return left.createdAtUtc > right.createdAtUtc;
+        });
         finishPending();
         emit walletReady(pending.context, snapshot);
         return;
@@ -401,6 +418,8 @@ WalletTransaction RealWalletNetworkApi::parseTransaction(const QJsonObject &reco
         value.type = WalletTransactionType::Payment;
     } else if (type == QLatin1String("REFUND")) {
         value.type = WalletTransactionType::Refund;
+    } else if (type == QLatin1String("DEPOSIT")) {
+        value.type = WalletTransactionType::Deposit;
     }
     bool ok = false;
     value.amountCents = parseCents(record, QStringLiteral("amountCents"),

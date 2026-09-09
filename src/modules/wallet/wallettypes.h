@@ -5,7 +5,7 @@
 #include <QString>
 #include <QVector>
 
-enum class WalletTransactionType { Recharge, Payment, Refund, Unknown };
+enum class WalletTransactionType { Recharge, Payment, Refund, Deposit, Unknown };
 
 struct WalletTransaction
 {

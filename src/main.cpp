@@ -979,7 +979,11 @@ int main(int argc, char *argv[])
             item.createdAtText = transaction.createdAtUtc.isValid()
                 ? transaction.createdAtUtc.toLocalTime().toString(Qt::ISODate)
                 : QStringLiteral("时间未知");
-            item.amountText = QStringLiteral("¥%1").arg(transaction.amountCents / 100.0, 0, 'f', 2);
+            const bool outgoing = transaction.type == WalletTransactionType::Payment
+                                  || transaction.type == WalletTransactionType::Deposit;
+            item.amountText = QStringLiteral("%1¥%2")
+                                  .arg(outgoing ? QStringLiteral("-") : QStringLiteral("+"))
+                                  .arg(qAbs(transaction.amountCents) / 100.0, 0, 'f', 2);
             QString kind = QStringLiteral("钱包流水");
             if (transaction.type == WalletTransactionType::Recharge)
                 kind = QStringLiteral("钱包充值");
@@ -987,6 +991,8 @@ int main(int argc, char *argv[])
                 kind = QStringLiteral("订单支付");
             else if (transaction.type == WalletTransactionType::Refund)
                 kind = QStringLiteral("预约/订单退款");
+            else if (transaction.type == WalletTransactionType::Deposit)
+                kind = QStringLiteral("预约押金");
             item.statusText = QStringLiteral("已完成");
             item.statusTone = QStringLiteral("success");
             item.summaryText = transaction.orderId.isEmpty()
@@ -1660,7 +1666,7 @@ int main(int argc, char *argv[])
         state.durationText = QStringLiteral("2 小时");
         state.depositText = QStringLiteral("¥20.00");
         state.depositPolicyText = QStringLiteral("预约保持 2 小时，过期规则由服务端结算");
-        reservationConfirmation.render(state);
+        reservationBinder.setConfirmationState(state);
         mainWindow.renderSecondaryPage(&reservationConfirmation);
     });
     QObject::connect(&reservationConfirmation,

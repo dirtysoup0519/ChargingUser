@@ -22,6 +22,16 @@ ReservationConfirmationViewState ReservationUiBinder::currentState() const
     return m_state;
 }
 
+void ReservationUiBinder::setConfirmationState(
+    const ReservationConfirmationViewState &state)
+{
+    if (!m_requestId.isEmpty()) return;
+    m_state = state;
+    m_state.message.clear();
+    m_state.canRetry = false;
+    publish();
+}
+
 void ReservationUiBinder::reserveRequested(const QString &stationId,
                                             const QString &chargerId,
                                             int durationSeconds)
@@ -74,6 +84,9 @@ void ReservationUiBinder::handleCreated(const RequestContext &context,
     m_operationId.clear();
     m_state.status = ReservationConfirmationStatus::Ready;
     m_state.canReserve = false;
+    m_state.canRetry = false;
+    if (m_state.chargerCode.isEmpty())
+        m_state.chargerCode = result.chargerCode;
     m_state.message = result.reservationId.isEmpty()
                           ? QStringLiteral("预约已提交。")
                           : QStringLiteral("预约成功，编号：%1").arg(result.reservationId);

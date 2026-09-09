@@ -17,6 +17,11 @@ public:
                                  QObject *parent = nullptr);
     ReservationConfirmationViewState currentState() const;
 
+    // Set the authoritative snapshot used by the confirmation page before a
+    // reserve request starts. Result updates must preserve these display
+    // fields because the service response only contains reservation data.
+    void setConfirmationState(const ReservationConfirmationViewState &state);
+
 public slots:
     void reserveRequested(const QString &stationId, const QString &chargerId,
                           int durationSeconds);
