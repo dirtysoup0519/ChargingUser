@@ -501,6 +501,7 @@ int main(int argc, char *argv[])
         if (!activeUserId.isEmpty())
             reservationStore.remove(QStringLiteral("reservation/%1").arg(activeUserId));
         activeReservation.reset();
+        reservationBinder.consumeActiveReservation();
         chargeBinder.setReservationActive(false);
         mapBinder.setActiveReservation(std::nullopt);
     };
@@ -521,6 +522,7 @@ int main(int argc, char *argv[])
             activeReservation = view;
         }
         mapBinder.setActiveReservation(activeReservation);
+        reservationBinder.restoreActiveReservation(activeReservation);
         chargeBinder.setReservationActive(activeReservation.has_value());
         if (activeReservation)
             mapBinder.chargerStatusConfirmed(activeReservation->stationId,
@@ -531,6 +533,7 @@ int main(int argc, char *argv[])
         if (activeReservation && activeReservation->expiresAtUtc.isValid()
             && activeReservation->expiresAtUtc <= QDateTime::currentDateTimeUtc()) {
             const ActiveReservationView expired = *activeReservation;
+            reservationBinder.expireReservationIfNeeded();
             activeReservation.reset();
             mapBinder.setActiveReservation(std::nullopt);
             mapBinder.chargerStatusConfirmed(expired.stationId, expired.chargerId,
@@ -541,6 +544,26 @@ int main(int argc, char *argv[])
     QObject::connect(&reservationExpiryTimer, &QTimer::timeout,
                      &app, clearExpiredReservation);
     reservationExpiryTimer.start(30000);
+    QObject::connect(&reservationBinder, &ReservationUiBinder::activeReservationChanged,
+                     &app, [&](const std::optional<ActiveReservationView> &reservation) {
+        activeReservation = reservation;
+        mapBinder.setActiveReservation(reservation);
+        chargeBinder.setReservationActive(reservation.has_value());
+        if (activeUserId.isEmpty())
+            return;
+        const QString key = QStringLiteral("reservation/%1").arg(activeUserId);
+        if (!reservation) {
+            reservationStore.remove(key);
+            return;
+        }
+        reservationStore.beginGroup(key);
+        reservationStore.setValue(QStringLiteral("id"), reservation->reservationId);
+        reservationStore.setValue(QStringLiteral("station"), reservation->stationId);
+        reservationStore.setValue(QStringLiteral("charger"), reservation->chargerId);
+        reservationStore.setValue(QStringLiteral("expires"),
+                                  reservation->expiresAtUtc.toMSecsSinceEpoch());
+        reservationStore.endGroup();
+    });
     const auto openStationDetails = [&](const QString &requestedStation) {
         clearExpiredReservation();
         mapBinder.stationDetailsRequested(activeReservation
