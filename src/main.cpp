@@ -880,16 +880,14 @@ int main(int argc, char *argv[])
                      &app, [&] {
         mapBinder.stationRefreshRequested();
     });
-    const auto reservationCancelUnavailable = [&](const QString &) {
-        QMessageBox::information(&stationDetail, QStringLiteral("取消预约"),
-                                 QStringLiteral("当前正式服务端尚未提供取消预约接口。"));
-    };
     QObject::connect(&stationDetail,
                      &StationDetailWindow::cancelReservationRequested,
-                     &app, reservationCancelUnavailable);
+                     &reservationBinder,
+                     &ReservationUiBinder::cancelReservationRequested);
     QObject::connect(&stationDetail,
                      &StationDetailWindow::cancelReservationRetryRequested,
-                     &app, reservationCancelUnavailable);
+                     &reservationBinder,
+                     &ReservationUiBinder::cancelReservationRetryRequested);
     QObject::connect(&stationDetail,
                      &StationDetailWindow::activeReservationRequested,
                      &app, [&](const QString &, const QString &stationId, const QString &) {
@@ -1585,6 +1583,13 @@ int main(int argc, char *argv[])
             reservationStore.endGroup();
         }
         mapBinder.setActiveReservation(activeReservation);
+    });
+    QObject::connect(&reservationService, &IReservationService::reservationCancelled,
+                     &app, [&](const RequestContext &, const ReservationCancellationResult &) {
+        clearReservation();
+        mapBinder.stationRefreshRequested();
+        walletBinder.activate();
+        mainWindow.renderPrimaryPage(MainWindow::PrimaryPage::Home);
     });
     QObject::connect(&pushDispatcher, &ServerPushDispatcher::reservationExpired,
                      &app, [&](const QString &reservationId, const QString &) {

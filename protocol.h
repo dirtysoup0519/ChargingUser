@@ -130,6 +130,7 @@
 #define STATION_QRY_REQ     119     // 电站/电桩信息查询（用户端 & PC端）{stationName?,chargerCode?}
 #define STATION_MNG_REQ     124     // 电站/电桩管理（PC管理员）{op:add|update|remove, target:station|charger, data?, key?}
 #define RESERVE_REQ         125     // 预约充电（手机用户）{chargerCode}（押金 20 元即扣，保持 2 小时）
+#define CANCEL_RESERVE_REQ  126     // 取消当前用户进行中的预约（载荷可为空）
 
 /* 返回类型 2开头 */
 #define DATA                200     // 通用查询结果（预留）
@@ -161,6 +162,7 @@
 #define STATION_MNG_ACK     231     // 电站/电桩管理操作成功 {ok,op,target,...}
 #define HEARTBEAT_ACK       230     // 心跳应答
 #define RESERVE_ACK         232     // 预约成功 {reserveId,chargerCode,phone,reserveAt,expireAt,balanceCents,balance}
+#define CANCEL_RESERVE_ACK  235     // 取消预约成功 {reserveId,chargerCode,refundCents,refund,balanceCents,balance}
 #define RESERVE_EXPIRED_NOTICE 233  // 预约超时注销通知（服务端→用户）{reserveId,chargerCode,reserveAt,expireAt}
 #define CHG_ORDER_NOTICE    234     // 订单状态同步（服务端→电桩设备会话）{chargerCode,status,orderNo?,username?}
                                     //   status: Reserved/Charging/Idle（电桩据此刷新本地展示）

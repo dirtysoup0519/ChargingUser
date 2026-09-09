@@ -80,6 +80,41 @@ void RealReservationService::cancel(const QString &requestId)
     if (m_pending && m_pending->context.requestId == requestId) finishPending();
 }
 
+void RealReservationService::cancelReservation(const RequestContext &context)
+{
+    if (!context.isValid() || !context.isMutation()) {
+        emitFailure(context, QStringLiteral("reservation-invalid-cancel-request"),
+                    QStringLiteral("取消预约参数无效。"));
+        return;
+    }
+    if (m_username.isEmpty()) {
+        emitFailure(context, QStringLiteral("reservation-no-identity"), QStringLiteral("请先登录。"));
+        return;
+    }
+    if (m_backend->connectionState() != ConnectionState::Connected) {
+        emitFailure(context, QStringLiteral("not-connected"), QStringLiteral("服务器尚未连接。"), true);
+        return;
+    }
+    if (m_pending) {
+        emitFailure(context, QStringLiteral("reservation-request-in-flight"), QStringLiteral("上一项预约仍在处理中。"), true);
+        return;
+    }
+    PendingRequest pending;
+    pending.context = context;
+    pending.cancellation = true;
+    pending.timer = new QTimer(this);
+    pending.timer->setSingleShot(true);
+    connect(pending.timer, &QTimer::timeout, this, &RealReservationService::handleTimeout);
+    m_pending = pending;
+    QJsonObject payload{{QStringLiteral("requestId"), context.requestId},
+                        {QStringLiteral("operationId"), context.operationId}};
+    if (!m_backend->sendFrame(CANCEL_RESERVE_REQ, payload)) {
+        failPending(QStringLiteral("send-failed"), QStringLiteral("取消预约请求发送失败。"), false, true);
+        return;
+    }
+    m_pending->timer->start(m_requestTimeoutMs);
+}
+
 void RealReservationService::handleFrame(int msgType, const QJsonObject &payload)
 {
     if (!m_pending) return;
@@ -103,11 +138,24 @@ void RealReservationService::handleFrame(int msgType, const QJsonObject &payload
         emit reservationCreated(pending.context, result);
         return;
     }
+    if (msgType == CANCEL_RESERVE_ACK && m_pending->cancellation) {
+        const PendingRequest pending = *m_pending;
+        ReservationCancellationResult result;
+        result.reservationId = payload.value(QStringLiteral("reserveId")).toString();
+        result.chargerCode = payload.value(QStringLiteral("chargerCode")).toString();
+        result.refundCents = payload.value(QStringLiteral("refundCents")).toVariant().toLongLong();
+        result.balanceCents = payload.value(QStringLiteral("balanceCents")).toVariant().toLongLong();
+        finishPending();
+        emit reservationCancelled(pending.context, result);
+        return;
+    }
     if (msgType >= 300 && msgType < 400) {
+        QString message = payload.value(QStringLiteral("err")).toString();
+        if (message.isEmpty()) message = payload.value(QStringLiteral("reason")).toString();
+        if (message.isEmpty()) message = QStringLiteral("服务器拒绝了预约请求。");
         failPending(payload.value(QStringLiteral("code")).toString(
                         QStringLiteral("reservation-server-error")),
-                    payload.value(QStringLiteral("reason")).toString(
-                        QStringLiteral("服务器拒绝了预约请求。")),
+                    message,
                     msgType == DB_ERROR);
     }
 }

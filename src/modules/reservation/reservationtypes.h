@@ -15,4 +15,13 @@ struct ReservationResult
     qint64 balanceCents = 0;
 };
 
+struct ReservationCancellationResult
+{
+    QString reservationId;
+    QString chargerCode;
+    qint64 refundCents = 0;
+    qint64 balanceCents = 0;
+};
+
 Q_DECLARE_METATYPE(ReservationResult)
+Q_DECLARE_METATYPE(ReservationCancellationResult)

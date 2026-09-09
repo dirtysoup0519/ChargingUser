@@ -19,9 +19,12 @@ public slots:
                          const QString &chargerId,
                          int durationSeconds) = 0;
     virtual void cancel(const QString &requestId) = 0;
+    virtual void cancelReservation(const RequestContext &context) = 0;
 
 signals:
     void reservationCreated(const RequestContext &context,
                              const ReservationResult &result);
     void requestFailed(const ClientError &error);
+    void reservationCancelled(const RequestContext &context,
+                              const ReservationCancellationResult &result);
 };

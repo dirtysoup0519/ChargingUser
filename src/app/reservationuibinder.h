@@ -21,11 +21,15 @@ public slots:
     void reserveRequested(const QString &stationId, const QString &chargerId,
                           int durationSeconds);
     void refreshRequested();
+    void cancelReservationRequested(const QString &reservationId);
+    void cancelReservationRetryRequested(const QString &reservationId);
 
 private slots:
     void handleCreated(const RequestContext &context,
                        const ReservationResult &result);
     void handleFailure(const ClientError &error);
+    void handleCancelled(const RequestContext &context,
+                         const ReservationCancellationResult &result);
 
 signals:
     void stateChanged(const ReservationConfirmationViewState &state);
