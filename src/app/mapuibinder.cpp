@@ -119,6 +119,14 @@ StationDetailViewState MapUiBinder::currentStationDetailState() const
     return m_detail;
 }
 
+void MapUiBinder::setActiveReservation(const std::optional<ActiveReservationView> &reservation)
+{
+    m_home.activeReservation = reservation;
+    m_detail.activeReservation = reservation;
+    publishHome();
+    publishDetail();
+}
+
 NavigationViewState MapUiBinder::currentNavigationState() const
 {
     return m_navigation;
@@ -494,7 +502,8 @@ void MapUiBinder::handleStationDetailReady(const RequestContext &context,
     m_detail.isRefreshing = false;
     m_detail.canNavigate = summary.point && summary.point->isValid();
     m_detail.canCharge = canCharge;
-    m_detail.canContinueToConfirmation = !m_detail.selectedChargerId.isEmpty();
+    m_detail.canContinueToConfirmation = !m_detail.selectedChargerId.isEmpty()
+                                         && !m_detail.activeReservation.has_value();
     m_detail.lastUpdatedText = detail.updatedAtUtc.isValid()
                                    ? detail.updatedAtUtc.toLocalTime().toString(
                                          QStringLiteral("yyyy-MM-dd HH:mm:ss"))

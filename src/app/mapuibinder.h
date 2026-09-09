@@ -6,6 +6,7 @@
 #include "modules/charger/chargertypes.h"
 
 #include <QHash>
+#include <optional>
 
 class IChargerService;
 class IMapService;
@@ -28,6 +29,8 @@ public:
     HomeMapViewState currentHomeState() const override;
     StationDetailViewState currentStationDetailState() const override;
     NavigationViewState currentNavigationState() const override;
+
+    void setActiveReservation(const std::optional<ActiveReservationView> &reservation);
 
 public slots:
     void activateHome() override;

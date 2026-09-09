@@ -90,7 +90,18 @@ RealOrderService::RealOrderService(BackendClient *backend, QObject *parent)
 void RealOrderService::setIdentity(const QString &username)
 {
     // 登录成功注入 / 登出清空：orderInfo 以 username 为归属权威键。
-    m_username = username.trimmed();
+    const QString normalized = username.trimmed();
+    if (normalized == m_username) return;
+    while (!m_queryQueue.isEmpty()) {
+        const QueuedQuery queued = m_queryQueue.takeFirst();
+        emitFailed(queued.context, QStringLiteral("identity-changed"),
+                   QStringLiteral("登录账号已变化，已取消旧订单查询。"), false);
+    }
+    if (m_pending) {
+        failPending(QStringLiteral("identity-changed"),
+                    QStringLiteral("登录账号已变化，已取消旧订单查询。"), false);
+    }
+    m_username = normalized;
 }
 
 void RealOrderService::setRequestTimeoutMs(int timeoutMs)
@@ -208,6 +219,12 @@ void RealOrderService::cancel(const QString &requestId)
     if (m_pending && m_pending->requestId == requestId) {
         finishPending();
     }
+    for (auto it = m_queryQueue.begin(); it != m_queryQueue.end();) {
+        if (it->context.requestId == requestId)
+            it = m_queryQueue.erase(it);
+        else
+            ++it;
+    }
 }
 
 bool RealOrderService::startQuery(QueryKind kind, const RequestContext &context,
@@ -229,11 +246,6 @@ bool RealOrderService::startQuery(QueryKind kind, const RequestContext &context,
                    QStringLiteral("Not connected to the server."), true);
         return false;
     }
-    if (m_pending) {
-        emitFailed(context, QStringLiteral("request-in-flight"),
-                   QStringLiteral("Another order query is in flight."), false);
-        return false;
-    }
     if (m_username.isEmpty()) {
         // 未登录/身份未注入：无法收敛查询范围，快速失败而不是查全表。
         emitFailed(context, QStringLiteral("order-identity-missing"),
@@ -244,6 +256,15 @@ bool RealOrderService::startQuery(QueryKind kind, const RequestContext &context,
         emitFailed(context, QStringLiteral("order-invalid-request"),
                    QStringLiteral("Order id is required."), false);
         return false;
+    }
+    if (m_pending) {
+        // 214 may not echo requestId. Preserve response attribution by
+        // serialising read requests instead of rejecting UI refreshes.
+        for (const QueuedQuery &queued : m_queryQueue) {
+            if (queued.context.requestId == context.requestId) return true;
+        }
+        m_queryQueue.append({kind, context, orderId.trimmed()});
+        return true;
     }
 
     PendingRequest pending;
@@ -268,11 +289,7 @@ bool RealOrderService::startQuery(QueryKind kind, const RequestContext &context,
     }
     if (!m_backend->sendFrame(ORDERQRY_REQ, makeOrderQuery(condition,
                                                            context.requestId))) {
-        m_pending.reset();
-        if (pending.timer) {
-            pending.timer->stop();
-            pending.timer->deleteLater();
-        }
+        finishPending();
         emitFailed(context, QStringLiteral("send-failed"),
                    QStringLiteral("Failed to send the order query."), true);
         return false;
@@ -350,11 +367,7 @@ void RealOrderService::handleFrame(int msgType, const QJsonObject &payload)
         }
 
         const PendingRequest pending = *m_pending;
-        m_pending.reset();
-        if (pending.timer) {
-            pending.timer->stop();
-            pending.timer->deleteLater();
-        }
+        finishPending();
 
         const RequestContext context{pending.requestId, pending.operationId};
 
@@ -484,11 +497,7 @@ void RealOrderService::handleFrame(int msgType, const QJsonObject &payload)
         }
         const int errType = msgType;
         const PendingRequest pending = *m_pending;
-        m_pending.reset();
-        if (pending.timer) {
-            pending.timer->stop();
-            pending.timer->deleteLater();
-        }
+        finishPending();
         ClientError error;
         error.requestId = pending.requestId;
         error.operationId = pending.operationId;
@@ -599,6 +608,14 @@ void RealOrderService::finishPending()
         m_pending->timer->deleteLater();
     }
     m_pending.reset();
+    QTimer::singleShot(0, this, &RealOrderService::startNextQueuedQuery);
+}
+
+void RealOrderService::startNextQueuedQuery()
+{
+    if (m_pending || m_queryQueue.isEmpty()) return;
+    const QueuedQuery queued = m_queryQueue.takeFirst();
+    startQuery(queued.kind, queued.context, queued.orderId);
 }
 
 void RealOrderService::failPending(const QString &code, const QString &message,
@@ -608,11 +625,7 @@ void RealOrderService::failPending(const QString &code, const QString &message,
         return;
     }
     const PendingRequest pending = *m_pending;
-    m_pending.reset();
-    if (pending.timer) {
-        pending.timer->stop();
-        pending.timer->deleteLater();
-    }
+    finishPending();
     emit requestFailed(makeError(pending.requestId, pending.operationId,
                                  code, message, retryable, resultUnknown));
 }

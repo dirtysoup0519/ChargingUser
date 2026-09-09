@@ -7,6 +7,7 @@
 
 #include <QJsonArray>
 #include <QJsonObject>
+#include <QList>
 
 #include <optional>
 
@@ -82,8 +83,16 @@ private:
         QTimer *timer = nullptr;
     };
 
+    struct QueuedQuery
+    {
+        QueryKind kind = QueryKind::ActiveOrder;
+        RequestContext context;
+        QString orderId;
+    };
+
     bool startQuery(QueryKind kind, const RequestContext &context,
                     const QString &orderId);
+    void startNextQueuedQuery();
     void finishPending();
     void failPending(const QString &code, const QString &message,
                      bool retryable, bool resultUnknown = false);
@@ -100,4 +109,5 @@ private:
     int m_requestTimeoutMs = 10000;
     /** 全局单在途查询：214 无 requestId 回显，并发应答无法区分归属。 */
     std::optional<PendingRequest> m_pending;
+    QList<QueuedQuery> m_queryQueue;
 };

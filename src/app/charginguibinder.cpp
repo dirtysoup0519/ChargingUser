@@ -230,7 +230,8 @@ void ChargingUiBinder::handleStartOperationStatusReady(
 
 void ChargingUiBinder::load()
 {
-    if (m_state.stationId.isEmpty() || m_state.chargerId.isEmpty())
+    // 扫码入口只有 chargerCode，所属站点由 119/229 权威响应补齐。
+    if (m_state.chargerId.isEmpty())
         return;
     if (!m_requestId.isEmpty())
         m_service->cancel(m_requestId);

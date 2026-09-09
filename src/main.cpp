@@ -45,6 +45,7 @@
 #include "protocol.h"
 
 #include <QApplication>
+#include <optional>
 #include <QCommandLineOption>
 #include <QCommandLineParser>
 #include <QCoreApplication>
@@ -329,9 +330,13 @@ int main(int argc, char *argv[])
     const QCommandLineOption unsafeOperationsOption(
         QStringLiteral("allow-unsafe-test-operations"),
         QStringLiteral("TEST_ONLY: allow start/payment mutations without server result-query guarantees."));
+    const QCommandLineOption safeOperationsOption(
+        QStringLiteral("safe-operations-only"),
+        QStringLiteral("Disable training-only start/payment mutations."));
     parser.addOption(hostOption);
     parser.addOption(portOption);
     parser.addOption(unsafeOperationsOption);
+    parser.addOption(safeOperationsOption);
     parser.process(app);
 
     if (!parser.positionalArguments().isEmpty()) {
@@ -366,9 +371,11 @@ int main(int argc, char *argv[])
     TencentMapService mapService;
 
     // 阶段 F：真实站点/电桩确认已接入；启动变更仍受幂等与结果查询能力闸门保护。
+    // TEST_ONLY: this is a training client. Keep mutations usable by default;
+    // production-like verification can explicitly restore the strict gate.
+    const bool trainingOperationsEnabled = !parser.isSet(safeOperationsOption);
     RealChargingNetworkApi chargingNetwork(&backend);
-    chargingNetwork.setUnsafeTestOperationsEnabled(
-        parser.isSet(unsafeOperationsOption));
+    chargingNetwork.setUnsafeTestOperationsEnabled(trainingOperationsEnabled);
     ChargingService chargingService(&chargingNetwork);
 
     // 阶段 D：真实订单查询。登录成功后自动恢复活动订单（106/214）；
@@ -376,8 +383,7 @@ int main(int argc, char *argv[])
     RealOrderService orderService(&backend);
     ChargingSessionUiBinder sessionBinder(&orderService);
     RealWalletNetworkApi walletNetwork(&backend);
-    walletNetwork.setUnsafeTestOperationsEnabled(
-        parser.isSet(unsafeOperationsOption));
+    walletNetwork.setUnsafeTestOperationsEnabled(trainingOperationsEnabled);
     WalletService walletService(&walletNetwork);
     WalletUiBinder walletBinder(&walletService);
     SettlementUiBinder settlementBinder(&walletService);
@@ -469,6 +475,20 @@ int main(int argc, char *argv[])
     enum class OrderDetailDestination { None, Detail, Settlement };
     ScanEntryPoint scanEntryPoint = ScanEntryPoint::PrimaryCharging;
     bool confirmationOpenedFromScanner = false;
+    std::optional<ActiveReservationView> activeReservation;
+    const auto clearExpiredReservation = [&] {
+        if (activeReservation && activeReservation->expiresAtUtc.isValid()
+            && activeReservation->expiresAtUtc <= QDateTime::currentDateTimeUtc()) {
+            activeReservation.reset();
+            mapBinder.setActiveReservation(std::nullopt);
+        }
+    };
+    const auto openStationDetails = [&](const QString &requestedStation) {
+        clearExpiredReservation();
+        mapBinder.stationDetailsRequested(activeReservation
+                                              ? activeReservation->stationId
+                                              : requestedStation);
+    };
     WalletEntryPoint walletEntryPoint = WalletEntryPoint::Profile;
     bool orderListOpen = false;
     QString orderListRequestId;
@@ -638,7 +658,7 @@ int main(int argc, char *argv[])
     QObject::connect(&mainWindow, &MainWindow::stationSelected,
                      &mapBinder, &IMapUiBinder::stationSelected);
     QObject::connect(&mainWindow, &MainWindow::stationDetailsRequested,
-                     &mapBinder, &IMapUiBinder::stationDetailsRequested);
+                     &app, [&](const QString &stationId) { openStationDetails(stationId); });
     QObject::connect(&stationDetail, &StationDetailWindow::backRequested,
                      &mapBinder, &IMapUiBinder::backRequested);
     QObject::connect(&stationDetail, &StationDetailWindow::stationRefreshRequested,
@@ -659,6 +679,11 @@ int main(int argc, char *argv[])
     // ===== 阶段 B：充电确认链路（详情 → 确认 → 钱包/会话）=====
     QObject::connect(&stationDetail, &StationDetailWindow::chargeConfirmationRequested,
                      &app, [&](const QString &stationId, const QString &chargerId) {
+        clearExpiredReservation();
+        if (activeReservation) {
+            openStationDetails(activeReservation->stationId);
+            return;
+        }
         confirmationOpenedFromScanner = false;
         chargeBinder.chargeConfirmationRequested(stationId, chargerId);
     });
@@ -670,6 +695,11 @@ int main(int argc, char *argv[])
     QObject::connect(&stationDetail, &StationDetailWindow::chargeRequested,
                      &app, [&] {
         const StationDetailViewState state = mapBinder.currentStationDetailState();
+        clearExpiredReservation();
+        if (activeReservation) {
+            openStationDetails(activeReservation->stationId);
+            return;
+        }
         if (!state.stationId.isEmpty() && !state.selectedChargerId.isEmpty()) {
             confirmationOpenedFromScanner = false;
             chargeBinder.chargeConfirmationRequested(state.stationId,
@@ -770,7 +800,7 @@ int main(int argc, char *argv[])
                      &StationDetailWindow::activeReservationRequested,
                      &app, [&](const QString &, const QString &stationId, const QString &) {
         if (!stationId.trimmed().isEmpty())
-            mapBinder.stationDetailsRequested(stationId);
+            openStationDetails(stationId);
     });
     const auto appendRechargeOrders = [&](OrderListViewState state) {
         const WalletViewState wallet = walletBinder.currentState();
@@ -948,7 +978,7 @@ int main(int argc, char *argv[])
     QObject::connect(&frequentStations, &FrequentStationsWindow::stationRequested,
                      &app, [&](const QString &stationId) {
         frequentStationsOpen = false;
-        mapBinder.stationDetailsRequested(stationId);
+        openStationDetails(stationId);
     });
     QObject::connect(&orderList, &OrderListWindow::backRequested,
                      &app, [&] {
@@ -1102,6 +1132,11 @@ int main(int argc, char *argv[])
     QObject::connect(&mainWindow, &MainWindow::activeSessionSelected,
                      &sessionBinder, &IChargingSessionUiBinder::activeSessionSelected);
     const auto openScanner = [&](ScanEntryPoint entryPoint) {
+        clearExpiredReservation();
+        if (activeReservation) {
+            openStationDetails(activeReservation->stationId);
+            return;
+        }
         scanEntryPoint = entryPoint;
         ScanViewState scanState;
         scanState.status = qrScanner.cameraAvailable() ? ScanStatus::RequestingPermission : ScanStatus::Error;
@@ -1120,6 +1155,11 @@ int main(int argc, char *argv[])
     QObject::connect(&sessionWindow, &ChargingSessionWindow::scanChargingRequested,
                      &app, [&] { openScanner(ScanEntryPoint::Session); });
     const auto handleDetectedQr = [&](const QString &raw) {
+        clearExpiredReservation();
+        if (activeReservation) {
+            openStationDetails(activeReservation->stationId);
+            return;
+        }
         ScanViewState state;
         state.canImportImage = true;
         const QString chargerCode = chargerCodeFromQr(raw);
@@ -1406,6 +1446,20 @@ int main(int argc, char *argv[])
     QObject::connect(&reservationConfirmation,
                      &ReservationConfirmationWindow::reservationRefreshRequested,
                      &reservationBinder, &ReservationUiBinder::refreshRequested);
+    QObject::connect(&reservationService, &IReservationService::reservationCreated,
+                     &app, [&](const RequestContext &, const ReservationResult &result) {
+        ActiveReservationView view;
+        view.reservationId = result.reservationId;
+        view.stationId = result.stationId;
+        view.chargerId = result.chargerId.isEmpty() ? result.chargerCode : result.chargerId;
+        view.expiresAtUtc = result.expiresAtUtc;
+        view.canCancel = true;
+        view.remainingText = result.expiresAtUtc.isValid()
+            ? QStringLiteral("预约已生效，截止 %1").arg(result.expiresAtUtc.toLocalTime().toString(QStringLiteral("MM-dd HH:mm")))
+            : QStringLiteral("预约已生效");
+        activeReservation = view;
+        mapBinder.setActiveReservation(activeReservation);
+    });
     QObject::connect(&reservationBinder, &ReservationUiBinder::stateChanged,
                      &reservationConfirmation, &ReservationConfirmationWindow::render);
     QObject::connect(&reservationConfirmation,
@@ -1505,7 +1559,7 @@ int main(int argc, char *argv[])
         << QStringLiteral("Starting real-network entry for %1:%2.")
                .arg(host)
                .arg(portValue);
-    if (parser.isSet(unsafeOperationsOption)) {
+    if (trainingOperationsEnabled) {
         qWarning().noquote()
             << QStringLiteral("TEST_ONLY: unsafe money/charging operations enabled; never use in production.");
     }
