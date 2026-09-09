@@ -525,6 +525,8 @@ int main(int argc, char *argv[])
         reservationBinder.restoreActiveReservation(activeReservation);
         chargeBinder.setReservationActive(activeReservation.has_value());
         if (activeReservation)
+            chargeBinder.setReservationChargerCode(activeReservation->chargerId);
+        if (activeReservation)
             mapBinder.chargerStatusConfirmed(activeReservation->stationId,
                                              activeReservation->chargerId,
                                              ChargerBusinessStatus::Reserved);
@@ -549,6 +551,8 @@ int main(int argc, char *argv[])
         activeReservation = reservation;
         mapBinder.setActiveReservation(reservation);
         chargeBinder.setReservationActive(reservation.has_value());
+        if (reservation)
+            chargeBinder.setReservationChargerCode(reservation->chargerId);
         if (activeUserId.isEmpty())
             return;
         const QString key = QStringLiteral("reservation/%1").arg(activeUserId);

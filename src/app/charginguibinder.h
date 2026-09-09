@@ -15,6 +15,7 @@ public:
                               QObject *parent = nullptr);
     ChargeConfirmationViewState currentState() const override;
     void setReservationActive(bool active);
+    void setReservationChargerCode(const QString &chargerCode);
 
 public slots:
     void chargeConfirmationRequested(const QString &stationId,
@@ -47,4 +48,5 @@ private:
     QString m_requestId;
     QString m_operationId;
     bool m_reservationActive = false;
+    QString m_reservationChargerCode;
 };

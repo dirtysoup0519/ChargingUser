@@ -35,6 +35,13 @@ ChargeConfirmationViewState ChargingUiBinder::currentState() const
 void ChargingUiBinder::setReservationActive(bool active)
 {
     m_reservationActive = active;
+    if (!active)
+        m_reservationChargerCode.clear();
+}
+
+void ChargingUiBinder::setReservationChargerCode(const QString &chargerCode)
+{
+    m_reservationChargerCode = chargerCode.trimmed();
 }
 
 void ChargingUiBinder::chargeConfirmationRequested(const QString &stationId,
@@ -186,6 +193,25 @@ void ChargingUiBinder::handleRequestFailed(const ClientError &error)
     if (error.requestId != m_requestId)
         return;
     m_requestId.clear();
+    // 启动结果恢复（ORDERQRY）明确查不到充电订单时，不再按“结果未知”循环重试。
+    // 若账号存在预约，提示用户前往预约桩或按协议 109 取消预约。
+    if (m_reservationActive && error.code == QLatin1String("order-not-found")) {
+        m_operationId.clear();
+        m_state.operationId.clear();
+        const QString charger = m_reservationChargerCode.isEmpty()
+                                    ? m_state.chargerId
+                                    : m_reservationChargerCode;
+        m_state.status = ChargeConfirmationStatus::Error;
+        m_state.message = charger.isEmpty()
+                              ? QStringLiteral("您有进行中的预约，请前往预约桩充电或取消预约（109）")
+                              : QStringLiteral("您有进行中的预约（电桩 %1），请前往预约桩充电或取消预约（109）")
+                                    .arg(charger);
+        m_state.disabledReason = m_state.message;
+        m_state.canRetry = false;
+        m_state.canStart = false;
+        publish();
+        return;
+    }
     if (!m_operationId.isEmpty() && error.operationId == m_operationId
         && error.resultUnknown) {
         m_state.status = ChargeConfirmationStatus::ResultUnknown;
