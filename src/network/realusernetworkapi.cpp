@@ -113,7 +113,7 @@ void RealUserNetworkApi::loginByPhone(const QString &phone,
     QJsonObject payload;
     payload.insert(QStringLiteral("phone"), phone);
     payload.insert(QStringLiteral("requestId"), context.requestId);
-    startRequest(PendingKind::CredentialLogin, payload, context, QString());
+    startRequest(PendingKind::Login, payload, context, QString());
 }
 
 void RealUserNetworkApi::loginByCredentials(const QString &username,
@@ -124,7 +124,7 @@ void RealUserNetworkApi::loginByCredentials(const QString &username,
                         {QStringLiteral("password"), password},
                         {QStringLiteral("role"), QStringLiteral("user")},
                         {QStringLiteral("requestId"), context.requestId}};
-    startRequest(PendingKind::Login, payload, context, QString());
+    startRequest(PendingKind::CredentialLogin, payload, context, QString());
 }
 
 void RealUserNetworkApi::queryCurrentUser(const QString &userId,
