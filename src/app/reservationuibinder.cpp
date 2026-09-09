@@ -22,6 +22,35 @@ ReservationConfirmationViewState ReservationUiBinder::currentState() const
     return m_state;
 }
 
+std::optional<ActiveReservationView> ReservationUiBinder::currentActiveReservation() const
+{
+    return m_activeReservation;
+}
+
+void ReservationUiBinder::restoreActiveReservation(
+    const std::optional<ActiveReservationView> &reservation)
+{
+    m_activeReservation = reservation;
+    emit activeReservationChanged(m_activeReservation);
+}
+
+void ReservationUiBinder::expireReservationIfNeeded()
+{
+    if (!m_activeReservation || !m_activeReservation->expiresAtUtc.isValid()
+        || m_activeReservation->expiresAtUtc > QDateTime::currentDateTimeUtc())
+        return;
+    m_activeReservation.reset();
+    emit activeReservationChanged(m_activeReservation);
+}
+
+void ReservationUiBinder::consumeActiveReservation()
+{
+    if (!m_activeReservation)
+        return;
+    m_activeReservation.reset();
+    emit activeReservationChanged(m_activeReservation);
+}
+
 void ReservationUiBinder::setConfirmationState(
     const ReservationConfirmationViewState &state)
 {
@@ -91,6 +120,14 @@ void ReservationUiBinder::handleCreated(const RequestContext &context,
                           ? QStringLiteral("预约已提交。")
                           : QStringLiteral("预约成功，编号：%1").arg(result.reservationId);
     publish();
+    ActiveReservationView active;
+    active.reservationId = result.reservationId;
+    active.stationId = result.stationId.isEmpty() ? m_state.stationId : result.stationId;
+    active.chargerId = result.chargerId.isEmpty() ? m_state.chargerId : result.chargerId;
+    active.expiresAtUtc = result.expiresAtUtc;
+    active.canCancel = true;
+    m_activeReservation = active;
+    emit activeReservationChanged(m_activeReservation);
 }
 
 void ReservationUiBinder::handleFailure(const ClientError &error)
@@ -117,6 +154,8 @@ void ReservationUiBinder::handleCancelled(const RequestContext &context,
     m_state.canReserve = false;
     m_state.message = QStringLiteral("预约已取消，押金已退回钱包。");
     publish();
+    m_activeReservation.reset();
+    emit activeReservationChanged(m_activeReservation);
 }
 
 void ReservationUiBinder::publish()
